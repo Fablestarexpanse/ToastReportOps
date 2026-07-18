@@ -1,0 +1,48 @@
+# Toast Report Workstation
+
+Local-first California wildfire intelligence system. Ingests official APIs, satellite
+hotspots, scanner audio, news, social, video, images, ADS-B aircraft data, and weather;
+uses local AI to sift, verify, and attribute facts to specific fires; a single human
+operator reviews AI-drafted reports and publishes them to a static public site and
+social channels. Every incident is permanently archived.
+
+**Status: planning approved — Phase 0 (foundation) not yet started.**
+
+## Core principles
+
+1. **Local-first, append-only.** SQLite is the primary store. The fact ledger is
+   append-only; corrections are supersession records, never edits. Frozen incidents
+   are immutable (enforced by DB triggers, not convention).
+2. **Bi-temporal facts.** Every fact records `observed_at` (when it happened) and
+   `ingested_at` (when we received it). Stale news = large divergence between the two.
+3. **Everything is a pipeline stage.** ingest → normalize → extract → geocode →
+   attribute → corroborate → publish. Raw source material is preserved before any
+   processing.
+4. **Trust is data, not config.** Five-tier source trust (T1 official → T5 community)
+   with per-source performance tracking. Promotions are computed, operator-approved.
+5. **Human-in-the-loop publishing.** The AI drafts; nothing goes public without
+   explicit operator approval. Evacuation data is rendered verbatim from official
+   sources — never paraphrased by an LLM.
+6. **Plugin extensibility.** Sources, extractors, and publishers are adapters behind
+   stable interfaces; new ones require zero core changes.
+
+## Documents
+
+| Doc | Contents |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design, services, interfaces, operator UI |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Phases 0–5 with tasks, acceptance criteria, demos |
+| [docs/SECURITY.md](docs/SECURITY.md) | Threat model, prompt-injection posture, SSRF rules |
+| [backend/src/toast/migrations/0001_init.sql](backend/src/toast/migrations/0001_init.sql) | Full SQLite schema |
+| [DECISIONS.md](DECISIONS.md) | Architectural decision log |
+| [OPERATIONS.md](OPERATIONS.md) | Runbook (start/stop, backup/restore, PSPS mode) |
+| [docs/mockups/](docs/mockups/) | Operator UI design reference |
+
+## Layout
+
+- `backend/` — Python workers, pipeline, FastAPI, migrations (uv-managed)
+- `operator-ui/` — Next.js operator workstation (localhost only)
+- `public-site/` — Next.js static export → Cloudflare Pages
+- `prompts/` — versioned LLM prompt files
+- `infra/` — Litestream/B2, Cloudflare, PSPS degraded-mode configs
+- `data/` — git-ignored: `toast.db`, raw archive (sha256 CAS), tiles
