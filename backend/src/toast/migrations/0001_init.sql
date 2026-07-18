@@ -1,5 +1,6 @@
 -- 0001_init — Toast Report Workstation schema v1
 -- Conventions: TEXT ISO-8601 UTC timestamps; ULID ids; STRICT tables; FKs ON.
+-- JSON-valued columns are TEXT (STRICT mode has no JSON type); validated in app code.
 -- The append-only ledger and the draft approval state machine are enforced HERE,
 -- by triggers — not in application code or UI.
 
@@ -12,7 +13,7 @@ CREATE TABLE sources (
   type TEXT NOT NULL CHECK (type IN ('api','scrape','audio','video','social','community','satellite','aircraft','weather')),
   adapter TEXT NOT NULL,              -- entry-point name, e.g. 'wfigs', 'rss'
   tier INTEGER NOT NULL CHECK (tier BETWEEN 1 AND 5),
-  config JSON NOT NULL DEFAULT '{}',  -- endpoint, region hints, channel ids…
+  config TEXT NOT NULL DEFAULT '{}',  -- endpoint, region hints, channel ids…
   schedule TEXT,                      -- cron or interval; NULL for stream adapters
   enabled INTEGER NOT NULL DEFAULT 1,
   robots_override INTEGER NOT NULL DEFAULT 0,   -- explicit operator opt-out only
@@ -48,7 +49,7 @@ CREATE TABLE envelopes (              -- every normalized ingest unit
   source_id TEXT NOT NULL REFERENCES sources(id),
   external_id TEXT,                   -- source-native id for dedup
   kind TEXT NOT NULL CHECK (kind IN ('report','hotspot','article','post','audio','video','image','aircraft','weather','alert')),
-  payload JSON NOT NULL,
+  payload TEXT NOT NULL,
   raw_ref TEXT REFERENCES raw_blobs(sha256),
   content_hash TEXT NOT NULL,         -- dedup key component
   fetched_at TEXT NOT NULL,
@@ -79,7 +80,7 @@ CREATE TABLE incident_events (        -- lifecycle + merge/split; rows never del
   id TEXT PRIMARY KEY,
   incident_id TEXT NOT NULL REFERENCES incidents(id),
   event TEXT NOT NULL CHECK (event IN ('created','status_change','merged_into','split_from','alias_added','frozen')),
-  detail JSON NOT NULL DEFAULT '{}',  -- e.g. {"into": "<id>"}
+  detail TEXT NOT NULL DEFAULT '{}',  -- e.g. {"into": "<id>"}
   actor TEXT NOT NULL,                -- 'system' | 'operator'
   at TEXT NOT NULL
 ) STRICT;
@@ -96,7 +97,7 @@ CREATE TABLE facts (
   acreage REAL,
   containment_pct REAL,
   evac_status TEXT CHECK (evac_status IN (NULL,'order','warning','shelter_in_place','lifted')),
-  structured JSON NOT NULL DEFAULT '{}',
+  structured TEXT NOT NULL DEFAULT '{}',
   confidence REAL NOT NULL CHECK (confidence BETWEEN 0 AND 1),
   observed_at TEXT NOT NULL,          -- when it happened (LLM-extracted)
   ingested_at TEXT NOT NULL,          -- when we received it
@@ -131,9 +132,9 @@ CREATE TABLE media (
   id TEXT PRIMARY KEY,
   raw_ref TEXT NOT NULL REFERENCES raw_blobs(sha256),
   envelope_id TEXT REFERENCES envelopes(id),
-  exif JSON,
-  vlm_analysis JSON,
-  reverse_image JSON,
+  exif TEXT,
+  vlm_analysis TEXT,
+  reverse_image TEXT,
   lat REAL, lon REAL, geo_method TEXT, geo_confidence REAL,
   credit TEXT,                        -- preserved attribution
   incident_id TEXT REFERENCES incidents(id),
@@ -148,7 +149,7 @@ CREATE TABLE audio_clips (
   started_at TEXT NOT NULL,
   duration_s REAL NOT NULL,
   transcript TEXT,
-  entities JSON,                      -- extracted units, locations, commands
+  entities TEXT,                      -- extracted units, locations, commands
   incident_id TEXT REFERENCES incidents(id),
   created_at TEXT NOT NULL
 ) STRICT;
@@ -162,7 +163,7 @@ CREATE TABLE drafts (
     CHECK (status IN ('draft','needs_review','approved','published','rejected')),
   window_start TEXT, window_end TEXT,       -- observed_at window used
   body_md TEXT NOT NULL,
-  cited_fact_ids JSON NOT NULL DEFAULT '[]',
+  cited_fact_ids TEXT NOT NULL DEFAULT '[]',
   share_card_ref TEXT REFERENCES raw_blobs(sha256),
   approved_by TEXT, approved_at TEXT,
   created_at TEXT NOT NULL,
@@ -183,7 +184,7 @@ CREATE TABLE publications (             -- one row per channel delivery
   channel TEXT NOT NULL,                -- site|x|facebook|rss|email|webhook:<name>
   status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','sent','failed')),
   external_url TEXT,
-  receipt JSON,
+  receipt TEXT,
   sent_at TEXT
 ) STRICT;
 
@@ -210,8 +211,8 @@ CREATE TABLE alert_rules (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   source_text TEXT NOT NULL,          -- operator's plain-English rule
-  compiled JSON NOT NULL,             -- structured condition (validated)
-  channels JSON NOT NULL,             -- delivery targets
+  compiled TEXT NOT NULL,             -- structured condition (validated)
+  channels TEXT NOT NULL,             -- delivery targets
   enabled INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL
 ) STRICT;
@@ -220,15 +221,15 @@ CREATE TABLE alert_deliveries (
   id TEXT PRIMARY KEY,
   rule_id TEXT NOT NULL REFERENCES alert_rules(id),
   fired_at TEXT NOT NULL,
-  matched JSON NOT NULL,
-  delivered JSON
+  matched TEXT NOT NULL,
+  delivered TEXT
 ) STRICT;
 
 -- ============ jobs ============
 CREATE TABLE jobs (
   id TEXT PRIMARY KEY,
   stage TEXT NOT NULL,                -- normalize|extract|geocode|attribute|corroborate|transcribe|vlm|embed|publish|build_site
-  payload JSON NOT NULL,
+  payload TEXT NOT NULL,
   priority INTEGER NOT NULL DEFAULT 5,      -- 1 = urgent (active-incident audio)
   state TEXT NOT NULL DEFAULT 'queued' CHECK (state IN ('queued','running','done','failed','dead')),
   attempts INTEGER NOT NULL DEFAULT 0,
