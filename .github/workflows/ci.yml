@@ -27,4 +27,23 @@ jobs:
       - name: Tests (pytest)
         run: uv run pytest
 
-  # operator-ui job (eslint, tsc, vitest) is added in Phase 1 when the app exists.
+  operator-ui:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: operator-ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: operator-ui/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Lint (eslint)
+        run: npm run lint
+      - name: Typecheck (tsc)
+        run: npx tsc --noEmit
+      - name: Build
+        run: npm run build

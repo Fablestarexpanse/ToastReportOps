@@ -10,6 +10,7 @@ import os
 import socket
 import time
 
+import toast.pipeline.handlers  # noqa: F401 - registers poll/normalize handlers
 from toast.core.config import Settings
 from toast.core.db import connect, utcnow
 from toast.core.health import HealthState, serve_health

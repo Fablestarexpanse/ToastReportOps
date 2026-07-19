@@ -2,6 +2,29 @@
 
 Architectural decision log. Newest first. Each entry: context → decision → why.
 
+## 2026-07-19 — Phase 1 official ingest + ledger
+
+- **Evac aggregation deferred** pending operator TOS review (Genasys/Zonehaven
+  posture varies by county) — flagged in the plan; WFIGS + NWS CAP + FIRMS ship.
+- **WFIGS layer facts**: acreage = `IncidentSize` (falls back to
+  `DiscoveryAcres`); modified field is `ModifiedOnDateTime_dt` (a date field —
+  incremental where-clause needs a `TIMESTAMP` literal, not epoch ms).
+- **Raw preservation via RawCapture mixin**: adapters fetch through
+  `fetch_captured`; the poll handler archives every response to the CAS before
+  envelopes are processed. FIRMS records no URL (it embeds the map key).
+- **Deterministic normalize in Phase 1** — no LLM: official reports produce
+  value facts with supersession; hotspots geo-attach to the nearest active
+  incident within 15 km, else stay unattributed for Phase 2 adjudication.
+- **Value facts never superseded by older observations** (`observed_at` guard) —
+  a late-arriving stale report cannot roll back the ledger.
+- **env_file gotcha**: docker env_file has no inline comments — `KEY=  # note`
+  makes the comment the value. .env.example keeps comments on their own lines.
+- **UI polls (5 s) instead of SSE in Phase 1** — SSE lands with the Phase 4
+  newsroom where push actually matters; polling keeps the shell simple.
+- **create-next-app 15 + Tailwind v4** for operator-ui; mockup palette as CSS
+  vars + inline styles matching the mockup's idiom; fonts via next/font
+  (bundled at build, no runtime CDN).
+
 ## 2026-07-19 — Phase 0 foundation
 
 - **uv for Python dependency management** (lockfile `uv.lock`, `--frozen` in Docker

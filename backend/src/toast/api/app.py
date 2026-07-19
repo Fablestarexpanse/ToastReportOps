@@ -33,6 +33,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Toast Report API", version=__version__, lifespan=lifespan)
 
+from toast.api.routes import router  # noqa: E402
+
+app.include_router(router)
+
 
 @app.get("/healthz")
 def healthz() -> dict:
