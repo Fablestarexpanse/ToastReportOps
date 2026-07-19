@@ -1,0 +1,48 @@
+[project]
+name = "toast"
+version = "0.1.0"
+description = "Toast Report Workstation — local-first CA wildfire intelligence backend"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "pydantic>=2.8",
+    "pydantic-settings>=2.4",
+    "structlog>=24.4",
+    "httpx>=0.27",
+    "apscheduler>=3.10,<4",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/toast"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = false
+check_untyped_defs = true
+warn_unused_ignores = true
+no_implicit_optional = true
+mypy_path = "src"
+packages = ["toast"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

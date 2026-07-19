@@ -1,0 +1,70 @@
+# Toast Report Workstation
+# Profiles:
+#   desktop  — full stack on the operator's machine
+#   degraded — PSPS sentinel: official-API polling + site updates only (free-tier VM)
+# Later phases add: gpu-worker, publisher, site-builder, operator-ui.
+
+x-backend: &backend
+  build: ./backend
+  env_file: .env
+  environment:
+    TOAST_DB_PATH: /data/toast.db
+    TOAST_DATA_DIR: /data
+  volumes:
+    - ./data:/data
+  restart: unless-stopped
+
+services:
+  api:
+    <<: *backend
+    profiles: [desktop]
+    command: python -m toast.api.app
+    environment:
+      TOAST_DB_PATH: /data/toast.db
+      TOAST_DATA_DIR: /data
+      API_BIND: 0.0.0.0        # container-internal; published on loopback only below
+    ports:
+      - "127.0.0.1:8400:8400"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8400/healthz', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  worker:
+    <<: *backend
+    profiles: [desktop, degraded]
+    command: python -m toast.queue.worker
+    environment:
+      TOAST_DB_PATH: /data/toast.db
+      TOAST_DATA_DIR: /data
+      HEALTH_PORT: "8410"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8410/healthz', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  scheduler:
+    <<: *backend
+    profiles: [desktop, degraded]
+    command: python -m toast.scheduler
+    environment:
+      TOAST_DB_PATH: /data/toast.db
+      TOAST_DATA_DIR: /data
+      HEALTH_PORT: "8411"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8411/healthz', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  litestream:
+    profiles: [desktop]
+    image: litestream/litestream:0.3
+    command: replicate -config /etc/litestream.yml
+    env_file: .env
+    volumes:
+      - ./data:/data
+      - ./infra/litestream.yml:/etc/litestream.yml:ro
+    restart: unless-stopped

@@ -1,0 +1,17 @@
+# Litestream — continuous SQLite replication.
+# Phase 0: local replica target (proves the mechanism, works offline).
+# Phase 5 (or as soon as B2 creds exist): uncomment the s3 replica; keys come
+# from the environment (B2_KEY_ID / B2_APPLICATION_KEY in .env), never from
+# this file.
+
+dbs:
+  - path: /data/toast.db
+    replicas:
+      - type: file
+        path: /data/replica/toast
+      # - type: s3
+      #   endpoint: s3.us-west-004.backblazeb2.com
+      #   bucket: ${B2_BUCKET}
+      #   path: toast.db
+      #   access-key-id: ${B2_KEY_ID}
+      #   secret-access-key: ${B2_APPLICATION_KEY}

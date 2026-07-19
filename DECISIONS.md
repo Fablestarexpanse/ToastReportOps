@@ -2,6 +2,26 @@
 
 Architectural decision log. Newest first. Each entry: context → decision → why.
 
+## 2026-07-19 — Phase 0 foundation
+
+- **uv for Python dependency management** (lockfile `uv.lock`, `--frozen` in Docker
+  and CI) — fast, reproducible, one tool for venv + lock + run.
+- **Job claim = `UPDATE … RETURNING` inside `BEGIN IMMEDIATE`.** Single statement
+  selects and claims atomically; IMMEDIATE takes the write lock up front so two
+  workers can't double-claim. Requires SQLite ≥ 3.35 (Python 3.12 bundles newer).
+- **Crash recovery = requeue-stale on worker startup**, not heartbeats: any
+  `running` job whose claim is older than 5 minutes is returned to `queued`.
+  Handlers must therefore be idempotent (already a pipeline requirement).
+- **Worker/scheduler health = stdlib HTTP thread** serving `/healthz` (no FastAPI
+  in workers); Docker healthchecks poll it. The API service uses FastAPI's own
+  `/healthz` and exposes `/queue` state counts for the operator UI health dots.
+- **Secret scrubbing errs broad**: any log key matching
+  secret|token|password|credential|apikey|*_key is redacted.
+- **Dead jobs are preserved**, never deleted — `state='dead'` with `last_error`
+  is the inspection trail.
+- **Compose `.env` note**: JSON columns are TEXT because SQLite STRICT tables
+  have no JSON datatype; app code validates JSON at the boundary.
+
 ## 2026-07-18 — Planning approved
 
 - **Python workers + Next.js UI.** Whisper/VAD, geospatial (shapely/pyproj),
