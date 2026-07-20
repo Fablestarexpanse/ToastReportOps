@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Analytics, fetchAnalytics } from "@/lib/api";
 import { C, TIER, font } from "@/lib/theme";
+import { leadTime } from "@/lib/time";
 
 /* ANALYTICS — what the ledger says about itself.
 
@@ -253,8 +254,7 @@ export default function AnalyticsMode() {
                   title="median lead over the official record"
                   style={{ fontFamily: font.mono, fontSize: 8.5, color: s.lead_time_median_s > 0 ? C.ok : C.dim }}
                 >
-                  {s.lead_time_median_s > 0 ? "+" : ""}
-                  {(s.lead_time_median_s / 3600).toFixed(1)}h
+                  {leadTime(s.lead_time_median_s)}
                 </span>
               )}
               {s.superseded_rate != null && s.superseded_rate > 0 && (

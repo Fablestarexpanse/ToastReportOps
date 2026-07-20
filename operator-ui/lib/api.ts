@@ -141,14 +141,6 @@ export async function triageWatch(key: string, state: WatchState): Promise<void>
   if (!res.ok) throw new Error(`triage failed (${res.status})`);
 }
 
-export async function untriageWatch(key: string): Promise<void> {
-  await fetch("/api/watch/untriage", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ key }),
-  });
-}
-
 export async function classifyWatch(key: string): Promise<WatchVerdict> {
   const res = await fetch("/api/watch/classify", {
     method: "POST",
@@ -161,17 +153,6 @@ export async function classifyWatch(key: string): Promise<WatchVerdict> {
   }
   return res.json();
 }
-
-export type ArchivedCandidate = {
-  cluster_key: string;
-  state: string;
-  verdict: WatchVerdict | null;
-  note: string | null;
-  at: string;
-};
-
-export const fetchArchivedWatch = () =>
-  get<{ archived: ArchivedCandidate[] }>("/watch/archived").then((r) => r.archived);
 
 export const fetchWatch = () =>
   get<{ candidates: WatchCandidate[] }>("/watch").then((r) => r.candidates);

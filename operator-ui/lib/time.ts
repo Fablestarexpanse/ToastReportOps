@@ -41,11 +41,6 @@ function parts(iso: string, mode: TzMode = tzMode) {
 const p2 = (n: number) => String(n).padStart(2, "0");
 
 /** Time only, military: "0137Z". Use where the date is already obvious. */
-export function fmtHm(iso: string | null | undefined): string {
-  const p = iso ? parts(iso) : null;
-  return p ? `${p2(p.hh)}${p2(p.mm)}${p.suffix}` : "—";
-}
-
 /** Date + time, military: "20JUL 0137Z" (adds year if not this year). */
 export function fmtStamp(iso: string | null | undefined): string {
   const p = iso ? parts(iso) : null;
@@ -99,4 +94,17 @@ export function lag(observed?: string | null, ingested?: string | null): string 
   const gap = new Date(ingested).getTime() - new Date(observed).getTime();
   if (isNaN(gap) || gap < 60_000) return "";
   return age(observed, new Date(ingested).getTime());
+}
+
+/** Median lead over the official record, as one phrasing everywhere.
+ *
+ * SOURCES bucketed to minutes under an hour while ANALYTICS always printed
+ * hours to one decimal, so the same source read "+2m" on one screen and "+0.0h"
+ * on another. A trust number that changes shape by screen is a trust number the
+ * operator stops trusting. */
+export function leadTime(seconds: number | null | undefined): string {
+  if (seconds == null) return "—";
+  const sign = seconds > 0 ? "+" : "";
+  if (Math.abs(seconds) >= 3600) return `${sign}${(seconds / 3600).toFixed(1)}h`;
+  return `${sign}${Math.round(seconds / 60)}m`;
 }

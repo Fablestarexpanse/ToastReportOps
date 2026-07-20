@@ -54,7 +54,7 @@ import { C, TIER, TIER_TITLES, confColor, font } from "@/lib/theme";
 import AlertBell from "@/components/alerts";
 import AnalyticsMode from "@/components/analytics";
 import SettingsPanel, { loadDisplayPrefs, syncDisplayPrefs } from "@/components/settings";
-import { age, ageColor, fmtFull, fmtStamp, lag } from "@/lib/time";
+import { age, ageColor, fmtFull, fmtStamp, getTzMode, lag, leadTime } from "@/lib/time";
 import MapPanel from "@/components/map-panel";
 import NewsroomMode from "@/components/newsroom";
 import WatchMode from "@/components/watch";
@@ -97,16 +97,16 @@ const fmtDate = fmtFull;
 
 /* ---------------- shared bits ---------------- */
 
+/* One call site (the queue chip). The `active` prop was never passed, so the
+   coloured-border branch was unreachable — the chip now simply uses `color`. */
 function Chip({
   children,
   color = C.dim,
-  active = false,
   onClick,
   title,
 }: {
   children: React.ReactNode;
   color?: string;
-  active?: boolean;
   onClick?: () => void;
   title?: string;
 }) {
@@ -119,8 +119,8 @@ function Chip({
         fontSize: 9,
         padding: "2px 7px",
         borderRadius: 3,
-        border: `1px solid ${active ? color : C.line}`,
-        color: active ? color : C.dim,
+        border: `1px solid ${color}`,
+        color,
         cursor: onClick ? "pointer" : "default",
         display: "inline-block",
         whiteSpace: "nowrap",
@@ -990,21 +990,32 @@ function IntelPanel({ sel, toast }: { sel: Incident; toast: (m: string) => void 
 function WeatherPanel({ incidentId }: { incidentId: string }) {
   const [wx, setWx] = useState<IncidentWeather | null>(null);
   const [busy, setBusy] = useState(false);
+  // Switch fires mid-fetch, or double-click refresh, and the slower response
+  // used to win — this panel would show another fire's station readings with
+  // the correct station name and distance attached to them. That is precisely
+  // what the panel's own "weather 30 km away over a ridge is not weather at the
+  // fire" rule exists to prevent, so only the newest request may write.
+  const reqId = useRef(0);
 
   const load = useCallback(
     async (refresh = false) => {
+      const seq = ++reqId.current;
       setBusy(true);
       try {
-        setWx(await fetchWeather(incidentId, refresh));
+        const next = await fetchWeather(incidentId, refresh);
+        if (seq === reqId.current) setWx(next);
       } catch {
-        setWx({ available: false, reason: "could not reach the weather service" });
+        if (seq === reqId.current) {
+          setWx({ available: false, reason: "could not reach the weather service" });
+        }
       } finally {
-        setBusy(false);
+        if (seq === reqId.current) setBusy(false);
       }
     },
     [incidentId],
   );
   useEffect(() => {
+    setWx(null); // never show the previous fire's weather while the new one loads
     load();
   }, [load]);
 
@@ -1314,14 +1325,16 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
     basemap?: string;
   } | null>(null);
   const [originCheck, setOriginCheck] = useState<OriginCheck | null>(null);
-  const [checking, setChecking] = useState(false);
+  // scoped to the fire being checked: a bare boolean left "verifying origin
+  // against CAL FIRE…" sitting under whichever fire the operator switched to
+  const [checking, setChecking] = useState<string | null>(null);
 
   // Zooming to street level makes a coordinate look authoritative, so it is
   // re-verified against CAL FIRE at that exact moment. We still fly there —
   // the operator asked — but they see what the point is worth.
   const onZoomToOrigin = async (inc: Incident) => {
     if (inc.lat == null || inc.lon == null) return;
-    setChecking(true);
+    setChecking(inc.id);
     setOriginCheck(null);
     setFocus({ lat: inc.lat, lon: inc.lon, zoom: 16, nonce: Date.now(), basemap: "satellite" });
     try {
@@ -1342,7 +1355,7 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
     } catch {
       setOriginCheck(null);
     } finally {
-      setChecking(false);
+      setChecking((c) => (c === inc.id ? null : c));
     }
   };
   const [followOverride, setFollowOverride] = useState<Record<string, boolean>>({});
@@ -1672,7 +1685,8 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
           </div>
 
           {/* origin verification — what the coordinate we just flew to is worth */}
-          {(checking || (originCheck && originCheck.incident_id === sel?.id)) && (
+          {((checking && checking === sel?.id) ||
+            (originCheck && originCheck.incident_id === sel?.id)) && (
             <div
               style={{
                 marginTop: 6,
@@ -1980,14 +1994,7 @@ function SuggestedSources({ toast, onAdded }: { toast: (m: string) => void; onAd
 function TrustCells({ s }: { s: Source }) {
   const lead = s.lead_time_median_s;
   const corr = s.superseded_rate;
-  const leadLabel =
-    lead == null
-      ? "—"
-      : lead >= 3600
-        ? `+${(lead / 3600).toFixed(1)}h`
-        : lead >= 0
-          ? `+${Math.round(lead / 60)}m`
-          : `${Math.round(lead / 60)}m`;
+  const leadLabel = leadTime(lead);  // shared with ANALYTICS — one phrasing
   return (
     <>
       <span
@@ -2345,8 +2352,11 @@ function ArchiveMode({ toast }: { toast: (m: string) => void }) {
     for (const inc of filtered) {
       const when = new Date(inc.started_at ?? inc.created_at);
       if (isNaN(when.getTime())) continue;
-      const y = String(when.getUTCFullYear());
-      const m = when.getUTCMonth();
+      // Bucket in the same zone the card's own date is rendered in. Bucketing
+      // in UTC while the row read "31JUL 1800L" filed that fire under AUG.
+      const local = getTzMode() === "local";
+      const y = String(local ? when.getFullYear() : when.getUTCFullYear());
+      const m = local ? when.getMonth() : when.getUTCMonth();
       const months = years.get(y) ?? new Map<number, Incident[]>();
       months.set(m, [...(months.get(m) ?? []), inc]);
       years.set(y, months);
@@ -2505,13 +2515,16 @@ function ArchiveMode({ toast }: { toast: (m: string) => void }) {
 
 /* ---------------- shell ---------------- */
 
-const MODES: [string, string, boolean][] = [
-  ["ops", "OPS", true],
-  ["news", "NEWSROOM", true],
-  ["watch", "WATCH", true],
-  ["archive", "ARCHIVE", true],
-  ["sources", "SOURCES", true],
-  ["analytics", "ANALYTICS", true],
+// Every mode is built. The third element used to be a `ready` flag from when
+// some were placeholders; it has been `true` everywhere for a while, so the
+// "arrives in a later phase" tooltip and not-allowed cursor were unreachable.
+const MODES: [string, string][] = [
+  ["ops", "OPS"],
+  ["news", "NEWSROOM"],
+  ["watch", "WATCH"],
+  ["archive", "ARCHIVE"],
+  ["sources", "SOURCES"],
+  ["analytics", "ANALYTICS"],
 ];
 
 function Overlay({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
@@ -2669,11 +2682,10 @@ export default function Workstation() {
           TOAST REPORT
         </div>
         <div style={{ display: "flex", gap: 2, background: C.bg, borderRadius: 6, padding: 2 }}>
-          {MODES.map(([k, label, ready]) => (
+          {MODES.map(([k, label]) => (
             <div
               key={k}
-              onClick={() => ready && setMode(k)}
-              title={ready ? undefined : "arrives in a later phase"}
+              onClick={() => setMode(k)}
               style={{
                 fontFamily: font.disp,
                 fontSize: 13,
@@ -2681,9 +2693,9 @@ export default function Workstation() {
                 letterSpacing: 1.5,
                 padding: "5px 13px",
                 borderRadius: 5,
-                cursor: ready ? "pointer" : "not-allowed",
+                cursor: "pointer",
                 background: mode === k ? C.panelUp : "transparent",
-                color: mode === k ? C.ember : ready ? C.dim : C.faint,
+                color: mode === k ? C.ember : C.dim,
               }}
             >
               {label}
