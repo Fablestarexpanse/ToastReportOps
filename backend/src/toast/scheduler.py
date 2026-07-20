@@ -60,7 +60,14 @@ DAILY_S = 24 * 3600
 # stage -> how often it should run. Re-attribution is frequent on purpose:
 # incidents get listed through the day, and each new one can adopt facts that
 # arrived before it existed.
-DAILY_STAGES = {"backup": DAILY_S, "trust": DAILY_S, "reattribute": 30 * 60}
+DAILY_STAGES = {
+    "backup": DAILY_S,
+    "trust": DAILY_S,
+    "reattribute": 30 * 60,
+    # every 2h: the raw archive grows ~25 MB/day and the first sync has a
+    # thousand-blob backlog, so it drains in bounded batches rather than one run
+    "raw_sync": 2 * 3600,
+}
 
 
 def stage_due(conn, stage: str, interval_s: int) -> bool:

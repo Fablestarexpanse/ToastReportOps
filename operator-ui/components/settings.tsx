@@ -211,8 +211,19 @@ function BackupSection({ toast }: { toast: (m: string) => void }) {
             color: C.evac,
           }}
         >
-          ⚠ NO OFFSITE COPY — snapshots live on this machine only. Add B2 keys to
-          .env (docs/BACKUP-RESTORE.md); a house fire takes the archive with it.
+          ⚠ NO OFFSITE COPY — snapshots live on this machine only. Add B2 keys in
+          API KEYS above (docs/BACKUP-RESTORE.md); a house fire takes the archive with it.
+        </div>
+      )}
+      {/* The ledger snapshot is only half the record. data/raw/ is what each
+          source actually served, and a claim you cannot show the original for is
+          a claim you cannot defend. Reported separately so "backed up" never
+          quietly means "half of it". */}
+      {status.raw_offsite != null && (
+        <div style={{ fontFamily: font.mono, fontSize: 9, color: status.raw_pending ? C.warn : C.ok, marginBottom: 6 }}>
+          {status.raw_pending
+            ? `raw archive: ${status.raw_offsite} offsite · ${status.raw_pending} still local (${(((status.raw_pending_bytes ?? 0) / 1e6)).toFixed(1)} MB) — syncs every 2h`
+            : `✓ raw archive fully offsite — ${status.raw_offsite} archived responses`}
         </div>
       )}
       <div style={{ fontFamily: font.mono, fontSize: 9.5, color: C.dim, display: "flex", gap: 8, alignItems: "center" }}>

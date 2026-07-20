@@ -762,6 +762,10 @@ export async function testCredentials(
 }
 
 export type BackupStatus = {
+  /** raw archive replication — the evidence behind the claims */
+  raw_offsite?: number | null;
+  raw_pending?: number | null;
+  raw_pending_bytes?: number | null;
   snapshots: number;
   latest_at: string | null;
   latest: { file: string; bytes: number; verified: { counts: Record<string, number> } } | null;

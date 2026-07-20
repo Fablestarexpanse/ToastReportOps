@@ -337,6 +337,22 @@ def backup_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     )
 
 
+@register("raw_sync")
+def raw_sync_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Ship a batch of the raw archive offsite. Bounded per run so a first sync
+    of thousands of blobs spreads over nights instead of stalling the queue."""
+    from toast.core.credentials import settings_with_credentials
+    from toast.rawsync import sync_raw
+
+    result = sync_raw(conn, settings_with_credentials(conn), limit=payload.get("limit", 250))
+    get_logger("rawsync").info(
+        "raw_sync_done",
+        uploaded=result.get("uploaded", 0),
+        pending=result.get("pending"),
+        offsite=result.get("offsite"),
+    )
+
+
 @register("publish")
 def publish_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     """Deliver an approved+published SOCIAL draft to one external channel.

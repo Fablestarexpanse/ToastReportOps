@@ -215,13 +215,23 @@ def backup_status(
     snaps = list_snapshots(s)
     offsite = bool(s.b2_key_id and s.b2_application_key and s.b2_bucket)
     latest = snaps[0] if snaps else None
+    raw: dict[str, Any] = {}
+    if conn is not None:
+        from toast.rawsync import pending
+
+        raw = pending(conn)
     return {
         "snapshots": len(snaps),
         "latest": latest,
         "latest_at": latest["created_at"] if latest else None,
         "offsite_configured": offsite,
         # The house is in a fire zone: local-only copies do not count as backed up.
+        # The ledger snapshot AND the raw archive both have to be offsite for the
+        # record to survive with its evidence.
         "at_risk": not offsite,
+        "raw_offsite": raw.get("offsite"),
+        "raw_pending": raw.get("pending"),
+        "raw_pending_bytes": raw.get("pending_bytes"),
         "snapshot_dir": str(snapshot_dir(s)),
     }
 

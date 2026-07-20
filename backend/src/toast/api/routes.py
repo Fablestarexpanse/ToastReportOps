@@ -236,6 +236,17 @@ def get_backups(request: Request) -> dict:
     return {**backup_status(conn=_conn(request)), "all": list_snapshots()[:10]}
 
 
+@router.post("/backups/raw-sync")
+def run_raw_sync(request: Request) -> dict:
+    """Push a batch of the raw archive offsite now. The ledger snapshot covers
+    every claim; this covers the evidence behind them."""
+    from toast.core.credentials import settings_with_credentials
+    from toast.rawsync import sync_raw
+
+    conn = _conn(request)
+    return sync_raw(conn, settings_with_credentials(conn))
+
+
 @router.post("/backups/run")
 def run_backup_now(request: Request) -> dict:
     """Operator-triggered verified snapshot (same path as the nightly job)."""

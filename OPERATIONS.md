@@ -76,20 +76,31 @@ For ad-hoc queries against live data, prefer the API or
 output: [docs/BACKUP-RESTORE.md](docs/BACKUP-RESTORE.md).** Read that one, not
 this summary.
 
-What exists **today**, stated exactly:
+What exists **today**, stated exactly (verified 20JUL2026 by a full round trip:
+upload → list → download → sha256 match → integrity_check → row counts):
 
 | | status |
 |---|---|
 | Nightly `VACUUM INTO` snapshot, verified + secret-stripped | **working**, local `data/backups/` |
+| Snapshot uploaded to Backblaze B2 | **working** — restore verified from the B2 copy, not just its presence |
+| `data/raw/` (every archived source response) offsite | **working** — 1,023 blobs / 93 MB replicated; syncs every 2h in bounded batches |
 | Restore drill on a clean database | **executed**, output recorded in docs/BACKUP-RESTORE.md |
-| Litestream continuous replication | **local disk only** — the s3 block in `infra/litestream.yml` is commented out |
-| Snapshot upload to B2 | **code ready, inactive** — needs `B2_KEY_ID` / `B2_APPLICATION_KEY` / `B2_BUCKET` |
-| `data/raw/` (the CAS archive of every source response) offsite | **NOT IMPLEMENTED** — no code path, in any state |
+| Litestream continuous replication | **local disk only** — the s3 block in `infra/litestream.yml` is still commented out |
 
-So: **there is currently no offsite copy of anything.** Both live copies are on
-one disk, in a house inside a fire zone. That is the single largest risk on this
-project, and it is one operator task away — see docs/API-KEYS.md (Backblaze B2,
-10 GB free).
+So: the ledger and its evidence are both offsite. What is NOT covered is the gap
+between nightly snapshots — lose the machine at 23:00 and you lose that day's
+facts back to the last snapshot. Closing that needs Litestream pointed at B2,
+which reads `.env` rather than the credentials table (that container is not the
+API), so it needs `B2_KEY_ID` / `B2_APPLICATION_KEY` / `B2_BUCKET` in `.env` too.
+
+Raw sync runs automatically every 2 hours and on demand:
+
+```sh
+curl -X POST http://127.0.0.1:8400/backups/raw-sync   # a batch of up to 250 blobs
+```
+
+Progress is shown in OPTIONS → BACKUPS, which reports the raw archive separately
+from the snapshot on purpose: "backed up" must never quietly mean half of it.
 
 Secrets never ride along: `_strip_secrets` deletes the credentials table and
 scrubs known key values out of `jobs.last_error` before a snapshot is uploaded.
