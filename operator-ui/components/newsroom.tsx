@@ -36,10 +36,17 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
 
   const refresh = useCallback(async () => {
     const [d, inc] = await Promise.all([fetchDrafts(), fetchIncidents()]);
+    // defensively dedupe by id — a transient duplicate from overlapping
+    // fetches must never produce duplicate React keys
+    const seen = new Set<string>();
+    const unique = inc.filter((i) => !seen.has(i.id) && seen.add(i.id) !== undefined);
     setDrafts(d);
-    setIncidents(inc);
-    if (!genIncident && inc.length) setGenIncident(inc[0].id);
-  }, [genIncident]);
+    setIncidents(unique);
+    // functional update: no dependency on genIncident, so refresh keeps a
+    // stable identity and the mount effect runs exactly once (the previous
+    // genIncident dep re-created refresh mid-flight → overlapping fetches)
+    setGenIncident((prev) => prev || (unique.length ? unique[0].id : prev));
+  }, []);
 
   useEffect(() => {
     refresh();
