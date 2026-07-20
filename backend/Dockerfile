@@ -11,6 +11,9 @@ RUN uv sync --frozen --no-install-project --no-dev
 COPY src ./src
 RUN uv sync --frozen --no-dev
 
+# prompts/ is provided at runtime by the compose bind-mount (./prompts:/app/prompts).
+# It lives outside this build context (repo root), so it is not COPYd into the image.
+
 ENV PATH="/app/.venv/bin:$PATH"
 
 # service selected per compose service, e.g.:

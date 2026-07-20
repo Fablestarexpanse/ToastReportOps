@@ -1,0 +1,100 @@
+"""OpenAI-compatible LLM client (chat + embeddings).
+
+Works against any /v1 endpoint (Ollama, LM Studio, vLLM, cloud later) —
+selected purely by LLM_BASE_URL/LLM_MODEL env. The client never composes
+prompts; callers pass complete messages (see prompts.py for the loader and
+extract.py for the injection posture).
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from typing import Any
+
+import httpx
+
+from toast.core.config import Settings
+
+_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+
+class LLMError(Exception):
+    pass
+
+
+def _parse_json_lenient(content: str) -> Any:
+    """Parse model JSON, tolerating reasoning-tag preambles and code fences."""
+    cleaned = _THINK_RE.sub("", content).strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`")
+        cleaned = re.sub(r"^json\s*", "", cleaned, flags=re.IGNORECASE).strip()
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+    # last resort: first {...} span
+    start, end = cleaned.find("{"), cleaned.rfind("}")
+    if start != -1 and end > start:
+        try:
+            return json.loads(cleaned[start : end + 1])
+        except json.JSONDecodeError:
+            pass
+    raise LLMError(f"model returned non-JSON: {content[:300]}")
+
+
+class LLMClient:
+    def __init__(self, settings: Settings | None = None) -> None:
+        s = settings or Settings()
+        self.base_url = s.llm_base_url.rstrip("/")
+        self.model = s.llm_model
+        self.embed_model = s.embedding_model
+        self.api_key = s.llm_api_key
+        self.default_timeout_s = s.llm_timeout_s
+        self.no_think_token = s.llm_no_think_token
+
+    def _headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.api_key}"}
+
+    def chat_json(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        temperature: float = 0.1,
+        timeout_s: float | None = None,
+        no_think: bool = True,
+    ) -> Any:
+        """Chat completion that must return a JSON value (json_object mode).
+
+        no_think appends the reasoning-skip soft switch to the first system
+        message (harmless for models that don't recognize it)."""
+        msgs = [dict(m) for m in messages]
+        if no_think and self.no_think_token and msgs:
+            msgs[0]["content"] = f"{self.no_think_token}\n{msgs[0]['content']}"
+        resp = httpx.post(
+            f"{self.base_url}/chat/completions",
+            headers=self._headers(),
+            json={
+                "model": self.model,
+                "messages": msgs,
+                "temperature": temperature,
+                "response_format": {"type": "json_object"},
+            },
+            timeout=timeout_s or self.default_timeout_s,
+        )
+        if resp.status_code != 200:
+            raise LLMError(f"chat failed: {resp.status_code} {resp.text[:300]}")
+        content = resp.json()["choices"][0]["message"]["content"]
+        return _parse_json_lenient(content)
+
+    def embed(self, texts: list[str], *, timeout_s: float = 120.0) -> list[list[float]]:
+        resp = httpx.post(
+            f"{self.base_url}/embeddings",
+            headers=self._headers(),
+            json={"model": self.embed_model, "input": texts},
+            timeout=timeout_s,
+        )
+        if resp.status_code != 200:
+            raise LLMError(f"embed failed: {resp.status_code} {resp.text[:300]}")
+        data = resp.json()["data"]
+        return [d["embedding"] for d in sorted(data, key=lambda d: d["index"])]

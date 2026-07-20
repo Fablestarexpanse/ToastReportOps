@@ -38,6 +38,8 @@ export type Fact = {
   starred: number;
   stale: boolean;
   stale_s: number | null;
+  effective_confidence: number | null;
+  corroborating_sources: number | null;
 };
 
 export type Source = {
@@ -56,6 +58,31 @@ export type Source = {
 
 export type Health = { api: boolean; queue: Record<string, number> };
 
+export type AdjudicationCandidate = {
+  incident_id: string;
+  incident_name: string;
+  score: number;
+  name_score: number;
+  geo_score: number;
+  time_score: number;
+};
+
+export type AdjudicationItem = { fact: Fact; candidates: AdjudicationCandidate[] };
+
+export type AnalyzeResult = {
+  url: string;
+  claims: number;
+  dropped: number;
+  prompt_version: string;
+  facts: {
+    fact_id: string;
+    content: string;
+    kind: string;
+    attribution: string;
+    top_candidate: { incident: string; score: number } | null;
+  }[];
+};
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`/api${path}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`${path}: ${res.status}`);
@@ -68,6 +95,31 @@ export const fetchIncidentFacts = (id: string) =>
   get<{ facts: Fact[] }>(`/incidents/${id}/facts`).then((r) => r.facts);
 export const fetchIntake = () => get<{ facts: Fact[] }>("/intake?limit=80").then((r) => r.facts);
 export const fetchSources = () => get<{ sources: Source[] }>("/sources").then((r) => r.sources);
+
+export const fetchAdjudication = () =>
+  get<{ queue: AdjudicationItem[] }>("/adjudication").then((r) => r.queue);
+
+export async function resolveAdjudication(factId: string, incidentId: string): Promise<void> {
+  const res = await fetch(`/api/adjudication/${factId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ incident_id: incidentId }),
+  });
+  if (!res.ok) throw new Error(`resolve: ${res.status}`);
+}
+
+export async function analyzeUrl(url: string): Promise<AnalyzeResult> {
+  const res = await fetch("/api/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  if (!res.ok) {
+    const detail = await res.json().then((d) => d.detail).catch(() => res.status);
+    throw new Error(String(detail));
+  }
+  return res.json();
+}
 
 export async function fetchHealth(): Promise<Health> {
   try {

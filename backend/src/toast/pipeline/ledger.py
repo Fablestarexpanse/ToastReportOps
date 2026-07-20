@@ -46,14 +46,16 @@ def write_fact(
     geo_method: str | None = None,
     supersedes: str | None = None,
     raw_ref: str | None = None,
+    prompt_version: str | None = None,
 ) -> str:
     fact_id = ulid()
     conn.execute(
         """INSERT INTO facts
            (id, incident_id, envelope_id, source_id, tier, content, kind,
             acreage, containment_pct, evac_status, structured, confidence,
-            observed_at, ingested_at, lat, lon, geo_method, supersedes, raw_ref)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            observed_at, ingested_at, lat, lon, geo_method, supersedes, raw_ref,
+            prompt_version)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             fact_id,
             incident_id,
@@ -74,6 +76,7 @@ def write_fact(
             geo_method,
             supersedes,
             raw_ref,
+            prompt_version,
         ),
     )
     return fact_id

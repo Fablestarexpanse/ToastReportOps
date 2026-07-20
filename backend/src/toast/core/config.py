@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     llm_base_url: str = "http://localhost:11434/v1"
     llm_model: str = "qwen3"
     llm_api_key: str = "unused-for-local"
+    llm_timeout_s: float = 300.0
+    # qwen3 and similar reasoning models default to slow "thinking"; the soft
+    # switch below is appended to the system prompt to skip it for extraction.
+    llm_no_think_token: str = "/no_think"
 
     # embeddings
     embedding_model: str = "nomic-embed-text"

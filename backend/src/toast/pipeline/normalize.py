@@ -63,6 +63,7 @@ def _normalize_report(conn, payload, observed, common) -> list[str]:
         lat=payload.get("lat"),
         lon=payload.get("lon"),
         county=payload.get("county"),
+        incident_type=payload.get("type"),
     )
     facts: list[str] = []
     if created:

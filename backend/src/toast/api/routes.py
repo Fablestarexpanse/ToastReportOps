@@ -36,15 +36,22 @@ FACT_COLS = """f.id, f.incident_id, f.source_id, f.tier, f.content, f.kind,
     f.starred, f.raw_ref,
     (unixepoch(f.ingested_at) - unixepoch(f.observed_at)) AS stale_s,
     s.name AS source_name,
-    (SELECT id FROM facts sup WHERE sup.supersedes = f.id) AS superseded_by"""
+    (SELECT id FROM facts sup WHERE sup.supersedes = f.id) AS superseded_by,
+    (SELECT effective_confidence FROM fact_assessments a WHERE a.fact_id = f.id)
+        AS effective_confidence,
+    (SELECT corroborating_sources FROM fact_assessments a WHERE a.fact_id = f.id)
+        AS corroborating_sources"""
 
 
 @router.get("/incidents")
-def list_incidents(request: Request, status: str | None = None) -> dict:
-    where, params = "", []
+def list_incidents(request: Request, status: str | None = None, include_rx: bool = False) -> dict:
+    clauses, params = [], []
     if status:
-        where = "WHERE i.status = ?"
+        clauses.append("i.status = ?")
         params.append(status)
+    if not include_rx:
+        clauses.append("COALESCE(i.incident_type, 'WF') != 'RX'")
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     rows = (
         _conn(request)
         .execute(
@@ -112,6 +119,90 @@ def intake(
         .fetchall()
     )
     return {"facts": [_fact_dict(r) for r in rows]}
+
+
+@router.get("/adjudication")
+def adjudication_queue(request: Request, limit: int = Query(50, le=200)) -> dict:
+    """Unattributed non-official facts awaiting operator attribution, with
+    scored incident candidates for one-click resolve."""
+    from toast.pipeline.attribution import REVIEW_THRESHOLD, score_candidates
+
+    conn = _conn(request)
+    rows = conn.execute(
+        f"""SELECT {FACT_COLS} FROM facts f JOIN sources s ON s.id = f.source_id
+            WHERE f.incident_id IS NULL AND f.kind NOT IN ('weather')
+            ORDER BY f.ingested_at DESC LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    items = []
+    for row in rows:
+        fact = _fact_dict(row)
+        structured = fact["structured"]
+        candidates = score_candidates(
+            conn,
+            observed_at=row["observed_at"],
+            incident_name=structured.get("incident_name"),
+            lat=row["lat"],
+            lon=row["lon"],
+        )
+        items.append(
+            {
+                "fact": fact,
+                "candidates": [
+                    {
+                        "incident_id": c.incident_id,
+                        "incident_name": c.incident_name,
+                        "score": round(c.score, 3),
+                        "name_score": round(c.name_score, 2),
+                        "geo_score": round(c.geo_score, 2),
+                        "time_score": round(c.time_score, 2),
+                    }
+                    for c in candidates
+                    if c.score >= REVIEW_THRESHOLD * 0.5
+                ],
+            }
+        )
+    return {"queue": items}
+
+
+@router.post("/adjudication/{fact_id}")
+def resolve_adjudication(request: Request, fact_id: str, body: dict) -> dict:
+    """Operator resolves attribution: {"incident_id": "..."} attaches the fact
+    (the one UPDATE the append-only trigger permits: NULL → value)."""
+    conn = _conn(request)
+    incident_id = body.get("incident_id")
+    if not incident_id:
+        raise HTTPException(400, "incident_id required")
+    fact = conn.execute("SELECT incident_id FROM facts WHERE id = ?", (fact_id,)).fetchone()
+    if fact is None:
+        raise HTTPException(404, "fact not found")
+    if fact["incident_id"] is not None:
+        raise HTTPException(409, "fact already attributed")
+    if conn.execute("SELECT 1 FROM incidents WHERE id = ?", (incident_id,)).fetchone() is None:
+        raise HTTPException(404, "incident not found")
+    conn.execute("UPDATE facts SET incident_id = ? WHERE id = ?", (incident_id, fact_id))
+    return {"ok": True, "fact_id": fact_id, "incident_id": incident_id}
+
+
+@router.post("/analyze")
+def analyze(request: Request, body: dict) -> dict:
+    """Operator points the AI at a URL; claims are extracted, written as T4
+    facts, and attributed. Safe fetcher enforces SSRF/size limits."""
+    from toast.core.fetch import BlockedURLError, FetchError
+    from toast.llm.client import LLMError
+    from toast.pipeline.analyze import analyze_url
+
+    url = (body.get("url") or "").strip()
+    if not url:
+        raise HTTPException(400, "url required")
+    try:
+        return analyze_url(_conn(request), url)
+    except BlockedURLError as exc:
+        raise HTTPException(400, f"URL blocked: {exc}") from exc
+    except FetchError as exc:
+        raise HTTPException(502, f"fetch failed: {exc}") from exc
+    except LLMError as exc:
+        raise HTTPException(503, f"LLM unavailable: {exc}") from exc
 
 
 @router.get("/sources")

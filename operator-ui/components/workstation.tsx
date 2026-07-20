@@ -2,12 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  AdjudicationItem,
   Fact,
+  analyzeUrl,
+  fetchAdjudication,
   fetchHealth,
   fetchIncidentFacts,
   fetchIncidents,
   fetchIntake,
   fetchSources,
+  resolveAdjudication,
 } from "@/lib/api";
 import { C, TIER, TIER_TITLES, confColor, font } from "@/lib/theme";
 
@@ -146,6 +150,11 @@ function FactRow({ f, showIncident }: { f: Fact; showIncident?: boolean }) {
             </span>
           )}
           {superseded && <span style={{ color: C.faint }}>superseded</span>}
+          {(f.corroborating_sources ?? 0) > 0 && (
+            <span style={{ color: C.ok }} title="independent sources corroborating">
+              ✓×{f.corroborating_sources}
+            </span>
+          )}
           {f.stale && (
             <span style={{ color: C.warn }} title="observed_at trails ingested_at by > 6h">
               ⏱ STALE
@@ -157,11 +166,134 @@ function FactRow({ f, showIncident }: { f: Fact; showIncident?: boolean }) {
   );
 }
 
+/* ---------------- adjudication + analyze ---------------- */
+
+function AnalyzeBox({ toast }: { toast: (m: string) => void }) {
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    if (!url.trim() || busy) return;
+    setBusy(true);
+    try {
+      const r = await analyzeUrl(url.trim());
+      toast(
+        `${r.claims} claims extracted (${r.facts.filter((f) => f.attribution === "attributed").length} auto-attributed, ${r.dropped} dropped)`,
+      );
+      setUrl("");
+    } catch (e) {
+      toast(`analyze failed: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div style={{ display: "flex", gap: 6, padding: "7px 9px", borderBottom: `1px solid ${C.line}` }}>
+      <input
+        value={url}
+        onChange={(e) => setUrl(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && run()}
+        placeholder="point AI at a URL — extract claims, check vs ledger…"
+        style={{
+          flex: 1,
+          background: C.bg,
+          border: `1px solid ${C.line}`,
+          borderRadius: 5,
+          color: C.txt,
+          fontFamily: font.mono,
+          fontSize: 10,
+          padding: "6px 8px",
+          outline: "none",
+        }}
+      />
+      <button
+        onClick={run}
+        style={{
+          background: busy ? C.faint : C.ember,
+          color: C.bg,
+          border: "none",
+          borderRadius: 5,
+          fontFamily: font.disp,
+          fontWeight: 700,
+          fontSize: 12,
+          letterSpacing: 1,
+          padding: "0 11px",
+          cursor: "pointer",
+        }}
+      >
+        {busy ? "…" : "ANALYZE"}
+      </button>
+    </div>
+  );
+}
+
+function AdjudicationStrip({
+  items,
+  onResolve,
+}: {
+  items: AdjudicationItem[];
+  onResolve: (factId: string, incidentId: string, name: string) => void;
+}) {
+  if (!items.length) return null;
+  return (
+    <div style={{ margin: "0 10px 10px", border: `1px solid ${C.violet}44`, borderRadius: 7, background: C.panel }}>
+      <div style={{ fontFamily: font.disp, fontSize: 12, letterSpacing: 2, color: C.violet, padding: "7px 11px 3px" }}>
+        ADJUDICATION QUEUE · {items.length} awaiting attribution
+      </div>
+      <div style={{ maxHeight: 180, overflowY: "auto" }}>
+        {items.map(({ fact, candidates }) => (
+          <div key={fact.id} style={{ padding: "6px 11px", borderTop: `1px solid ${C.line}44` }}>
+            <div style={{ fontSize: 11.5 }}>{fact.content}</div>
+            <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint }}>
+                T{fact.tier} · {fact.source_name} · attach to:
+              </span>
+              {candidates.slice(0, 3).map((c) => (
+                <span
+                  key={c.incident_id}
+                  onClick={() => onResolve(fact.id, c.incident_id, c.incident_name)}
+                  title={`name ${c.name_score} · geo ${c.geo_score} · time ${c.time_score}`}
+                  style={{
+                    fontFamily: font.mono,
+                    fontSize: 9,
+                    padding: "2px 8px",
+                    borderRadius: 3,
+                    cursor: "pointer",
+                    border: `1px solid ${C.violet}`,
+                    color: C.violet,
+                  }}
+                >
+                  {c.incident_name} · {Math.round(c.score * 100)}%
+                </span>
+              ))}
+              {!candidates.length && (
+                <span style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint }}>
+                  no candidates scored — leave for Phase 5 watch board
+                </span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- OPS mode ---------------- */
 
-function OpsMode() {
+function OpsMode({ toast }: { toast: (m: string) => void }) {
   const incidents = usePolling(fetchIncidents);
   const intake = usePolling(fetchIntake);
+  const adjudication = usePolling(fetchAdjudication);
+  const [resolved, setResolved] = useState<Record<string, boolean>>({});
+  const onResolve = async (factId: string, incidentId: string, name: string) => {
+    try {
+      await resolveAdjudication(factId, incidentId);
+      setResolved((s) => ({ ...s, [factId]: true }));
+      toast(`fact attributed to ${name}`);
+    } catch (e) {
+      toast(`resolve failed: ${e instanceof Error ? e.message : e}`);
+    }
+  };
   const [selected, setSelected] = useState<string | null>(null);
   const [tiers, setTiers] = useState<Record<number, boolean>>({ 1: true, 2: true, 3: true, 4: true, 5: true });
   const [kw, setKw] = useState("");
@@ -254,8 +386,13 @@ function OpsMode() {
 
       {/* incident list */}
       <div style={{ background: C.bg, display: "flex", flexDirection: "column", minHeight: 0 }}>
+        <AnalyzeBox toast={toast} />
         <SectionLabel>ACTIVE INCIDENTS — CALIFORNIA (map lands in Phase 3)</SectionLabel>
         <div style={{ flex: 1, overflowY: "auto", padding: "0 10px 10px" }}>
+          <AdjudicationStrip
+            items={(adjudication ?? []).filter((it) => !resolved[it.fact.id])}
+            onResolve={onResolve}
+          />
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 8 }}>
             {(incidents ?? []).map((inc) => (
               <div
@@ -463,6 +600,11 @@ export default function Workstation() {
   const [mode, setMode] = useState("ops");
   const health = usePolling(fetchHealth);
   const [clock, setClock] = useState("");
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const toast = useCallback((m: string) => {
+    setToastMsg(m);
+    setTimeout(() => setToastMsg(null), 4000);
+  }, []);
   useEffect(() => {
     const tick = () =>
       setClock(
@@ -553,9 +695,32 @@ export default function Workstation() {
         )}
       </div>
 
-      {mode === "ops" && <OpsMode />}
+      {mode === "ops" && <OpsMode toast={toast} />}
       {mode === "archive" && <ArchiveMode />}
       {mode === "sources" && <SourcesMode />}
+
+      {toastMsg && (
+        <div
+          className="tr-in"
+          style={{
+            position: "fixed",
+            bottom: 18,
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: C.panelUp,
+            border: `1px solid ${C.ok}66`,
+            color: C.txt,
+            fontFamily: font.mono,
+            fontSize: 11,
+            padding: "9px 16px",
+            borderRadius: 7,
+            boxShadow: "0 8px 30px #000c",
+            zIndex: 50,
+          }}
+        >
+          ✓ {toastMsg}
+        </div>
+      )}
     </div>
   );
 }

@@ -77,7 +77,8 @@ def fetch(
                         raise FetchError("redirect with no Location")
                     current = str(httpx.URL(current).join(location))
                     continue
-                resp.raise_for_status()
+                if resp.status_code >= 400:
+                    raise FetchError(f"HTTP {resp.status_code} from {current}")
                 content_type = resp.headers.get("content-type", "").split(";")[0].strip()
                 if accept_types and content_type not in accept_types:
                     raise FetchError(f"unexpected content-type {content_type!r} from {current}")

@@ -12,6 +12,7 @@ x-backend: &backend
     TOAST_DATA_DIR: /data
   volumes:
     - ./data:/data
+    - ./prompts:/app/prompts:ro   # versioned prompts read at runtime
   restart: unless-stopped
 
 services:

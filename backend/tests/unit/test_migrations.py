@@ -4,7 +4,7 @@ from toast.core.db import apply_migrations, connect
 def test_migrations_apply_and_are_idempotent(tmp_path):
     conn = connect(tmp_path / "m.db")
     first = apply_migrations(conn)
-    assert first == [1, 2]
+    assert first == [1, 2, 3, 4]
     assert apply_migrations(conn) == []  # second run is a no-op
 
     tables = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -26,6 +26,7 @@ def test_migrations_apply_and_are_idempotent(tmp_path):
         "alert_rules",
         "alert_deliveries",
         "jobs",
+        "fact_assessments",
         "schema_migrations",
     }
     assert expected <= tables

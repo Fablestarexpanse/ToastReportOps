@@ -25,6 +25,7 @@ def upsert_incident_by_irwin(
     lat: float | None,
     lon: float | None,
     county: str | None,
+    incident_type: str | None = None,
 ) -> tuple[str, bool]:
     """Returns (incident_id, created)."""
     row = conn.execute("SELECT id FROM incidents WHERE irwin_id = ?", (irwin_id,)).fetchone()
@@ -32,17 +33,18 @@ def upsert_incident_by_irwin(
     if row is not None:
         conn.execute(
             """UPDATE incidents SET canonical_name = ?, lat = COALESCE(?, lat),
-               lon = COALESCE(?, lon), county = COALESCE(?, county), updated_at = ?
+               lon = COALESCE(?, lon), county = COALESCE(?, county),
+               incident_type = COALESCE(?, incident_type), updated_at = ?
                WHERE id = ?""",
-            (name, lat, lon, county, now, row["id"]),
+            (name, lat, lon, county, incident_type, now, row["id"]),
         )
         return row["id"], False
     incident_id = ulid()
     conn.execute(
         """INSERT INTO incidents (id, canonical_name, status, lat, lon, county, irwin_id,
-                                  created_at, updated_at)
-           VALUES (?, ?, 'active', ?, ?, ?, ?, ?, ?)""",
-        (incident_id, name, lat, lon, county, irwin_id, now, now),
+                                  incident_type, created_at, updated_at)
+           VALUES (?, ?, 'active', ?, ?, ?, ?, ?, ?, ?)""",
+        (incident_id, name, lat, lon, county, irwin_id, incident_type, now, now),
     )
     conn.execute(
         """INSERT INTO incident_events (id, incident_id, event, detail, actor, at)
