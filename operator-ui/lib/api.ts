@@ -93,6 +93,8 @@ export type WatchCandidate = {
   fact_ids: string[];
   samples: { content: string; tier: number; observed_at: string }[];
   verdict: WatchVerdict | null;
+  geo_source: "reported" | "named_feature" | null;
+  geo_place: string | null;
 };
 
 export type WatchVerdict = {
@@ -617,6 +619,14 @@ export type BackupStatus = {
   at_risk: boolean;
   snapshot_dir: string;
 };
+
+export const fetchGnis = () => get<{ features: number }>("/gnis");
+
+export async function loadGnis(): Promise<{ job_id: string }> {
+  const res = await fetch("/api/gnis/load", { method: "POST" });
+  if (!res.ok) throw new Error(`load failed (${res.status})`);
+  return res.json();
+}
 
 export async function fetchBackups(): Promise<BackupStatus> {
   return get<BackupStatus>("/backups");

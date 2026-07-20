@@ -5,7 +5,9 @@ import {
   BackupStatus,
   SettingEntry,
   fetchBackups,
+  fetchGnis,
   fetchSettings,
+  loadGnis,
   runBackup,
   saveSettings,
 } from "@/lib/api";
@@ -55,6 +57,60 @@ const CHOICES: Record<string, { value: string; label: string }[]> = {
     { value: "oldest", label: "OLDEST FIRST" },
   ],
 };
+
+/* GNIS gazetteer — public domain, no key. Without it the attribution scorer's
+   geo term is dead weight on every media fact. */
+function GnisSection({ toast }: { toast: (m: string) => void }) {
+  const [features, setFeatures] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setFeatures((await fetchGnis()).features);
+    } catch {}
+  }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const run = async () => {
+    setBusy(true);
+    try {
+      await loadGnis();
+      toast("downloading place names — this takes about a minute");
+      setTimeout(load, 45000);
+    } catch (e) {
+      toast(`load failed: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (features === null) return null;
+  return (
+    <div style={{ padding: "9px 0", borderBottom: `1px solid ${C.line}44` }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ width: 7, height: 7, borderRadius: 4, background: features ? C.ok : C.warn }} />
+        <span style={{ fontFamily: font.mono, fontSize: 9.5, color: C.dim }}>
+          {features
+            ? `${features.toLocaleString()} California place names loaded`
+            : "not loaded — place names cannot be geocoded"}
+        </span>
+        <button
+          onClick={run}
+          disabled={busy}
+          style={{ marginLeft: "auto", background: features ? "transparent" : C.ok, color: features ? C.blue : C.bg, border: `1px solid ${features ? C.blue + "66" : "transparent"}`, borderRadius: 4, fontFamily: font.disp, fontWeight: 700, fontSize: 10.5, letterSpacing: 1, padding: "4px 10px", cursor: "pointer", whiteSpace: "nowrap" }}
+        >
+          {busy ? "LOADING…" : features ? "RELOAD" : "LOAD NOW"}
+        </button>
+      </div>
+      <div style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint, marginTop: 4 }}>
+        USGS gazetteer (public domain, no key) · turns “near Loyalton” into coordinates and places
+        newly-named fires · works offline once loaded
+      </div>
+    </div>
+  );
+}
 
 function BackupSection({ toast }: { toast: (m: string) => void }) {
   const [status, setStatus] = useState<BackupStatus | null>(null);
@@ -317,6 +373,11 @@ export default function SettingsPanel({
               API KEYS &amp; SERVICES
             </div>
             <CredentialsPanel toast={toast} />
+
+            <div style={{ fontFamily: font.disp, fontSize: 11, letterSpacing: 2, color: C.ember, marginTop: 14 }}>
+              PLACE NAMES (GNIS)
+            </div>
+            <GnisSection toast={toast} />
 
             <div style={{ fontFamily: font.disp, fontSize: 11, letterSpacing: 2, color: C.ember, marginTop: 14 }}>
               BACKUPS

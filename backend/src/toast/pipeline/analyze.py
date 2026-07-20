@@ -22,6 +22,7 @@ from toast.llm.client import LLMClient, client_for
 from toast.llm.extract import extract_claims
 from toast.pipeline.attribution import attribute_fact
 from toast.pipeline.confidence import initial_confidence
+from toast.pipeline.geocode import resolve_fire_name, resolve_place
 from toast.pipeline.ledger import write_fact
 
 MANUAL_SOURCE_NAME = "Operator: point-at-URL"
@@ -102,6 +103,17 @@ def extract_article(
 
     for claim in result.claims:
         confidence = initial_confidence(tier, claim.confidence)
+        # Give the claim coordinates when its location text names a real place.
+        # Without this the attribution scorer's geo term (weight 0.35) is dead
+        # weight on every media fact. A geocode that can't be pinned
+        # unambiguously returns None — a wrong pin is worse than no pin.
+        geo = None
+        if claim.location_text:
+            geo = resolve_place(conn, claim.location_text)
+        if geo is None and claim.incident_name:
+            geo = resolve_fire_name(conn, claim.incident_name)
+        if geo and _outside_california(geo.lat, geo.lon):
+            geo = None  # CA_BBOX backstop now has something to check
         fact_id = write_fact(
             conn,
             incident_id=None,
@@ -119,7 +131,19 @@ def extract_article(
                 "incident_name": claim.incident_name,
                 "location_text": claim.location_text,
                 "extractor_confidence": claim.confidence,
+                **(
+                    {
+                        "geocoded_to": geo.name,
+                        "geocode_class": geo.feature_class,
+                        "geocode_confidence": geo.confidence,
+                    }
+                    if geo
+                    else {}
+                ),
             },
+            lat=geo.lat if geo else None,
+            lon=geo.lon if geo else None,
+            geo_method=geo.method if geo else None,
             raw_ref=raw_ref,
             prompt_version=result.prompt_version,
         )

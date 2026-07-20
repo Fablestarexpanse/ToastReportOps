@@ -227,6 +227,14 @@ def build_site_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> Non
     get_logger("sitegen").info("site_built", **counts)
 
 
+@register("gnis_load")
+def gnis_load_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Load the USGS place-name gazetteer (public domain, no key)."""
+    from toast.pipeline.geocode import load_gnis
+
+    load_gnis(conn)
+
+
 @register("reassess")
 def reassess_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     """Re-run corroboration over already-embedded facts.

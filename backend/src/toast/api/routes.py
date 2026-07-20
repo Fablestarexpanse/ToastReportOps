@@ -189,6 +189,45 @@ def run_backup_now(request: Request) -> dict:
         raise HTTPException(500, f"backup failed: {exc}") from exc
 
 
+# ---------------- GNIS gazetteer ----------------
+
+
+@router.get("/gnis")
+def gnis_status(request: Request) -> dict:
+    """Gazetteer status — how many place names are loaded."""
+    from toast.pipeline.geocode import gnis_count
+
+    return {"features": gnis_count(_conn(request))}
+
+
+@router.post("/gnis/load")
+def gnis_load(request: Request) -> dict:
+    """Download and load the California place-name gazetteer (public domain,
+    no key). Runs as a job — it is a few seconds of work, not a request."""
+    from toast.queue import jobs
+
+    return {"ok": True, "job_id": jobs.enqueue(_conn(request), "gnis_load", {}, priority=8)}
+
+
+@router.get("/gnis/resolve")
+def gnis_resolve(request: Request, q: str, county: str | None = None) -> dict:
+    """Look up a place or fire name — useful for checking what the geocoder
+    will do before trusting it."""
+    from dataclasses import asdict
+
+    from toast.pipeline.geocode import resolve_fire_name, resolve_place
+
+    conn = _conn(request)
+    place = resolve_place(conn, q, county=county)
+    fire = resolve_fire_name(conn, q, county=county)
+    return {
+        "query": q,
+        "county": county,
+        "place": asdict(place) if place else None,
+        "as_fire_name": asdict(fire) if fire else None,
+    }
+
+
 # ---------------- API credentials ----------------
 
 

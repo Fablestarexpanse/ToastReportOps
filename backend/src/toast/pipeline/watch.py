@@ -57,6 +57,11 @@ class WatchCandidate:
     fact_ids: list[str] = field(default_factory=list)
     samples: list[dict[str, Any]] = field(default_factory=list)
     verdict: dict[str, Any] | None = None  # LLM age check, once one has been run
+    # 'reported' when a signal carried coordinates; 'named_feature' when the
+    # location was inferred from the fire's name. The UI must distinguish them:
+    # an inferred pin is an approximation, not an observation.
+    geo_source: str | None = None
+    geo_place: str | None = None
 
 
 def _active_incident_names(conn: sqlite3.Connection) -> list[tuple[str, list[str]]]:
@@ -122,6 +127,15 @@ def build_watchlist(
             continue
         sources = {f["source_id"] for f in facts}
         geo = next((f for f in facts if f["lat"] is not None and f["lon"] is not None), None)
+        county_hint = facts[0]["loc"] if facts[0]["loc"] else None
+        # No signal carried coordinates — try the fire's own name. CA fires are
+        # named after nearby features, so this can place a new start that no
+        # official source has listed yet.
+        named_place = None
+        if geo is None:
+            from toast.pipeline.geocode import resolve_fire_name
+
+            named_place = resolve_fire_name(conn, display, county=county_hint)
         latest = max(f["observed_at"] for f in facts)
         tiers = sorted({f["tier"] for f in facts})
         # score: distinct sources dominate (real cross-checking), signal volume
@@ -139,9 +153,9 @@ def build_watchlist(
                 fact_count=len(facts),
                 latest_observed=latest,
                 tiers=tiers,
-                lat=geo["lat"] if geo else None,
-                lon=geo["lon"] if geo else None,
-                county=(facts[0]["loc"] if facts[0]["loc"] else None),
+                lat=geo["lat"] if geo else (named_place.lat if named_place else None),
+                lon=geo["lon"] if geo else (named_place.lon if named_place else None),
+                county=county_hint or (named_place.county if named_place else None),
                 score=round(score, 2),
                 state=state,
                 fact_ids=[f["id"] for f in facts],
@@ -150,6 +164,8 @@ def build_watchlist(
                     for f in facts[:4]
                 ],
                 verdict=(triaged.get(key) or {}).get("verdict"),
+                geo_source=("reported" if geo else ("named_feature" if named_place else None)),
+                geo_place=(named_place.name if named_place and not geo else None),
             )
         )
     candidates.sort(

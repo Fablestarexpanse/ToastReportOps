@@ -134,6 +134,14 @@ export default function WatchMode({ toast }: { toast: (m: string) => void }) {
               {c.source_count} source{c.source_count === 1 ? "" : "s"} · {c.fact_count} signals · last{" "}
               {fmtTime(c.latest_observed)}
             </div>
+            {c.geo_source === "named_feature" && (
+              <div
+                title="no source gave coordinates — this position is inferred from the fire's name and is approximate"
+                style={{ fontFamily: font.mono, fontSize: 8.5, color: C.warn, marginTop: 2 }}
+              >
+                ≈ location inferred from “{c.geo_place}” — approximate
+              </div>
+            )}
 
             {/* corroboration bar */}
             <div style={{ marginTop: 10, height: 5, borderRadius: 3, background: C.line, overflow: "hidden" }}>
