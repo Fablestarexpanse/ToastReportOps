@@ -6,6 +6,8 @@ import {
   DraftDetail,
   Incident,
   ResearchJob,
+  cancelResearch,
+  createSocialDraft,
   fetchDraft,
   fetchDrafts,
   fetchIncidents,
@@ -17,6 +19,14 @@ import { C, TIER, font } from "@/lib/theme";
 
 const statusColor = (s: string) =>
   s.startsWith("published") ? C.ok : s === "needs_review" ? C.warn : s === "approved" ? C.blue : s === "rejected" ? C.evac : C.dim;
+
+const KIND_BADGE: Record<string, [string, string]> = {
+  update: ["UPDATE", C.ember],
+  analysis: ["RESEARCH", C.violet],
+  social: ["SOCIAL", C.blue],
+  summary: ["SUMMARY", C.dim],
+  correction: ["CORRECTION", C.evac],
+};
 
 const WINDOWS: [string, number | null][] = [
   ["Full incident", null],
@@ -34,7 +44,9 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
   const [genIncident, setGenIncident] = useState<string>("");
   const [genWindow, setGenWindow] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const [socialBusy, setSocialBusy] = useState(false);
   const [bodyEdit, setBodyEdit] = useState("");
+  const [titleEdit, setTitleEdit] = useState("");
 
   const refresh = useCallback(async () => {
     const [d, inc] = await Promise.all([fetchDrafts(), fetchIncidents()]);
@@ -67,6 +79,7 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
     fetchDraft(selId).then((d) => {
       setDetail(d);
       setBodyEdit(d.draft.body_md);
+      setTitleEdit(d.draft.title ?? "");
     });
   }, [selId]);
 
@@ -89,9 +102,29 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
 
   const save = async () => {
     if (!detail) return;
-    await saveDraft(detail.draft.id, { body_md: bodyEdit });
+    await saveDraft(detail.draft.id, { body_md: bodyEdit, title: titleEdit || undefined });
     toast("saved");
     refresh();
+  };
+
+  const copyBody = async () => {
+    await navigator.clipboard.writeText(bodyEdit);
+    toast("copied to clipboard");
+  };
+
+  const makeSocial = async () => {
+    if (!detail || socialBusy) return;
+    setSocialBusy(true);
+    try {
+      const r = await createSocialDraft(detail.draft.id);
+      toast(`social version drafted (${r.post_chars} chars + ${r.short_chars}-char short)`);
+      await refresh();
+      setSelId(r.draft_id);
+    } catch (e) {
+      toast(`social rewrite failed: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setSocialBusy(false);
+    }
   };
 
   const advance = async (status: string) => {
@@ -181,8 +214,24 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
                   >
                     {cfg.icon}
                   </span>
-                  <span style={{ fontSize: 11.5, fontWeight: 600, lineHeight: 1.3, minWidth: 0 }}>
+                  <span style={{ fontSize: 11.5, fontWeight: 600, lineHeight: 1.3, minWidth: 0, flex: 1 }}>
                     {r.incident_name ? `${r.incident_name} — deep research` : r.query.slice(0, 60)}
+                  </span>
+                  <span
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      try {
+                        await cancelResearch(r.key);
+                        toast(r.state === "failed" ? "dismissed" : "research cancelled");
+                        refresh();
+                      } catch (err) {
+                        toast(`cancel failed: ${err instanceof Error ? err.message : err}`);
+                      }
+                    }}
+                    title={r.state === "failed" ? "dismiss" : "cancel this research run"}
+                    style={{ color: C.faint, cursor: "pointer", fontSize: 12, padding: "0 3px" }}
+                  >
+                    ✕
                   </span>
                 </div>
                 <div style={{ fontFamily: font.mono, fontSize: 8.5, color: cfg.color, marginTop: 3 }}>
@@ -204,7 +253,26 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
               className="tr-row"
               style={{ padding: "9px 12px", borderLeft: `3px solid ${dr.id === selId ? C.ember : "transparent"}`, background: dr.id === selId ? C.panelUp : undefined, cursor: "pointer", borderBottom: `1px solid ${C.line}55` }}
             >
-              <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.3 }}>{dr.title || "untitled"}</div>
+              <div style={{ display: "flex", gap: 6, alignItems: "baseline" }}>
+                <span
+                  style={{
+                    fontFamily: font.mono,
+                    fontSize: 7.5,
+                    fontWeight: 700,
+                    letterSpacing: 0.5,
+                    color: (KIND_BADGE[dr.kind] ?? KIND_BADGE.update)[1],
+                    border: `1px solid ${(KIND_BADGE[dr.kind] ?? KIND_BADGE.update)[1]}55`,
+                    borderRadius: 3,
+                    padding: "1px 4px",
+                    flexShrink: 0,
+                  }}
+                >
+                  {(KIND_BADGE[dr.kind] ?? KIND_BADGE.update)[0]}
+                </span>
+                <span style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.3, minWidth: 0 }}>
+                  {dr.title || "untitled"}
+                </span>
+              </div>
               <div style={{ fontFamily: font.mono, fontSize: 9, marginTop: 3, display: "flex", gap: 8 }}>
                 <span style={{ color: statusColor(dr.status) }}>{dr.status.toUpperCase().replace("_", " ")}</span>
                 <span style={{ color: C.faint }}>{dr.incident_name}</span>
@@ -230,10 +298,15 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
         {d && (
           <>
             <div style={{ padding: "10px 16px", borderBottom: `1px solid ${C.line}`, display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontFamily: font.disp, fontSize: 16, fontWeight: 700, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {d.title}
-              </span>
-              <span style={{ fontFamily: font.mono, fontSize: 9, color: statusColor(d.status), border: `1px solid ${statusColor(d.status)}`, borderRadius: 3, padding: "2px 7px" }}>
+              <input
+                value={titleEdit}
+                onChange={(e) => setTitleEdit(e.target.value)}
+                readOnly={d.status === "published"}
+                style={{ fontFamily: font.disp, fontSize: 16, fontWeight: 700, flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", color: C.txt, borderBottom: `1px dashed transparent` }}
+                onFocus={(e) => (e.target.style.borderBottom = `1px dashed ${C.line}`)}
+                onBlur={(e) => (e.target.style.borderBottom = "1px dashed transparent")}
+              />
+              <span style={{ fontFamily: font.mono, fontSize: 9, color: statusColor(d.status), border: `1px solid ${statusColor(d.status)}`, borderRadius: 3, padding: "2px 7px", flexShrink: 0 }}>
                 {d.status.toUpperCase().replace("_", " ")}
               </span>
             </div>
@@ -249,10 +322,18 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
                 [#id] citations reference the ledger facts below · evacuation text is verbatim from officials
               </div>
             </div>
-            <div style={{ padding: "10px 16px", borderTop: `1px solid ${C.line}`, display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ padding: "10px 16px", borderTop: `1px solid ${C.line}`, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <button onClick={save} disabled={d.status === "published"} style={{ background: C.panelUp, color: C.txt, border: `1px solid ${C.line}`, borderRadius: 5, fontFamily: font.disp, fontWeight: 600, fontSize: 12, letterSpacing: 1, padding: "7px 14px", cursor: "pointer" }}>
                 SAVE
               </button>
+              <button onClick={copyBody} title="copy the full text to clipboard" style={{ background: C.panelUp, color: C.txt, border: `1px solid ${C.line}`, borderRadius: 5, fontFamily: font.disp, fontWeight: 600, fontSize: 12, letterSpacing: 1, padding: "7px 14px", cursor: "pointer" }}>
+                ⧉ COPY
+              </button>
+              {d.kind !== "social" && (
+                <button onClick={makeSocial} title="rewrite in a human voice for posting (full + X-length)" style={{ background: C.panelUp, color: C.blue, border: `1px solid ${C.blue}55`, borderRadius: 5, fontFamily: font.disp, fontWeight: 600, fontSize: 12, letterSpacing: 1, padding: "7px 14px", cursor: "pointer" }}>
+                  {socialBusy ? "…" : "✍ SOCIAL VERSION"}
+                </button>
+              )}
               <span style={{ fontFamily: font.mono, fontSize: 9, color: C.faint }}>AI drafts · you approve · nothing publishes itself</span>
               {nextActions.map(([status, label, color]) => (
                 <button

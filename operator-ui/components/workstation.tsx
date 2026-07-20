@@ -21,6 +21,7 @@ import {
   startResearch,
 } from "@/lib/api";
 import { C, TIER, TIER_TITLES, confColor, font } from "@/lib/theme";
+import AlertBell from "@/components/alerts";
 import MapPanel from "@/components/map-panel";
 import NewsroomMode from "@/components/newsroom";
 import WatchMode from "@/components/watch";
@@ -937,6 +938,7 @@ export default function Workstation() {
           ))}
         </div>
         <div style={{ flex: 1 }} />
+        <AlertBell />
         <div style={{ fontFamily: font.mono, fontSize: 10, color: C.dim }}>{clock}</div>
         {dots.map(([label, ok]) => (
           <div

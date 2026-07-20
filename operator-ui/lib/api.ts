@@ -100,6 +100,7 @@ export type Draft = {
   incident_id: string | null;
   incident_name: string | null;
   kind: string;
+  parent_id: string | null;
   status: "draft" | "needs_review" | "approved" | "published" | "rejected";
   title: string | null;
   window_start: string | null;
@@ -160,6 +161,12 @@ export const generateDraft = (incidentId: string, window?: { window_start?: stri
 
 export const transitionDraft = (id: string, status: string) =>
   post<{ status: string }>(`/drafts/${id}/status`, { status });
+
+export const createSocialDraft = (id: string) =>
+  post<{ draft_id: string; post_chars: number; short_chars: number }>(`/drafts/${id}/social`, {});
+
+export const cancelResearch = (key: string) =>
+  post<{ cancelled_jobs: number }>("/research/cancel", { key });
 
 export async function saveDraft(id: string, body: { body_md?: string; title?: string }): Promise<void> {
   const res = await fetch(`/api/drafts/${id}`, {

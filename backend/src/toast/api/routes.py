@@ -243,6 +243,32 @@ def start_research(request: Request, body: dict) -> dict:
     return {"queued": True, "job_id": job_id}
 
 
+@router.post("/research/cancel")
+def cancel_research(request: Request, body: dict) -> dict:
+    """Cancel/dismiss a research run: pending jobs are closed out (audit trail
+    kept in last_error); a failed entry is dismissed the same way."""
+    key = (body.get("key") or "").strip()
+    if not key:
+        raise HTTPException(400, "key required")
+    conn = _conn(request)
+    cancelled = 0
+    for row in conn.execute(
+        """SELECT id, payload FROM jobs
+           WHERE stage IN ('deep_research', 'deep_research_poll')
+             AND state IN ('queued', 'running', 'dead')"""
+    ).fetchall():
+        payload = json.loads(row["payload"])
+        if (payload.get("research_id") or payload.get("query")) == key:
+            conn.execute(
+                "UPDATE jobs SET state='done', last_error='cancelled by operator' WHERE id = ?",
+                (row["id"],),
+            )
+            cancelled += 1
+    if not cancelled:
+        raise HTTPException(404, "no matching research run")
+    return {"ok": True, "cancelled_jobs": cancelled}
+
+
 # ---------------- newsroom: drafts ----------------
 
 DRAFT_TRANSITIONS = {
@@ -286,7 +312,7 @@ def list_drafts(request: Request, status: str | None = None) -> dict:
     rows = conn.execute(
         f"""SELECT d.id, d.incident_id, d.kind, d.status, d.title, d.window_start,
                d.window_end, d.approved_by, d.approved_at, d.created_at, d.updated_at,
-               i.canonical_name AS incident_name,
+               d.parent_id, i.canonical_name AS incident_name,
                json_array_length(d.cited_fact_ids) AS cited_count
         FROM drafts d LEFT JOIN incidents i ON i.id = d.incident_id
         {where}
@@ -366,6 +392,22 @@ def get_draft(request: Request, draft_id: str) -> dict:
             )
         ]
     return {"draft": draft, "cited_facts": cited}
+
+
+@router.post("/drafts/{draft_id}/social")
+def create_social(request: Request, draft_id: str) -> dict:
+    """Second writing layer: rewrite a report draft in a human voice for
+    posting (full + X-length). Lands as a linked kind='social' draft."""
+    from toast.core.fetch import FetchError
+    from toast.llm.client import LLMError
+    from toast.pipeline.social import generate_social
+
+    try:
+        return generate_social(_conn(request), draft_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except (LLMError, FetchError) as exc:
+        raise HTTPException(503, f"LLM unavailable: {exc}") from exc
 
 
 @router.put("/drafts/{draft_id}")
