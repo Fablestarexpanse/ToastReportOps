@@ -364,9 +364,14 @@ export default function SettingsPanel({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{ width: 460, maxHeight: "80vh", overflowY: "auto", background: C.panelUp, border: `1px solid ${C.line}`, borderRadius: 9, boxShadow: "0 20px 60px #000c", padding: "14px 16px" }}
+        /* The panel grew past what it could show: ~1500px of content in a
+           576px box, so most of it — and SAVE/CANCEL — sat below the fold with
+           no sign they were there. Taller and wider, with the title and the
+           buttons pinned, so the scroll is inside the body and the actions are
+           always reachable. */
+        style={{ width: 560, maxWidth: "94vw", height: "88vh", display: "flex", flexDirection: "column", background: C.panelUp, border: `1px solid ${C.line}`, borderRadius: 9, boxShadow: "0 20px 60px #000c" }}
       >
-        <div style={{ display: "flex", alignItems: "baseline", marginBottom: 4 }}>
+        <div style={{ display: "flex", alignItems: "baseline", padding: "14px 16px 8px", borderBottom: `1px solid ${C.line}`, flexShrink: 0 }}>
           <span style={{ fontFamily: font.disp, fontSize: 18, fontWeight: 700, letterSpacing: 1.5 }}>
             OPTIONS
           </span>
@@ -378,6 +383,8 @@ export default function SettingsPanel({
           <div style={{ fontFamily: font.mono, fontSize: 10, color: C.faint, padding: 12 }}>loading…</div>
         ) : (
           <>
+            {/* only the body scrolls — the title above and the buttons below stay put */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "0 16px 14px", minHeight: 0 }}>
             <div style={{ fontFamily: font.disp, fontSize: 11, letterSpacing: 2, color: C.ember, marginTop: 10 }}>
               DISPLAY
             </div>
@@ -432,7 +439,11 @@ export default function SettingsPanel({
             </div>
             <BackupSection toast={toast} />
 
-            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+            </div>
+
+            <div
+              style={{ display: "flex", gap: 8, padding: "10px 16px", borderTop: `1px solid ${C.line}`, background: C.panelUp, flexShrink: 0 }}
+            >
               <button
                 onClick={save}
                 disabled={busy}
