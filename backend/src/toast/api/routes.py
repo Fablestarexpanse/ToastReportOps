@@ -844,10 +844,46 @@ def list_sources(request: Request) -> dict:
         .execute(
             """SELECT s.id, s.name, s.type, s.adapter, s.tier, s.schedule, s.enabled,
                   s.tos_notes, s.cursor,
-                  COUNT(f.id) AS fact_count, MAX(f.ingested_at) AS last_fact_at
-           FROM sources s LEFT JOIN facts f ON f.source_id = s.id
+                  COUNT(f.id) AS fact_count, MAX(f.ingested_at) AS last_fact_at,
+                  st.lead_time_median_s, st.superseded_rate, st.yield_facts_per_day,
+                  st.suggested_tier, st.computed_at AS stats_computed_at
+           FROM sources s
+           LEFT JOIN facts f ON f.source_id = s.id
+           LEFT JOIN source_stats st ON st.source_id = s.id
            GROUP BY s.id ORDER BY s.tier, s.name"""
         )
         .fetchall()
     )
     return {"sources": [dict(r) for r in rows]}
+
+
+@router.post("/sources/{source_id}/tier")
+def set_source_tier(request: Request, source_id: str, body: dict) -> dict:
+    """Operator approves a tier change. Past facts keep the tier they were
+    written with — a promotion never rewrites history."""
+    from toast.pipeline.trust import apply_tier
+
+    try:
+        return apply_tier(_conn(request), source_id, int(body.get("tier", 0)))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/sources/{source_id}/tier/dismiss")
+def dismiss_tier_suggestion(request: Request, source_id: str) -> dict:
+    from toast.pipeline.trust import dismiss_suggestion
+
+    dismiss_suggestion(_conn(request), source_id)
+    return {"ok": True}
+
+
+@router.post("/sources/stats/recompute")
+def recompute_source_stats(request: Request) -> dict:
+    """Run the trust loop now instead of waiting for the nightly job."""
+    from toast.pipeline.trust import compute_source_stats
+
+    stats = compute_source_stats(_conn(request))
+    return {
+        "computed": len(stats),
+        "suggestions": [s for s in stats if s["suggested_tier"] is not None],
+    }

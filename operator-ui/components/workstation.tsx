@@ -8,6 +8,7 @@ import {
   Incident,
   Note,
   ProbeResult,
+  Source,
   SourceSuggestion,
   addNote,
   analyzeUrl,
@@ -27,9 +28,12 @@ import {
   fetchTimeline,
   followIncident,
   importFire,
+  dismissTierSuggestion,
   probeSource,
+  recomputeSourceStats,
   resolveAdjudication,
   searchFires,
+  setSourceTier,
   startResearch,
   toggleNote,
 } from "@/lib/api";
@@ -1249,10 +1253,79 @@ function SuggestedSources({ toast, onAdded }: { toast: (m: string) => void; onAd
   );
 }
 
+/* Trust: how a source has actually performed. Lead time is measured against
+   the official record on the same incident+kind; correction rate is how often
+   a higher tier had to supersede it. */
+function TrustCells({ s }: { s: Source }) {
+  const lead = s.lead_time_median_s;
+  const corr = s.superseded_rate;
+  const leadLabel =
+    lead == null
+      ? "—"
+      : lead >= 3600
+        ? `+${(lead / 3600).toFixed(1)}h`
+        : lead >= 0
+          ? `+${Math.round(lead / 60)}m`
+          : `${Math.round(lead / 60)}m`;
+  return (
+    <>
+      <span
+        style={{ fontFamily: font.mono, fontSize: 10, color: lead == null ? C.faint : lead > 0 ? C.ok : C.dim }}
+        title="median lead over the official record on the same incident + kind"
+      >
+        {leadLabel}
+      </span>
+      <span
+        style={{ fontFamily: font.mono, fontSize: 10, color: corr == null ? C.faint : corr > 0.2 ? C.evac : corr > 0.05 ? C.warn : C.ok }}
+        title="share of this source's facts a higher tier had to correct"
+      >
+        {corr == null ? "—" : `${Math.round(corr * 100)}%`}
+      </span>
+      <span style={{ fontFamily: font.mono, fontSize: 10, color: C.dim }} title="facts per day (30-day window)">
+        {s.yield_facts_per_day == null ? "—" : s.yield_facts_per_day.toFixed(1)}
+      </span>
+    </>
+  );
+}
+
 function SourcesMode({ toast }: { toast: (m: string) => void }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const sources = usePolling(fetchSources, [refreshKey]);
-  const cols = "2.2fr .7fr .5fr .8fr .8fr 1.1fr .7fr";
+  const [busy, setBusy] = useState(false);
+  const cols = "1.9fr .6fr .5fr .7fr .6fr .7fr .6fr .6fr .6fr .9fr";
+  const bump = () => setRefreshKey((k) => k + 1);
+
+  const recompute = async () => {
+    setBusy(true);
+    try {
+      const r = await recomputeSourceStats();
+      toast(`trust recomputed for ${r.computed} sources — ${r.suggestions.length} suggestion(s)`);
+      bump();
+    } catch (e) {
+      toast(`recompute failed: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const approve = async (s: Source) => {
+    if (s.suggested_tier == null) return;
+    try {
+      await setSourceTier(s.id, s.suggested_tier);
+      toast(`${s.name}: T${s.tier} → T${s.suggested_tier}`);
+      bump();
+    } catch (e) {
+      toast(`tier change failed: ${e instanceof Error ? e.message : e}`);
+    }
+  };
+
+  const dismiss = async (s: Source) => {
+    await dismissTierSuggestion(s.id);
+    bump();
+  };
+
+  const computedAt = (sources ?? []).find((s) => s.stats_computed_at)?.stats_computed_at ?? null;
+
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: 18 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 12 }}>
@@ -1260,7 +1333,13 @@ function SourcesMode({ toast }: { toast: (m: string) => void }) {
           SOURCE MANAGER
         </span>
         <span style={{ fontFamily: font.mono, fontSize: 10, color: C.dim }}>
-          trust is earned — add feeds below; performance-based promotions land in Phase 5
+          trust is earned — measured nightly{computedAt ? ` · last ${fmtStamp(computedAt)}` : ""}
+        </span>
+        <span
+          onClick={busy ? undefined : recompute}
+          style={{ marginLeft: "auto", fontFamily: font.mono, fontSize: 9, cursor: busy ? "default" : "pointer", color: busy ? C.faint : C.blue, border: `1px solid ${busy ? C.line : C.blue}66`, borderRadius: 4, padding: "3px 9px" }}
+        >
+          {busy ? "MEASURING…" : "↻ RECOMPUTE TRUST"}
         </span>
       </div>
       <AddSource toast={toast} onAdded={() => setRefreshKey((k) => k + 1)} />
@@ -1278,7 +1357,12 @@ function SourcesMode({ toast }: { toast: (m: string) => void }) {
             borderBottom: `1px solid ${C.line}`,
           }}
         >
-          <span>SOURCE</span><span>TYPE</span><span>TIER</span><span>POLL</span><span>ENABLED</span><span>FACTS</span><span>LAST</span>
+          <span>SOURCE</span><span>TYPE</span><span>TIER</span><span>POLL</span><span>ON</span>
+          <span>FACTS</span>
+          <span title="median lead over official reporting">LEAD</span>
+          <span title="corrected by a higher tier">CORR</span>
+          <span title="facts per day">YIELD</span>
+          <span>LAST</span>
         </div>
         {(sources ?? []).map((s) => (
           <div
@@ -1302,7 +1386,21 @@ function SourcesMode({ toast }: { toast: (m: string) => void }) {
               )}
             </span>
             <span style={{ fontFamily: font.mono, fontSize: 10, color: C.dim }}>{s.type.toUpperCase()}</span>
-            <span style={{ fontFamily: font.mono, fontSize: 10.5, color: TIER[s.tier] }}>T{s.tier}</span>
+            <span style={{ fontFamily: font.mono, fontSize: 10.5, color: TIER[s.tier], display: "flex", gap: 4, alignItems: "center" }}>
+              T{s.tier}
+              {s.suggested_tier != null && (
+                <span
+                  title={
+                    s.suggested_tier < s.tier
+                      ? "earned a promotion — fast and rarely corrected"
+                      : "corrected too often — suggested demotion"
+                  }
+                  style={{ color: s.suggested_tier < s.tier ? C.ok : C.warn, fontSize: 9 }}
+                >
+                  {s.suggested_tier < s.tier ? "↑" : "↓"}T{s.suggested_tier}
+                </span>
+              )}
+            </span>
             <span style={{ fontFamily: font.mono, fontSize: 10, color: C.dim }}>
               {s.schedule ? `${s.schedule}s` : "stream"}
             </span>
@@ -1310,7 +1408,28 @@ function SourcesMode({ toast }: { toast: (m: string) => void }) {
               {s.enabled ? "ON" : "OFF"}
             </span>
             <span style={{ fontFamily: font.mono, fontSize: 10, color: C.dim }}>{s.fact_count}</span>
-            <span style={{ fontFamily: font.mono, fontSize: 10, color: C.dim }}>{fmtTime(s.last_fact_at)}</span>
+            <TrustCells s={s} />
+            <span style={{ display: "flex", gap: 5, alignItems: "center" }}>
+              {s.suggested_tier != null ? (
+                <>
+                  <span
+                    onClick={() => approve(s)}
+                    style={{ fontFamily: font.mono, fontSize: 8.5, cursor: "pointer", color: C.bg, background: C.ok, borderRadius: 3, padding: "2px 6px" }}
+                  >
+                    APPROVE
+                  </span>
+                  <span
+                    onClick={() => dismiss(s)}
+                    title="keep the current tier"
+                    style={{ fontFamily: font.mono, fontSize: 8.5, cursor: "pointer", color: C.dim }}
+                  >
+                    ✕
+                  </span>
+                </>
+              ) : (
+                <span style={{ fontFamily: font.mono, fontSize: 10, color: C.dim }}>{fmtTime(s.last_fact_at)}</span>
+              )}
+            </span>
           </div>
         ))}
       </div>

@@ -219,6 +219,18 @@ def build_site_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> Non
     get_logger("sitegen").info("site_built", **counts)
 
 
+@register("trust")
+def trust_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Nightly: recompute what each source has actually earned."""
+    from toast.pipeline.trust import compute_source_stats
+
+    stats = compute_source_stats(conn)
+    suggestions = [s for s in stats if s["suggested_tier"] is not None]
+    get_logger("trust").info(
+        "source_stats_computed", sources=len(stats), suggestions=len(suggestions)
+    )
+
+
 @register("backup")
 def backup_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     """Nightly verified snapshot (+ offsite when B2 credentials exist)."""

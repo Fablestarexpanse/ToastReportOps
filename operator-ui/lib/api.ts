@@ -48,6 +48,14 @@ export type Fact = {
   source_url: string | null;
 };
 
+export type SourceStats = {
+  lead_time_median_s: number | null;
+  superseded_rate: number | null;
+  yield_facts_per_day: number | null;
+  suggested_tier: number | null;
+  stats_computed_at: string | null;
+};
+
 export type Source = {
   id: string;
   name: string;
@@ -60,7 +68,7 @@ export type Source = {
   cursor: string | null;
   fact_count: number;
   last_fact_at: string | null;
-};
+} & SourceStats;
 
 export type Health = { api: boolean; queue: Record<string, number> };
 
@@ -431,6 +439,29 @@ export async function toggleNote(id: string): Promise<void> {
 
 export async function deleteNote(id: string): Promise<void> {
   await fetch(`/api/notes/${id}`, { method: "DELETE" });
+}
+
+export async function setSourceTier(id: string, tier: number): Promise<{ name: string }> {
+  const res = await fetch(`/api/sources/${id}/tier`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tier }),
+  });
+  if (!res.ok) {
+    const detail = await res.json().then((d) => d.detail).catch(() => res.status);
+    throw new Error(String(detail));
+  }
+  return res.json();
+}
+
+export async function dismissTierSuggestion(id: string): Promise<void> {
+  await fetch(`/api/sources/${id}/tier/dismiss`, { method: "POST" });
+}
+
+export async function recomputeSourceStats(): Promise<{ computed: number; suggestions: unknown[] }> {
+  const res = await fetch("/api/sources/stats/recompute", { method: "POST" });
+  if (!res.ok) throw new Error(`recompute failed (${res.status})`);
+  return res.json();
 }
 
 export type BackupStatus = {
