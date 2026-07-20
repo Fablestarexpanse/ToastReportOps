@@ -148,3 +148,70 @@ class TestDraftStateMachine:
         for target in ("draft", "needs_review", "approved", "rejected"):
             with pytest.raises(sqlite3.IntegrityError):
                 seeded.execute("UPDATE drafts SET status=? WHERE id='d1'", (target,))
+
+
+class TestEnumConstraints:
+    """`CHECK (x IN (NULL, ...))` is NULL for a non-matching value, and CHECK
+    passes on NULL — so the original enums accepted anything at all. These
+    assert the constraints actually constrain.
+
+    The evac case is the one that matters: a stored 'Order — Zone BUT-1043'
+    counts as `unclassified` in intel.py, so the panel reports zero evacuation
+    orders while an order is live."""
+
+    def _insert(self, conn, col, value):
+        conn.execute(
+            f"INSERT INTO facts (id, envelope_id, source_id, tier, content, kind, {col},"
+            " confidence, observed_at, ingested_at)"
+            " VALUES ('probe', 'e1', 's1', 1, 'claim', 'evac', ?, 0.9, ?, ?)",
+            (value, NOW, NOW),
+        )
+
+    @pytest.mark.parametrize(
+        "col,value",
+        [
+            ("evac_status", "Order — Zone BUT-1043"),  # verbatim county wording
+            ("evac_status", "Order"),  # case drift
+            ("evac_status", "evacuation order"),  # a paraphrase
+            ("geo_method", "hunch"),
+            ("geo_method", "GPS"),
+        ],
+    )
+    def test_out_of_enum_value_rejected(self, seeded, col, value):
+        with pytest.raises(sqlite3.IntegrityError, match="CHECK"):
+            self._insert(seeded, col, value)
+
+    @pytest.mark.parametrize("value", ["order", "warning", "shelter_in_place", "lifted", None])
+    def test_legal_evac_values_still_accepted(self, seeded, value):
+        self._insert(seeded, "evac_status", value)
+
+    def test_named_feature_is_legal_geo_method(self, seeded):
+        """geocode.py has written this since the GNIS work and geoverify.py
+        reads it — the enum simply never learned about it."""
+        self._insert(seeded, "geo_method", "named_feature")
+
+    def test_fact_kind_is_constrained_to_the_extractor_vocabulary(self, seeded):
+        conn_kinds = (
+            "start",
+            "acreage",
+            "containment",
+            "evac",
+            "road",
+            "resource",
+            "damage",
+            "cause",
+            "weather",
+            "other",
+        )
+        from typing import get_args
+
+        from toast.llm.extract import ClaimKind
+
+        assert set(get_args(ClaimKind)) == set(conn_kinds), "DB enum drifted from ClaimKind"
+        with pytest.raises(sqlite3.IntegrityError, match="CHECK"):
+            seeded.execute(
+                "INSERT INTO facts (id, envelope_id, source_id, tier, content, kind,"
+                " confidence, observed_at, ingested_at)"
+                " VALUES ('probe2', 'e1', 's1', 1, 'claim', 'speculation', 0.9, ?, ?)",
+                (NOW, NOW),
+            )

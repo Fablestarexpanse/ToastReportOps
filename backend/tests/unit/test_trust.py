@@ -134,9 +134,13 @@ def test_lead_time_measured_against_official_record(seeded):
 
 def test_promotion_suggestion_lands_in_the_table(seeded):
     _source(seeded, "s-scoop", 4)
+    # distinct kinds so each pair is its own lead-time sample; they must be real
+    # ledger kinds now that facts.kind is constrained to the extractor vocabulary
+    kinds = ("acreage", "containment", "evac", "road", "resource", "damage", "cause", "weather")
     for i in range(MIN_FACTS_TO_JUDGE + 2):
-        _fact(seeded, "s-scoop", 4, kind=f"k{i}", observed_at=_recent(6))
-        _fact(seeded, "s1", 1, kind=f"k{i}", observed_at=_recent(3))  # official 3h later
+        kind = kinds[i % len(kinds)]
+        _fact(seeded, "s-scoop", 4, kind=kind, observed_at=_recent(6))
+        _fact(seeded, "s1", 1, kind=kind, observed_at=_recent(3))  # official 3h later
 
     compute_source_stats(seeded)
     row = seeded.execute("SELECT * FROM source_stats WHERE source_id = 's-scoop'").fetchone()
