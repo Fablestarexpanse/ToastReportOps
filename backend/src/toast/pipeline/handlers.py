@@ -206,3 +206,13 @@ def embed_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
         corroborating=sources_n,
         duplicate=bool(duplicate_of),
     )
+
+
+@register("build_site")
+def build_site_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Regenerate the static public site from published reports."""
+    from toast.core.config import Settings
+    from toast.sitegen.build import build_site
+
+    counts = build_site(conn, Settings().site_dir)
+    get_logger("sitegen").info("site_built", **counts)

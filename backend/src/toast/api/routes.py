@@ -330,11 +330,6 @@ def transition_draft(request: Request, draft_id: str, body: dict) -> dict:
     current = row["status"]
     if target not in DRAFT_TRANSITIONS.get(current, set()):
         raise HTTPException(409, f"cannot go {current} → {target}")
-    # publishing is deferred (needs channel credentials); block it explicitly
-    if target == "published":
-        raise HTTPException(
-            501, "channel publishing not configured yet — approve is the final step for now"
-        )
     now = utcnow()
     if target == "approved":
         conn.execute(
@@ -347,6 +342,20 @@ def transition_draft(request: Request, draft_id: str, body: dict) -> dict:
         )
     except sqlite3.IntegrityError as exc:
         raise HTTPException(409, f"illegal transition: {exc}") from exc
+
+    # Publishing to the static site needs no credentials — record the delivery
+    # and rebuild the site. External channels (X/Facebook/email) remain deferred
+    # until their credentials are configured; they are not triggered here.
+    if target == "published":
+        from toast.core.ids import ulid
+        from toast.queue import jobs
+
+        conn.execute(
+            "INSERT INTO publications (id, draft_id, channel, status, sent_at)"
+            " VALUES (?, ?, 'site', 'sent', ?)",
+            (ulid(), draft_id, now),
+        )
+        jobs.enqueue(conn, "build_site", {}, priority=2)
     return {"ok": True, "draft_id": draft_id, "status": target}
 
 

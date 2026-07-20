@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     def raw_dir(self) -> Path:
         return self.toast_data_dir / "raw"
 
+    @property
+    def site_dir(self) -> Path:
+        return self.toast_data_dir / "site"
+
 
 def load_settings() -> Settings:
     return Settings()

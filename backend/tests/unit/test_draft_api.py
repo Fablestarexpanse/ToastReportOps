@@ -42,15 +42,20 @@ def test_illegal_transition_rejected(seeded):
     assert exc.value.status_code == 409
 
 
-def test_publish_blocked_until_channels_configured(seeded):
+def test_publish_to_site_records_publication_and_build(seeded):
     _draft(seeded, status="approved")
     seeded.execute(
         "UPDATE drafts SET approved_by='operator', approved_at=? WHERE id='d1'", (utcnow(),)
     )
     req = Req(seeded)
-    with pytest.raises(HTTPException) as exc:
-        routes.transition_draft(req, "d1", {"status": "published"})
-    assert exc.value.status_code == 501  # publishing deferred
+    result = routes.transition_draft(req, "d1", {"status": "published"})
+    assert result["status"] == "published"
+    # a site publication was recorded and a rebuild enqueued
+    pub = seeded.execute("SELECT channel, status FROM publications WHERE draft_id='d1'").fetchone()
+    assert pub["channel"] == "site" and pub["status"] == "sent"
+    assert (
+        seeded.execute("SELECT COUNT(*) c FROM jobs WHERE stage='build_site'").fetchone()["c"] == 1
+    )
 
 
 def test_edit_blocked_after_publish(seeded):

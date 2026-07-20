@@ -69,6 +69,23 @@ docker compose exec worker python -m toast.seed
 curl -s http://127.0.0.1:8400/incidents | python -c "import sys,json;print(len(json.load(sys.stdin)['incidents']),'active')"
 ```
 
+## Publishing (public static site)
+
+Approved reports publish to a static site with zero server attack surface. The
+`published` transition records a `publications` row (channel `site`) and enqueues
+a `build_site` job; the generator writes `data/site/` (index + per-report pages,
+each with sources, a burned-in timestamp, and a "verify with officials" notice).
+
+- Preview locally: `http://127.0.0.1:8400/site/index.html` (the API serves
+  `data/site/` for preview; production is Cloudflare Pages).
+- **Deploy to Cloudflare Pages (deferred — needs a token):** set
+  `CLOUDFLARE_API_TOKEN` + `CF_PAGES_PROJECT` in `.env`, then
+  `npx wrangler pages deploy data/site --project-name=$CF_PAGES_PROJECT`. Wire
+  this into a publisher step once the token is provided.
+- **External channels** (X, Facebook, RSS, email, webhook) are separate
+  publisher adapters, still deferred until their credentials/app-review are set
+  up. They are NOT triggered by the site publish.
+
 ## Incident freeze / archive (Phase 5)
 
 Contained + N days → automatic freeze. Frozen incidents reject all writes except

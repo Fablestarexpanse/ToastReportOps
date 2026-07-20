@@ -240,9 +240,9 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
           DISTRIBUTION
         </div>
         <div style={{ padding: "8px 13px 14px", fontFamily: font.mono, fontSize: 9.5, color: C.faint, lineHeight: 1.6 }}>
-          Channel publishing (site · X · Facebook · RSS · webhook) needs your credentials + the
-          Cloudflare Pages / FB app setup — wired in once those are provided. Approve is the final
-          step for now.
+          <span style={{ color: C.ok }}>✓ Static site</span> — PUBLISH writes the report to the
+          public site (preview at /site). Cloudflare Pages deploy + external channels (X · Facebook ·
+          RSS · webhook) are wired once their credentials are provided.
         </div>
       </div>
     </div>

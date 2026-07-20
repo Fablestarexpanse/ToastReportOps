@@ -2,6 +2,26 @@
 
 Architectural decision log. Newest first. Each entry: context → decision → why.
 
+## 2026-07-20 — Public static site + publish wiring
+
+- **The site is the no-credential publish channel.** `approved → published` now
+  succeeds (was a blanket 501): it records a `publications` row (channel `site`)
+  and enqueues a `build_site` job. External channels (X/FB/email/webhook) stay
+  deferred — they're separate publisher adapters needing credentials, not
+  triggered by the site publish.
+- **Static HTML, zero server surface** (mission requirement). `sitegen.build`
+  renders published reports + active incidents to plain HTML/CSS (no JS) —
+  index + per-report pages, markdown body, the report's Sources section,
+  burned-in timestamp, and a "verify with officials" notice on every page. The
+  output dir (`data/site/`) is what deploys to Cloudflare Pages.
+- **Deploy deferred, not the generation.** The site builds and previews locally
+  (`/site/` served by the API); only the `wrangler pages deploy` step needs a CF
+  token (documented in OPERATIONS.md).
+- **Published drafts are immutable** (edit returns 409) — matches the append-only
+  posture; corrections are new reports, not edits.
+- The Watch Board and this close the mission loop: ingest → verify → watch →
+  draft → approve → publish, all local, human-in-the-loop.
+
 ## 2026-07-20 — More media sources + headline-fallback extraction
 
 - **Breadth over any single feed.** Seeded a curated CA wildfire media set

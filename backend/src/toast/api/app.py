@@ -41,6 +41,14 @@ from toast.api.routes import router  # noqa: E402
 
 app.include_router(router)
 
+# Serve the generated static site for local preview (production is Cloudflare
+# Pages). The dir is created so the mount succeeds before the first build.
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+
+_site = Settings().site_dir
+_site.mkdir(parents=True, exist_ok=True)
+app.mount("/site", StaticFiles(directory=str(_site), html=True), name="site")
+
 
 @app.get("/healthz")
 def healthz() -> dict:
