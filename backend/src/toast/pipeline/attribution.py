@@ -103,12 +103,15 @@ def score_candidates(
             )
         ]
         n = name_similarity(incident_name, inc["canonical_name"], aliases)
-        idle_s = abs(
-            conn.execute(
-                "SELECT unixepoch(?) - unixepoch(?)", (observed_at, inc["last_activity"])
-            ).fetchone()[0]
-        )
-        t = max(0.0, 1.0 - idle_s / TIME_ZERO_S)
+        # unixepoch() is NULL for an unparseable stamp. Rows like that can no
+        # longer be written, but one already in the ledger must not take the
+        # whole adjudication queue down with a TypeError — the route scores
+        # every queued fact, so one bad date used to 500 all of them. Unknown
+        # time scores zero: no time evidence, not a free match.
+        delta = conn.execute(
+            "SELECT unixepoch(?) - unixepoch(?)", (observed_at, inc["last_activity"])
+        ).fetchone()[0]
+        t = 0.0 if delta is None else max(0.0, 1.0 - abs(delta) / TIME_ZERO_S)
         if geo_available:
             g = geo_score(lat, lon, inc["lat"], inc["lon"])
             score = WEIGHTS["name"] * n + WEIGHTS["geo"] * g + WEIGHTS["time"] * t

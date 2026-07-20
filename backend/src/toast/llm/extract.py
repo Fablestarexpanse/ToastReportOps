@@ -14,8 +14,9 @@ from __future__ import annotations
 import json
 from typing import Literal
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from toast.core.timestamps import normalize_iso
 from toast.llm.client import LLMClient, LLMError
 from toast.llm.prompts import load_prompt
 
@@ -43,6 +44,14 @@ class ExtractedClaim(BaseModel):
     evac_status: Literal["order", "warning", "shelter_in_place", "lifted"] | None = None
     observed_at: str | None = None
     confidence: float = Field(ge=0, le=1)
+
+    @field_validator("observed_at")
+    @classmethod
+    def _usable_timestamp(cls, v: str | None) -> str | None:
+        """A model-written date that SQLite cannot parse poisons every time
+        window it lands in, so it is dropped here and the caller falls back to
+        ingest time — recorded, not hidden."""
+        return normalize_iso(v)
 
 
 class ExtractionResult(BaseModel):

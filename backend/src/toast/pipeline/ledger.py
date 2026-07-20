@@ -13,6 +13,7 @@ from typing import Any
 
 from toast.core.db import utcnow
 from toast.core.ids import ulid
+from toast.core.timestamps import require_iso
 
 
 def latest_fact(conn: sqlite3.Connection, incident_id: str, kind: str) -> sqlite3.Row | None:
@@ -49,6 +50,9 @@ def write_fact(
     prompt_version: str | None = None,
 ) -> str:
     fact_id = ulid()
+    # every fact write funnels through here, so this is where a timestamp the
+    # database cannot do arithmetic on gets stopped
+    observed_at = require_iso(observed_at, field="observed_at")
     conn.execute(
         """INSERT INTO facts
            (id, incident_id, envelope_id, source_id, tier, content, kind,

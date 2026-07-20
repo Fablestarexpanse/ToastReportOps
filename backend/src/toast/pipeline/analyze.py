@@ -122,7 +122,7 @@ def extract_article(
             tier=tier,
             content=claim.content,
             kind=claim.kind,
-            observed_at=claim.observed_at or now,
+            observed_at=claim.observed_at or now,  # see observed_at_estimated below
             confidence=confidence,
             acreage=claim.acreage,
             containment_pct=claim.containment_pct,
@@ -131,6 +131,9 @@ def extract_article(
                 "incident_name": claim.incident_name,
                 "location_text": claim.location_text,
                 "extractor_confidence": claim.confidence,
+                # the extractor gave no usable date, so this is ingest time
+                # standing in — the panel must never read it as an observation
+                **({"observed_at_estimated": True} if not claim.observed_at else {}),
                 **(
                     {
                         "geocoded_to": geo.name,
