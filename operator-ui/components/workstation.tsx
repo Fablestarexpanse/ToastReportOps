@@ -739,6 +739,69 @@ function IntelPanel({ sel, toast }: { sel: Incident; toast: (m: string) => void 
           </span>
         </div>
 
+        {/* equipment grid — icon per class, agency figure vs. reported figure.
+            A reported count carries the sentence it was read from, so any
+            number can be checked against its source in one hover. */}
+        {(intel.resources?.grid?.length ?? 0) > 0 && (
+          <div style={{ border: `1px solid ${C.line}`, borderRadius: 6, overflow: "hidden", marginBottom: 7 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 62px 62px", background: C.panelUp }}>
+              <span style={{ fontFamily: font.mono, fontSize: 7.5, color: C.faint, letterSpacing: 1, padding: "4px 7px" }}>
+                DEPLOYED
+              </span>
+              <span style={{ fontFamily: font.mono, fontSize: 7.5, color: TIER[1], letterSpacing: 1, padding: "4px 4px" }}>
+                OFFICIAL
+              </span>
+              <span style={{ fontFamily: font.mono, fontSize: 7.5, color: C.ember, letterSpacing: 1, padding: "4px 4px" }}>
+                REPORTED
+              </span>
+            </div>
+            {intel.resources.grid.map((r) => (
+              <div
+                key={r.key}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 62px 62px",
+                  borderTop: `1px solid ${C.line}44`,
+                  alignItems: "center",
+                }}
+              >
+                <span style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 7px" }}>
+                  <span style={{ fontSize: 13 }}>{r.icon}</span>
+                  <span style={{ fontFamily: font.mono, fontSize: 9, color: C.dim }}>{r.label}</span>
+                </span>
+                <span
+                  style={{ fontFamily: font.disp, fontSize: 14, fontWeight: 700, padding: "4px" }}
+                  title={
+                    r.official
+                      ? `${r.official.source} · ${fmtFull(r.official.observed_at)}`
+                      : "no agency figure for this class"
+                  }
+                >
+                  {r.official
+                    ? typeof r.official.value === "number"
+                      ? r.official.value.toLocaleString()
+                      : r.official.value
+                    : <span style={{ fontFamily: font.mono, fontSize: 9, color: C.faint }}>—</span>}
+                </span>
+                <span
+                  style={{ fontFamily: font.disp, fontSize: 14, fontWeight: 700, color: C.dim, padding: "4px" }}
+                  title={
+                    r.reported
+                      ? `“${r.reported.quote}”\n\n${r.reported.source} (T${r.reported.tier}) · ${fmtFull(r.reported.observed_at)}`
+                      : "not stated in reporting"
+                  }
+                >
+                  {r.reported ? (
+                    r.reported.value.toLocaleString()
+                  ) : (
+                    <span style={{ fontFamily: font.mono, fontSize: 9, color: C.faint }}>—</span>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
         {Object.keys(intel.resources?.metrics ?? {}).length > 0 ? (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }}>
             {[

@@ -484,6 +484,20 @@ export type IncidentIntel = {
   resources: {
     metrics: Record<string, { value: number | string; observed_at: string; source: string; tier: number }>;
     notes: { content: string; observed_at: string; source: string; tier: number }[];
+    /** one row per resource class: agency record vs. what reporting says */
+    grid: {
+      key: string;
+      label: string;
+      icon: string;
+      official: { value: number | string; observed_at: string; source: string; tier: number } | null;
+      reported: {
+        value: number;
+        observed_at: string;
+        source: string;
+        tier: number;
+        quote: string;
+      } | null;
+    }[];
   };
   evac: ImpactFact[];
   road: ImpactFact[];

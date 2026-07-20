@@ -241,4 +241,27 @@ def current_resources(conn: sqlite3.Connection, incident_id: str) -> dict[str, A
                     "tier": r["tier"],
                 }
             )
-    return {"metrics": metrics, "notes": notes[:6]}
+    from toast.pipeline.resource_parse import RESOURCE_TYPES, reported_resources
+
+    reported = reported_resources(notes)
+
+    # One row per resource class: what the agency record says, and what
+    # reporting says. Never merged — see intel.py for why.
+    grid = []
+    for key, spec in RESOURCE_TYPES.items():
+        official = metrics.get(key)
+        if key == "personnel" and "personnel" in metrics:
+            official = metrics["personnel"]
+        said = reported.get(key)
+        if official or said:
+            grid.append(
+                {
+                    "key": key,
+                    "label": spec["label"],
+                    "icon": spec["icon"],
+                    "official": official,
+                    "reported": said,
+                }
+            )
+
+    return {"metrics": metrics, "notes": notes[:6], "grid": grid}
