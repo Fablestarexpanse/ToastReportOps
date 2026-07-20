@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { Incident, hasActiveEvac } from "@/lib/api";
+import { Incident, PerimeterCollection, fetchPerimeters, hasActiveEvac } from "@/lib/api";
 import { CA_OUTLINE } from "@/lib/california";
 import { C, font } from "@/lib/theme";
+import { age } from "@/lib/time";
 
 /* Real slippy map (Leaflet, bundled locally — no CDN, no API key).
 
@@ -80,6 +81,9 @@ export default function MapPanel({
   const map = useRef<L.Map | null>(null);
   const tiles = useRef<L.TileLayer | null>(null);
   const markers = useRef<L.LayerGroup | null>(null);
+  const perimLayer = useRef<L.GeoJSON | null>(null);
+  const [perimeters, setPerimeters] = useState<PerimeterCollection | null>(null);
+  const [showPerimeters, setShowPerimeters] = useState(true);
   const [tileError, setTileError] = useState(false);
   const [ready, setReady] = useState(false);
   // A zoom-to-origin swaps in imagery so the operator can see the ground.
@@ -135,6 +139,57 @@ export default function MapPanel({
     layer.bringToBack();
     tiles.current = layer;
   }, [effective, ready]);
+
+  // perimeters: fetched once, refreshed on the server's own 30-minute cache.
+  // A failure here is silent by design — the map is still useful without them.
+  useEffect(() => {
+    let live = true;
+    const load = () =>
+      fetchPerimeters()
+        .then((p) => live && setPerimeters(p))
+        .catch(() => undefined);
+    load();
+    const t = setInterval(load, 10 * 60 * 1000);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, []);
+
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+    if (perimLayer.current) {
+      m.removeLayer(perimLayer.current);
+      perimLayer.current = null;
+    }
+    if (!showPerimeters || !perimeters?.features?.length) return;
+    const byId = new Map(incidents.map((i) => [i.id, i]));
+    const layer = L.geoJSON(perimeters as never, {
+      style: (feature) => {
+        const inc = byId.get(String(feature?.properties?.incident_id ?? ""));
+        // an unmatched perimeter is real fire ground we just can't tie to a
+        // ledger incident — drawn, but visibly quieter than a known fire
+        const color = inc ? pinColor(inc) : C.dim;
+        return { color, weight: 1.5, opacity: 0.9, fillColor: color, fillOpacity: 0.12 };
+      },
+      onEachFeature: (feature, lyr) => {
+        const p = feature.properties ?? {};
+        const acres = typeof p.poly_GISAcres === "number" ? Math.round(p.poly_GISAcres) : null;
+        lyr.bindTooltip(
+          `<b>${p.incident_name ?? p.poly_IncidentName ?? "perimeter"}</b><br/>` +
+            `${acres != null ? acres.toLocaleString() + " ac mapped<br/>" : ""}` +
+            `<i>mapped perimeter — hours old, not a live fire edge</i>`,
+          { direction: "top", opacity: 0.95 },
+        );
+        if (p.incident_id) lyr.on("click", () => onSelect(String(p.incident_id)));
+      },
+    }).addTo(m);
+    layer.bringToBack();
+    perimLayer.current = layer;
+    // pins stay clickable above the polygons
+    markers.current?.eachLayer((l) => (l as L.CircleMarker).bringToFront?.());
+  }, [perimeters, showPerimeters, incidents, onSelect, ready]);
 
   const draw = useCallback(() => {
     const group = markers.current;
@@ -320,6 +375,25 @@ export default function MapPanel({
         <span>
           {placed.length} plotted · click a pin
         </span>
+        {!!perimeters?.features?.length && (
+          <span
+            onClick={() => setShowPerimeters((v) => !v)}
+            title={perimeters.note ?? "mapped fire perimeters"}
+            style={{
+              pointerEvents: "auto",
+              cursor: "pointer",
+              color: showPerimeters ? C.ember : C.dim,
+              border: `1px solid ${showPerimeters ? C.ember + "66" : C.line}`,
+              borderRadius: 3,
+              padding: "1px 5px",
+            }}
+          >
+            {showPerimeters ? "◼" : "◻"} PERIMETERS ({perimeters.features.length})
+            {/* the age travels with the layer: a crisp polygon is still an
+                overnight IR map, not a live fire edge */}
+            {perimeters.mapped_latest ? ` · newest flown ${age(perimeters.mapped_latest)} ago` : ""}
+          </span>
+        )}
         {evacCount > 0 && (
           <span style={{ color: C.evac, display: "flex", alignItems: "center", gap: 4 }}>
             <span style={{ width: 7, height: 7, borderRadius: 4, background: C.evac, display: "inline-block" }} />

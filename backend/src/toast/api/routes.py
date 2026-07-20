@@ -282,6 +282,19 @@ def export_draft(request: Request, draft_id: str, fmt: str = "markdown") -> dict
     }
 
 
+@router.get("/perimeters")
+def get_map_perimeters(request: Request, refresh: bool = False) -> dict:
+    """Current California fire perimeters (WFIGS/NIFC, free) as GeoJSON,
+    tagged with our incident ids where they match. Cached ~30 minutes."""
+    from toast.pipeline.perimeters import get_perimeters
+
+    try:
+        return get_perimeters(_conn(request), refresh=refresh)
+    except Exception as exc:
+        # a perimeter outage must not break the map
+        return {"type": "FeatureCollection", "features": [], "error": str(exc)[:200]}
+
+
 @router.post("/site/build")
 def build_site_now(request: Request) -> dict:
     """Build the LOCAL static site on demand (preview at /site).

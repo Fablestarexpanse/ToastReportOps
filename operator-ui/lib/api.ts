@@ -789,6 +789,29 @@ export async function resetPrompt(id: string): Promise<EditablePrompt[]> {
   return res.json().then((d) => d.prompts);
 }
 
+export type PerimeterCollection = {
+  type: string;
+  features: {
+    type: string;
+    geometry: unknown;
+    properties: {
+      poly_IncidentName?: string;
+      poly_GISAcres?: number;
+      incident_id?: string | null;
+      incident_name?: string;
+    };
+  }[];
+  fetched_at?: string;
+  mapped_latest?: string | null;
+  matched?: number;
+  count?: number;
+  source?: string;
+  note?: string;
+  error?: string;
+};
+
+export const fetchPerimeters = () => get<PerimeterCollection>("/perimeters");
+
 export const fetchGnis = () => get<{ features: number }>("/gnis");
 
 export async function loadGnis(): Promise<{ job_id: string }> {
