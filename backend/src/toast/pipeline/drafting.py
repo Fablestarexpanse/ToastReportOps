@@ -107,7 +107,7 @@ def generate_draft(
         return {"created": False, "reason": "no facts in window"}
 
     facts_text, id_map = _facts_block(facts)
-    prompt = load_prompt("draft_update")
+    prompt = load_prompt("draft_update", conn=conn)
     window_desc = f"{window_start or 'incident start'} to {window_end or 'now'}"
     rendered = prompt.render(
         incident=f"{incident['canonical_name']} ({incident['county'] or '?'} County, "

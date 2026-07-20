@@ -27,7 +27,7 @@ def generate_social(
     if not (src["body_md"] or "").strip():
         raise ValueError("source draft is empty")
 
-    prompt = load_prompt("rewrite_social")
+    prompt = load_prompt("rewrite_social", conn=conn)
     rendered = prompt.render(report=src["body_md"])
     client = client or client_for(conn)
     raw = client.chat_json([{"role": "system", "content": rendered}], temperature=0.4)

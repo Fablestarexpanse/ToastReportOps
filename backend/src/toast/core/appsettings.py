@@ -18,12 +18,16 @@ ALLOWED: dict[str, tuple[str | None, str, str]] = {
     "llm_model": ("llm_model", "Writing / extraction model", "model"),
     "embedding_model": ("embedding_model", "Embedding model", "model"),
     "timezone_display": (None, "Time display", "choice"),  # 'utc' | 'local'
+    # 'offline' draws the bundled outline only — no tile server, works in a
+    # PSPS outage. The others fetch tiles and need network.
+    "map_basemap": (None, "Map basemap", "choice"),  # 'offline' | 'osm' | 'dark'
     "timeline_order": (None, "Timeline order", "choice"),  # 'newest' | 'oldest'
     "ui_poll_interval_s": (None, "UI refresh interval (s)", "number"),
 }
 
 UI_DEFAULTS = {
     "timezone_display": "utc",
+    "map_basemap": "dark",
     "timeline_order": "newest",
     "ui_poll_interval_s": "10",
 }

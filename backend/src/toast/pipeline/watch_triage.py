@@ -121,7 +121,7 @@ def classify_candidate(
         for r in facts
     )
 
-    prompt = load_prompt("classify_watch")
+    prompt = load_prompt("classify_watch", conn=conn)
     rendered = prompt.render(
         today=utcnow(),
         name=candidate.name.replace("=====", "= = = ="),

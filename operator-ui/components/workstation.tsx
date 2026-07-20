@@ -778,6 +778,7 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
   const sel = incidents?.find((i) => i.id === selected);
   const staleCount = facts?.filter((f) => f.stale).length ?? 0;
   const [panelTab, setPanelTab] = useState<"intel" | "ledger" | "timeline">("intel");
+  const [basemap] = useState(() => loadDisplayPrefs().basemap);
   const [followOverride, setFollowOverride] = useState<Record<string, boolean>>({});
   const isFollowed = sel ? (followOverride[sel.id] ?? !!sel.followed) : false;
   const toggleFollow = async () => {
@@ -1007,7 +1008,7 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
           onTriageAllUnmatched={onTriageAllUnmatched}
         />
         <div style={{ flex: 1, minHeight: 0 }}>
-          <MapPanel incidents={incidents ?? []} selected={selected} onSelect={setSelected} />
+          <MapPanel incidents={incidents ?? []} selected={selected} onSelect={setSelected} basemap={basemap} />
         </div>
         {/* compact incident chip strip below the map */}
         <div style={{ flexShrink: 0, borderTop: `1px solid ${C.line}`, maxHeight: 150, overflowY: "auto", background: C.panel }}>

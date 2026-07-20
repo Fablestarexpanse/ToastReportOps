@@ -12,6 +12,7 @@ import {
   saveSettings,
 } from "@/lib/api";
 import CredentialsPanel from "@/components/credentials";
+import PromptsPanel from "@/components/prompts";
 import { C, font } from "@/lib/theme";
 import { TzMode, age, fmtStamp, setTzMode } from "@/lib/time";
 
@@ -21,12 +22,17 @@ import { TzMode, age, fmtStamp, setTzMode } from "@/lib/time";
 
 export const LS_TZ = "toast-tz-mode";
 export const LS_TIMELINE = "toast-timeline-order";
+export const LS_BASEMAP = "toast-map-basemap";
 
-export function loadDisplayPrefs(): { tz: TzMode; timelineOrder: string } {
-  if (typeof window === "undefined") return { tz: "utc", timelineOrder: "newest" };
+export function loadDisplayPrefs(): { tz: TzMode; timelineOrder: string; basemap: string } {
+  if (typeof window === "undefined") return { tz: "utc", timelineOrder: "newest", basemap: "dark" };
   const tz = (localStorage.getItem(LS_TZ) as TzMode) || "utc";
   setTzMode(tz);
-  return { tz, timelineOrder: localStorage.getItem(LS_TIMELINE) || "newest" };
+  return {
+    tz,
+    timelineOrder: localStorage.getItem(LS_TIMELINE) || "newest",
+    basemap: localStorage.getItem(LS_BASEMAP) || "dark",
+  };
 }
 
 /** Pull display prefs from the server (the source of truth) into localStorage,
@@ -37,9 +43,14 @@ export async function syncDisplayPrefs(): Promise<boolean> {
     const { settings } = await fetchSettings();
     const tz = (settings.timezone_display?.value as TzMode) || "utc";
     const order = settings.timeline_order?.value || "newest";
-    const changed = tz !== localStorage.getItem(LS_TZ) || order !== localStorage.getItem(LS_TIMELINE);
+    const basemap = settings.map_basemap?.value || "dark";
+    const changed =
+      tz !== localStorage.getItem(LS_TZ) ||
+      order !== localStorage.getItem(LS_TIMELINE) ||
+      basemap !== localStorage.getItem(LS_BASEMAP);
     localStorage.setItem(LS_TZ, tz);
     localStorage.setItem(LS_TIMELINE, order);
+    localStorage.setItem(LS_BASEMAP, basemap);
     setTzMode(tz);
     return changed;
   } catch {
@@ -55,6 +66,11 @@ const CHOICES: Record<string, { value: string; label: string }[]> = {
   timeline_order: [
     { value: "newest", label: "NEWEST FIRST" },
     { value: "oldest", label: "OLDEST FIRST" },
+  ],
+  map_basemap: [
+    { value: "dark", label: "DARK" },
+    { value: "osm", label: "STREET" },
+    { value: "offline", label: "OFFLINE" },
   ],
 };
 
@@ -227,6 +243,7 @@ export default function SettingsPanel({
       localStorage.setItem(LS_TZ, tz);
       setTzMode(tz);
       localStorage.setItem(LS_TIMELINE, d.settings.timeline_order?.value || "newest");
+      localStorage.setItem(LS_BASEMAP, d.settings.map_basemap?.value || "dark");
       toast("settings saved");
       onApplied();
       onClose();
@@ -346,6 +363,11 @@ export default function SettingsPanel({
             {row("timezone_display", chips("timezone_display"), "all times shown 24-hour with the date (e.g. 20JUL 0137Z)")}
             {row("timeline_order", chips("timeline_order"), "default order for the incident TIMELINE tab")}
             {row(
+              "map_basemap",
+              chips("map_basemap"),
+              "OFFLINE draws the bundled California outline only and contacts no tile server — the PSPS-safe choice",
+            )}
+            {row(
               "ui_poll_interval_s",
               <input
                 type="number"
@@ -368,6 +390,11 @@ export default function SettingsPanel({
                 ⚠ model list unavailable — is Ollama running? free-text entry still works.
               </div>
             )}
+
+            <div style={{ fontFamily: font.disp, fontSize: 11, letterSpacing: 2, color: C.ember, marginTop: 16 }}>
+              WRITING (AI PROMPTS)
+            </div>
+            <PromptsPanel toast={toast} />
 
             <div style={{ fontFamily: font.disp, fontSize: 11, letterSpacing: 2, color: C.ember, marginTop: 16 }}>
               API KEYS &amp; SERVICES

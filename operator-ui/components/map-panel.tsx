@@ -1,165 +1,211 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import { Incident, hasActiveEvac } from "@/lib/api";
 import { CA_OUTLINE } from "@/lib/california";
 import { C, font } from "@/lib/theme";
 
-/* Offline California map — no tile server (PSPS-safe). The state outline is a
-   bundled GeoJSON ring; incidents are projected from lat/lon onto an
-   aspect-correct SVG viewBox. */
+/* Real slippy map (Leaflet, bundled locally — no CDN, no API key).
 
-const PAD = 24;
-const WIDTH = 560;
+   PSPS is an operating condition here, so tiles are optional: the bundled
+   California outline is always drawn underneath, and with basemap "offline"
+   no tile server is contacted at all. Fire positions come from our own ledger
+   either way, so the map keeps working with the network down. */
 
-function useProjection() {
-  return useMemo(() => {
-    const lons = CA_OUTLINE.map((p) => p[0]);
-    const lats = CA_OUTLINE.map((p) => p[1]);
-    const lonMin = Math.min(...lons);
-    const lonMax = Math.max(...lons);
-    const latMin = Math.min(...lats);
-    const latMax = Math.max(...lats);
-    const midLat = (latMin + latMax) / 2;
-    // geographic aspect: lon degrees are shorter by cos(lat)
-    const geoW = (lonMax - lonMin) * Math.cos((midLat * Math.PI) / 180);
-    const geoH = latMax - latMin;
-    const inner = WIDTH - PAD * 2;
-    // round to 2dp so SSR and client serialize an identical viewBox (last-ULP
-    // Math differences between Node and the browser otherwise break hydration)
-    const height = Math.round((inner * (geoH / geoW) + PAD * 2) * 100) / 100;
-    const project = (lon: number, lat: number): [number, number] => [
-      PAD + ((lon - lonMin) / (lonMax - lonMin)) * inner,
-      PAD + ((latMax - lat) / (latMax - latMin)) * (height - PAD * 2),
-    ];
-    return { project, height, lonMin, lonMax, latMin, latMax };
-  }, []);
-}
+const BASEMAPS: Record<string, { url: string; attribution: string; label: string } | null> = {
+  offline: null,
+  dark: {
+    url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+    attribution: '© <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> · © CARTO',
+    label: "DARK",
+  },
+  osm: {
+    url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attribution: '© <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    label: "STREET",
+  },
+};
 
-const LAYERS = [
-  ["Incidents", true],
-  ["Hotspots", false],
-  ["Perimeter", false],
-  ["Evac", false],
-  ["Aircraft", false],
-  ["Cams", false],
-] as const;
-
-function pinRadius(acreage: number | null): number {
-  if (!acreage || acreage <= 0) return 4;
-  return Math.max(4, Math.min(13, 3 + Math.log10(acreage + 1) * 2.2));
-}
+const CA_CENTER: [number, number] = [37.4, -119.6];
 
 function pinColor(inc: Incident): string {
   // People-at-risk outranks fire behavior: an active evacuation is the thing
   // the operator must see first, whatever the containment number says.
   if (hasActiveEvac(inc)) return C.evac;
   if (inc.status === "contained" || inc.status === "frozen") return C.dim;
-  const c = inc.containment_pct ?? 0;
-  return c >= 60 ? C.warn : C.emberHot;
+  return (inc.containment_pct ?? 0) >= 60 ? C.warn : C.emberHot;
+}
+
+function pinRadius(acreage: number | null): number {
+  if (!acreage || acreage <= 0) return 5;
+  return Math.max(5, Math.min(22, 4 + Math.log10(acreage + 1) * 3.4));
 }
 
 export default function MapPanel({
   incidents,
   selected,
   onSelect,
+  basemap = "dark",
 }: {
   incidents: Incident[];
   selected: string | null;
   onSelect: (id: string) => void;
+  basemap?: string;
 }) {
-  // Render only after mount — the SVG geometry derives from Math.cos, whose
-  // last-ULP result differs between Node (SSR) and the browser, which would
-  // otherwise trip React hydration. Client-only is also correct: the map has
-  // no meaning without live data.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const holder = useRef<HTMLDivElement | null>(null);
+  const map = useRef<L.Map | null>(null);
+  const tiles = useRef<L.TileLayer | null>(null);
+  const markers = useRef<L.LayerGroup | null>(null);
+  const [tileError, setTileError] = useState(false);
+  const [ready, setReady] = useState(false);
 
-  const { project, height } = useProjection();
-  const outlinePath = useMemo(() => {
-    return (
-      CA_OUTLINE.map((p, i) => {
-        const [x, y] = project(p[0], p[1]);
-        return `${i === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`;
-      }).join(" ") + " Z"
-    );
-  }, [project]);
+  // create once
+  useEffect(() => {
+    if (map.current || !holder.current) return;
+    const m = L.map(holder.current, {
+      center: CA_CENTER,
+      zoom: 6,
+      zoomControl: true,
+      attributionControl: true,
+      preferCanvas: true,
+    });
+    L.polyline([CA_OUTLINE.map(([lon, lat]) => [lat, lon] as [number, number])], {
+      color: C.line,
+      weight: 1.5,
+      opacity: 0.9,
+      interactive: false,
+    }).addTo(m);
+    markers.current = L.layerGroup().addTo(m);
+    map.current = m;
+    setReady(true);
+    return () => {
+      m.remove();
+      map.current = null;
+    };
+  }, []);
+
+  // basemap switching
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+    if (tiles.current) {
+      m.removeLayer(tiles.current);
+      tiles.current = null;
+    }
+    setTileError(false);
+    const spec = BASEMAPS[basemap] ?? null;
+    if (!spec) return; // offline: outline only, nothing fetched
+    const layer = L.tileLayer(spec.url, {
+      attribution: spec.attribution,
+      maxZoom: 18,
+      crossOrigin: true,
+    });
+    layer.on("tileerror", () => setTileError(true));
+    layer.addTo(m);
+    layer.bringToBack();
+    tiles.current = layer;
+  }, [basemap, ready]);
+
+  const draw = useCallback(() => {
+    const group = markers.current;
+    if (!group) return;
+    group.clearLayers();
+    for (const inc of incidents) {
+      if (inc.lat == null || inc.lon == null) continue;
+      const color = pinColor(inc);
+      const evac = hasActiveEvac(inc);
+      const isSel = inc.id === selected;
+      if (evac || isSel) {
+        // pulse ring — an evacuation must catch the eye anywhere on the map
+        L.circleMarker([inc.lat, inc.lon], {
+          radius: pinRadius(inc.acreage) + 7,
+          color,
+          weight: 1.5,
+          fill: false,
+          className: "tr-pulse",
+          interactive: false,
+        }).addTo(group);
+      }
+      const dot = L.circleMarker([inc.lat, inc.lon], {
+        radius: pinRadius(inc.acreage),
+        color: isSel ? C.txt : color,
+        weight: isSel ? 2 : 1,
+        fillColor: color,
+        fillOpacity: 0.8,
+      })
+        .addTo(group)
+        .on("click", () => onSelect(inc.id));
+      dot.bindTooltip(
+        `<b>${inc.canonical_name}</b><br/>${inc.county ? inc.county + " County · " : ""}` +
+          `${inc.acreage != null ? Math.round(inc.acreage).toLocaleString() + " ac" : "size unknown"}` +
+          `${inc.containment_pct != null ? " · " + inc.containment_pct + "% contained" : ""}` +
+          `${evac ? '<br/><b style="color:#ff4d8f">EVACUATION IN EFFECT</b>' : ""}`,
+        { direction: "top", opacity: 0.95 },
+      );
+    }
+  }, [incidents, selected, onSelect]);
+
+  useEffect(() => {
+    if (ready) draw();
+  }, [ready, draw]);
+
+  // keep the selected fire in view without yanking the map around
+  useEffect(() => {
+    const m = map.current;
+    const inc = incidents.find((i) => i.id === selected);
+    if (!m || !inc || inc.lat == null || inc.lon == null) return;
+    if (!m.getBounds().contains([inc.lat, inc.lon])) m.panTo([inc.lat, inc.lon]);
+  }, [selected, incidents]);
 
   const placed = incidents.filter((i) => i.lat != null && i.lon != null);
   const evacCount = placed.filter(hasActiveEvac).length;
 
-  if (!mounted) {
-    return <div style={{ background: "#10141a", height: "100%", minWidth: 0 }} />;
-  }
-
   return (
-    <div style={{ position: "relative", background: "#10141a", minWidth: 0, height: "100%", overflow: "hidden" }}>
-      <svg
-        viewBox={`0 0 ${WIDTH} ${height}`}
-        style={{ width: "100%", height: "100%", display: "block" }}
-        preserveAspectRatio="xMidYMid meet"
+    <div style={{ position: "relative", height: "100%", minWidth: 0, background: "#10141a" }}>
+      <div ref={holder} style={{ position: "absolute", inset: 0 }} />
+
+      {tileError && basemap !== "offline" && (
+        <div
+          style={{
+            position: "absolute",
+            top: 8,
+            left: 52,
+            zIndex: 500,
+            fontFamily: font.mono,
+            fontSize: 9,
+            color: C.warn,
+            background: C.panel + "e6",
+            border: `1px solid ${C.warn}55`,
+            borderRadius: 4,
+            padding: "3px 7px",
+          }}
+        >
+          ⚠ basemap tiles unavailable — fires still plotted on the offline outline
+        </div>
+      )}
+
+      <div
+        style={{
+          position: "absolute",
+          bottom: 8,
+          left: 10,
+          zIndex: 500,
+          fontFamily: font.mono,
+          fontSize: 9,
+          color: C.dim,
+          background: C.panel + "cc",
+          borderRadius: 4,
+          padding: "3px 7px",
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+          pointerEvents: "none",
+        }}
       >
-        {/* faint graticule */}
-        {[...Array(6)].map((_, i) => (
-          <line key={"h" + i} x1={0} y1={(height / 6) * i} x2={WIDTH} y2={(height / 6) * i} stroke="#1b2128" strokeWidth={1} />
-        ))}
-        {[...Array(6)].map((_, i) => (
-          <line key={"v" + i} x1={(WIDTH / 6) * i} y1={0} x2={(WIDTH / 6) * i} y2={height} stroke="#1b2128" strokeWidth={1} />
-        ))}
-        {/* California outline */}
-        <path d={outlinePath} fill="#161c22" stroke={C.line} strokeWidth={1.5} />
-        {/* incident pins */}
-        {placed.map((inc) => {
-          const [x, y] = project(inc.lon as number, inc.lat as number);
-          const r = pinRadius(inc.acreage);
-          const color = pinColor(inc);
-          const isSel = inc.id === selected;
-          const evac = hasActiveEvac(inc);
-          return (
-            <g key={inc.id} style={{ cursor: "pointer" }} onClick={() => onSelect(inc.id)}>
-              {/* an evacuation pulses whether or not it is selected — it is the
-                  one thing that should catch the eye across the whole map */}
-              {(isSel || evac) && (
-                <circle cx={x} cy={y} r={r + 8} fill="none" stroke={color} strokeWidth={1.5} className="tr-pulse" />
-              )}
-              {evac && (
-                <circle cx={x} cy={y} r={r + 4} fill="none" stroke={C.evac} strokeWidth={1} strokeOpacity={0.75} />
-              )}
-              <circle cx={x} cy={y} r={r} fill={color} fillOpacity={0.85} stroke={isSel ? C.txt : color} strokeWidth={isSel ? 1.5 : 0.5} />
-              {isSel && (
-                <text x={x + r + 4} y={y + 3} fill={C.txt} fontSize={10} fontFamily={font.mono}>
-                  {inc.canonical_name}
-                </text>
-              )}
-            </g>
-          );
-        })}
-      </svg>
-
-      {/* layer chips */}
-      <div style={{ position: "absolute", top: 8, left: 10, display: "flex", gap: 5, flexWrap: "wrap" }}>
-        {LAYERS.map(([label, on]) => (
-          <span
-            key={label}
-            title={on ? "" : "coming in a later Phase 3 step"}
-            style={{
-              fontFamily: font.mono,
-              fontSize: 9,
-              padding: "2px 7px",
-              borderRadius: 3,
-              border: `1px solid ${on ? C.ember : C.line}`,
-              color: on ? C.ember : C.faint,
-            }}
-          >
-            {label}
-          </span>
-        ))}
-      </div>
-
-      {/* count */}
-      <div style={{ position: "absolute", bottom: 8, left: 10, fontFamily: font.mono, fontSize: 9, color: C.dim, display: "flex", gap: 8, alignItems: "center" }}>
         <span>
-          {placed.length} active incident{placed.length === 1 ? "" : "s"} · click a pin
+          {placed.length} plotted · click a pin
         </span>
         {evacCount > 0 && (
           <span style={{ color: C.evac, display: "flex", alignItems: "center", gap: 4 }}>

@@ -620,6 +620,40 @@ export type BackupStatus = {
   snapshot_dir: string;
 };
 
+export type EditablePrompt = {
+  id: string;
+  label: string;
+  purpose: string;
+  version: string;
+  edited: boolean;
+  updated_at: string | null;
+  template: string;
+  default_template: string;
+  placeholders: string[];
+};
+
+export const fetchPrompts = () =>
+  get<{ prompts: EditablePrompt[] }>("/prompts").then((r) => r.prompts);
+
+export async function savePrompt(id: string, template: string): Promise<EditablePrompt[]> {
+  const res = await fetch(`/api/prompts/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ template }),
+  });
+  if (!res.ok) {
+    const detail = await res.json().then((d) => d.detail).catch(() => res.status);
+    throw new Error(String(detail));
+  }
+  return res.json().then((d) => d.prompts);
+}
+
+export async function resetPrompt(id: string): Promise<EditablePrompt[]> {
+  const res = await fetch(`/api/prompts/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`revert failed (${res.status})`);
+  return res.json().then((d) => d.prompts);
+}
+
 export const fetchGnis = () => get<{ features: number }>("/gnis");
 
 export async function loadGnis(): Promise<{ job_id: string }> {

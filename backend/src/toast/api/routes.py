@@ -236,6 +236,41 @@ def build_site_now(request: Request) -> dict:
     return {"ok": True, "job_id": jobs.enqueue(_conn(request), "build_site", {}, priority=4)}
 
 
+# ---------------- prompts ----------------
+
+
+@router.get("/prompts")
+def list_prompts(request: Request) -> dict:
+    """Operator-editable prompts, with the shipped default alongside."""
+    from toast.llm.prompts import list_editable
+
+    return {"prompts": list_editable(_conn(request))}
+
+
+@router.put("/prompts/{prompt_id}")
+def put_prompt(request: Request, prompt_id: str, body: dict) -> dict:
+    """Save an edited prompt. Rejected if a required placeholder is missing —
+    the prompt would still run, but silently without that data."""
+    from toast.llm.prompts import list_editable, save_override
+
+    conn = _conn(request)
+    try:
+        save_override(conn, prompt_id, str(body.get("template") or ""))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "prompts": list_editable(conn)}
+
+
+@router.delete("/prompts/{prompt_id}")
+def reset_prompt(request: Request, prompt_id: str) -> dict:
+    """Revert to the shipped prompt."""
+    from toast.llm.prompts import clear_override, list_editable
+
+    conn = _conn(request)
+    clear_override(conn, prompt_id)
+    return {"ok": True, "prompts": list_editable(conn)}
+
+
 # ---------------- GNIS gazetteer ----------------
 
 

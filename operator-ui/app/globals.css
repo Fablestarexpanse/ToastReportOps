@@ -94,3 +94,39 @@ textarea::placeholder {
     animation: none;
   }
 }
+
+/* ---- Leaflet, themed for the ops room ----
+   Leaflet ships light-mode chrome; these keep the map readable inside the dark
+   workstation without touching tile imagery itself. */
+.leaflet-container {
+  background: #10141a;
+  font-family: inherit;
+  outline: none;
+}
+.leaflet-control-zoom a {
+  background: #1b2128;
+  color: #cfd8e3;
+  border-color: #2e3843;
+}
+.leaflet-control-zoom a:hover {
+  background: #222a33;
+  color: #ff9a3c;
+}
+.leaflet-control-attribution {
+  background: rgba(27, 33, 40, 0.8) !important;
+  color: #6b7a8c !important;
+  font-size: 9px !important;
+}
+.leaflet-control-attribution a {
+  color: #5cb8ff !important;
+}
+.leaflet-tooltip {
+  background: #1b2128;
+  color: #e6edf5;
+  border: 1px solid #2e3843;
+  box-shadow: 0 6px 20px #000a;
+  font-size: 11px;
+}
+.leaflet-tooltip-top:before {
+  border-top-color: #2e3843;
+}
