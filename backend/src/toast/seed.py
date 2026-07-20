@@ -154,7 +154,114 @@ MEDIA_SEEDS: list[dict[str, Any]] = [
     },
 ]
 
-SEEDS = SEEDS + MEDIA_SEEDS
+# General-purpose news + social feeds. These are NOT wildfire-specific, so they
+# carry a fire keyword pre-filter (config keywords="fire") — only fire-related
+# entries reach the LLM extractor; the California gate then filters relevance.
+# Topic-scoped feeds (hashtags, search queries) need no keyword filter.
+GENERAL_SEEDS: list[dict[str, Any]] = [
+    {
+        "name": "LA Times — California",
+        "type": "scrape",
+        "adapter": "rss",
+        "tier": 4,
+        "config": {
+            "feed_url": "https://www.latimes.com/local/california/rss2.0.xml",
+            "keywords": "fire",
+            "max_entries": 15,
+        },
+        "schedule": "1800",
+        "enabled": 1,
+        "tos_notes": "Major CA daily, fire-filtered. Reviewed 2026-07-20.",
+    },
+    {
+        "name": "The Guardian — California",
+        "type": "scrape",
+        "adapter": "rss",
+        "tier": 4,
+        "config": {
+            "feed_url": "https://www.theguardian.com/us-news/california/rss",
+            "keywords": "fire",
+            "max_entries": 12,
+        },
+        "schedule": "1800",
+        "enabled": 1,
+        "tos_notes": "Guardian CA section, fire-filtered. Reviewed 2026-07-20.",
+    },
+    {
+        "name": "ABC7 Bay Area",
+        "type": "scrape",
+        "adapter": "rss",
+        "tier": 4,
+        "config": {"feed_url": "https://abc7news.com/feed/", "keywords": "fire", "max_entries": 12},
+        "schedule": "1800",
+        "enabled": 1,
+        "tos_notes": "Bay Area TV news, fire-filtered. Reviewed 2026-07-20.",
+    },
+    {
+        "name": "KTLA (Los Angeles)",
+        "type": "scrape",
+        "adapter": "rss",
+        "tier": 4,
+        "config": {"feed_url": "https://ktla.com/feed/", "keywords": "fire", "max_entries": 12},
+        "schedule": "1800",
+        "enabled": 1,
+        "tos_notes": "LA TV news, fire-filtered. Reviewed 2026-07-20.",
+    },
+    {
+        "name": "Times of San Diego",
+        "type": "scrape",
+        "adapter": "rss",
+        "tier": 4,
+        "config": {
+            "feed_url": "https://timesofsandiego.com/feed/",
+            "keywords": "fire",
+            "max_entries": 10,
+        },
+        "schedule": "1800",
+        "enabled": 1,
+        "tos_notes": "San Diego local, fire-filtered. Reviewed 2026-07-20.",
+    },
+    # ---- social (topic-scoped feeds — no keyword filter needed) ----
+    {
+        "name": "Mastodon #wildfire",
+        "type": "social",
+        "adapter": "rss",
+        "tier": 5,
+        "config": {"feed_url": "https://mastodon.social/tags/wildfire.rss", "max_entries": 15},
+        "schedule": "1800",
+        "enabled": 1,
+        "tos_notes": "Public Mastodon hashtag feed (no auth). Reviewed 2026-07-20.",
+    },
+    {
+        "name": "Mastodon #CaliforniaFire",
+        "type": "social",
+        "adapter": "rss",
+        "tier": 5,
+        "config": {
+            "feed_url": "https://mastodon.social/tags/CaliforniaFire.rss",
+            "max_entries": 15,
+        },
+        "schedule": "1800",
+        "enabled": 1,
+        "tos_notes": "Public Mastodon hashtag feed (no auth). Reviewed 2026-07-20.",
+    },
+    {
+        "name": "Reddit r/California (fire search)",
+        "type": "social",
+        "adapter": "rss",
+        "tier": 5,
+        "config": {
+            "feed_url": "https://www.reddit.com/r/California/search.rss"
+            "?q=fire&restrict_sr=1&sort=new",
+            "max_entries": 12,
+        },
+        "schedule": "1800",
+        "enabled": 1,
+        "tos_notes": "Reddit search RSS; rate-limited, polled sparingly. Reviewed 2026-07-20.",
+    },
+]
+
+SEEDS = SEEDS + MEDIA_SEEDS + GENERAL_SEEDS
 
 
 def seed(conn) -> list[str]:

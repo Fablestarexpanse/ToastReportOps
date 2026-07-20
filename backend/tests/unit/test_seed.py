@@ -15,7 +15,11 @@ def test_seed_creates_official_and_media_sources(db):
         "SELECT enabled, adapter FROM sources WHERE name = 'Google News: California wildfire'"
     ).fetchone()
     assert media["adapter"] == "rss" and media["enabled"] == 1
-    assert len(created) >= 8
+    # general news + social sources are seeded too
+    assert "LA Times — California" in names
+    assert "Mastodon #wildfire" in names
+    assert "Reddit r/California (fire search)" in names
+    assert len(created) >= 16
 
 
 def test_seed_is_idempotent(db):

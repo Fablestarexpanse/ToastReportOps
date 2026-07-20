@@ -42,6 +42,17 @@ def test_rss_parses_entries_to_article_envelopes():
     assert e.payload["published_at"] == "2026-07-19T22:00:00.000Z"
 
 
+def test_keyword_filter_drops_non_matching_entries():
+    # a keyword that matches neither sample entry filters everything; the
+    # default fire set (keywords="fire") keeps both fire-related items.
+    adapter = FakeCapture()
+    envs, _ = adapter.poll({"source_id": "s1", "feed_url": "u", "keywords": ["earthquake"]}, None)
+    assert len(envs) == 0
+    adapter = FakeCapture()
+    envs, _ = adapter.poll({"source_id": "s1", "feed_url": "u", "keywords": "fire"}, None)
+    assert len(envs) == 2
+
+
 def test_article_envelope_routes_to_extract_stage(seeded):
     from toast.pipeline.handlers import normalize_handler
     from toast.queue import jobs
