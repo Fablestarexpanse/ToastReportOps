@@ -529,6 +529,8 @@ export type ImpactFact = {
   source_name: string;
   /** agency instruction vs. a newsroom paraphrase of one */
   official: boolean;
+  /** the issuing page — evac text must always travel with its deep-link */
+  source_url: string | null;
 };
 
 export type IncidentIntel = {

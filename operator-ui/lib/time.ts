@@ -68,7 +68,10 @@ export function age(iso: string | null | undefined, now: number = Date.now()): s
   if (isNaN(t)) return "";
   const s = Math.max(0, Math.round((now - t) / 1000));
   if (s < 60) return `${s}s`;
-  const m = Math.round(s / 60);
+  // floor, not round: Math.round(59.5) is 60, which fell past the minute branch
+  // and then floored to 0 hours — an hour-old fact rendered "0h old" and, via
+  // ageColor, still looked fresh.
+  const m = Math.floor(s / 60);
   if (m < 60) return `${m}m`;
   const h = Math.floor(s / 3600);
   if (h < 48) return `${h}h`;

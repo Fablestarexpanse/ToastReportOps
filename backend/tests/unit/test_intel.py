@@ -172,3 +172,54 @@ def test_timeline_merges_events_and_facts_newest_first(seeded):
     tl = incident_timeline(seeded, "i1")
     assert [e["type"] for e in tl] == ["fact", "event"]
     assert tl[1]["label"] == "CREATED"
+
+
+def _evac_fact(seeded, evac_status, url="https://county.example/evac/BUT-1043"):
+    """An evacuation fact whose envelope carries the issuing page."""
+    fid, eid = ulid(), ulid()
+    seeded.execute(
+        "INSERT INTO envelopes (id, source_id, external_id, kind, payload, content_hash,"
+        " fetched_at) VALUES (?, 's1', ?, 'article', ?, ?, ?)",
+        (eid, eid, f'{{"url": "{url}"}}', f"h-{eid}", NOW),
+    )
+    seeded.execute(
+        "INSERT INTO facts (id, incident_id, envelope_id, source_id, tier, content, kind,"
+        " evac_status, confidence, observed_at, ingested_at)"
+        " VALUES (?, 'i1', ?, 's1', 1, 'EVACUATION ORDER: Zone BUT-1043 GO NOW.', 'evac',"
+        " ?, 0.9, ?, ?)",
+        (fid, eid, evac_status, NOW, NOW),
+    )
+    return fid
+
+
+def test_evac_text_travels_with_its_official_deep_link(seeded):
+    """The mission rule is verbatim text + the deep-link + the notice. The link
+    was never plumbed, so an operator could not open the issuing agency's page
+    to confirm an order before repeating it to the public."""
+    _evac_fact(seeded, "order")
+    evac = incident_intel(seeded, "i1")["evac"]
+    assert len(evac) == 1
+    assert evac[0]["source_url"] == "https://county.example/evac/BUT-1043"
+    assert evac[0]["content"].startswith("EVACUATION ORDER:")  # verbatim, unsummarized
+
+
+def test_every_evacuation_instruction_is_counted(seeded):
+    """shelter_in_place and unclassified were computed and rendered nowhere, so
+    a fire whose only instruction was 'shelter in place' displayed no evacuation
+    badges at all."""
+    _evac_fact(seeded, "order")
+    _evac_fact(seeded, "shelter_in_place")
+    _evac_fact(seeded, None)
+    counts = incident_intel(seeded, "i1")["impact_counts"]
+    assert counts["orders"] == 1
+    assert counts["shelter_in_place"] == 1
+    assert counts["unclassified"] == 1
+    # the total must account for every evac fact — none may be invisible
+    total = (
+        counts["orders"]
+        + counts["warnings"]
+        + counts["shelter_in_place"]
+        + counts["lifted"]
+        + counts["unclassified"]
+    )
+    assert total == len(incident_intel(seeded, "i1")["evac"])

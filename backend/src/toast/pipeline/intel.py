@@ -156,7 +156,14 @@ def incident_intel(conn: sqlite3.Connection, incident_id: str) -> dict[str, Any]
     for kind in ("evac", "road"):
         rows = conn.execute(
             f"""SELECT f.id, f.content, f.evac_status, f.observed_at, f.tier,
-                       f.structured, s.name AS source_name
+                       f.structured, s.name AS source_name,
+                       -- The mission rule is verbatim text PLUS the official
+                       -- deep-link PLUS the notice. The link was never plumbed,
+                       -- so an operator could not click through to the county's
+                       -- own page to confirm an order before publishing it.
+                       (SELECT COALESCE(json_extract(e.payload, '$.url'),
+                                        json_extract(e.payload, '$.link'))
+                          FROM envelopes e WHERE e.id = f.envelope_id) AS source_url
                 FROM facts f JOIN sources s ON s.id = f.source_id
                 WHERE f.incident_id = ? AND f.kind = ? AND f.{_NOT_SUPERSEDED}
                 ORDER BY f.observed_at DESC""",

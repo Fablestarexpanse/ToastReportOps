@@ -59,7 +59,10 @@ import MapPanel from "@/components/map-panel";
 import NewsroomMode from "@/components/newsroom";
 import WatchMode from "@/components/watch";
 
-const POLL_MS = 5000;
+/* The refresh interval is an operator setting. Read at each effect run rather
+   than captured once, so changing it in OPTIONS takes effect on the next tick
+   instead of "after you remember to reload". */
+const pollMs = () => loadDisplayPrefs().pollMs;
 
 function usePolling<T>(fn: () => Promise<T>, deps: unknown[] = []): T | null {
   const [data, setData] = useState<T | null>(null);
@@ -80,7 +83,7 @@ function usePolling<T>(fn: () => Promise<T>, deps: unknown[] = []): T | null {
         .catch(() => {});
     };
     tick();
-    const id = setInterval(tick, POLL_MS);
+    const id = setInterval(tick, pollMs());
     return () => {
       live = false;
       clearInterval(id);
@@ -547,8 +550,17 @@ function IntelPanel({ sel, toast }: { sel: Incident; toast: (m: string) => void 
           {m.containment.value != null ? `${m.containment.value}%` : "—"}
           <Delta d={m.containment.delta} invert />
         </StatTile>
-        <StatTile label="STARTED" sub={m.start ? `${m.start.source_name}` : undefined}>
-          <span style={{ fontSize: 12.5 }}>{m.start ? fmtTime(m.start.observed_at) : "—"}</span>
+        {/* `m.start.observed_at` is when a STORY WAS PUBLISHED that happens to
+            mention ignition — a recap filed today made an 18JUL fire read
+            "STARTED 20JUL". The incident's own started_at comes from CAL FIRE
+            and is the actual ignition time; the claim is the fallback. */}
+        <StatTile
+          label="STARTED"
+          sub={sel.started_at ? "CAL FIRE" : m.start ? `reported by ${m.start.source_name}` : undefined}
+        >
+          <span style={{ fontSize: 12.5 }}>
+            {sel.started_at ? fmtTime(sel.started_at) : m.start ? fmtTime(m.start.observed_at) : "—"}
+          </span>
         </StatTile>
         <StatTile label="CAUSE" sub={m.cause ? m.cause.source_name : undefined}>
           <span style={{ fontSize: 12.5 }}>{m.cause ? m.cause.content.slice(0, 40) : "under investigation"}</span>
@@ -604,8 +616,11 @@ function IntelPanel({ sel, toast }: { sel: Incident; toast: (m: string) => void 
           {(m.acreage.divergence || m.containment.divergence) && (
             <div style={{ borderTop: `1px solid ${C.warn}44`, background: C.warn + "10", padding: "5px 7px", fontFamily: font.mono, fontSize: 8.5, color: C.warn }}>
               ⚠ sources disagree
+              {/* name the actual official source: "official" is any tier <= 2,
+                  which includes NWS, USFS and InciWeb. Captioning an InciWeb
+                  disagreement as contradicting CAL FIRE is simply false. */}
               {m.acreage.divergence &&
-                ` · press reports ${Math.round(m.acreage.divergence.gap).toLocaleString()} ac ${m.acreage.divergence.reported_higher ? "MORE" : "LESS"} than CAL FIRE`}
+                ` · press reports ${Math.round(m.acreage.divergence.gap).toLocaleString()} ac ${m.acreage.divergence.reported_higher ? "MORE" : "LESS"} than ${m.acreage.official?.source_name ?? "the official source"}`}
               {m.containment.divergence &&
                 ` · containment differs by ${Math.round(m.containment.divergence.gap)} pts`}
               <div style={{ color: C.faint, marginTop: 2 }}>
@@ -634,15 +649,29 @@ function IntelPanel({ sel, toast }: { sel: Incident; toast: (m: string) => void 
 
       {/* Orders and warnings are different instructions to a person deciding
           whether to leave, so they are never collapsed into one number. */}
-      {(intel.impact_counts?.orders > 0 ||
-        intel.impact_counts?.warnings > 0 ||
-        intel.impact_counts?.road_closures > 0) && (
+      {/* Every evacuation instruction gets a tile. Shelter-in-place was computed
+          by the backend and rendered nowhere, and it was missing from this guard
+          too — so a fire whose ONLY instruction was "shelter in place" showed no
+          evacuation badges at all, while the tile below it read "N EVACUATION"
+          from a different count. Two numbers on one screen disagreeing, on the
+          one data class this project treats as sacred. */}
+      {intel.evac.length + (intel.impact_counts?.road_closures ?? 0) > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }}>
           {[
-            { label: "EVAC ORDERS", n: intel.impact_counts.orders, color: C.evac },
-            { label: "WARNINGS", n: intel.impact_counts.warnings, color: C.warn },
-            { label: "ROAD CLOSURES", n: intel.impact_counts.road_closures, color: C.blue },
-          ].map((b) => (
+            // The core three always render, zeros included: "0 EVAC ORDERS" is
+            // a fact the operator wants stated, not an absence to infer.
+            { label: "EVAC ORDERS", n: intel.impact_counts.orders, color: C.evac, always: true },
+            { label: "WARNINGS", n: intel.impact_counts.warnings, color: C.warn, always: true },
+            { label: "ROAD CLOSURES", n: intel.impact_counts.road_closures, color: C.blue, always: true },
+            // these two appear only when present — but they MUST appear then.
+            // Both were computed by the backend and rendered nowhere, so a fire
+            // whose only instruction was shelter-in-place showed no badges at all.
+            { label: "SHELTER IN PLACE", n: intel.impact_counts.shelter_in_place ?? 0, color: C.violet },
+            // an evac fact we could not classify is still an evac fact
+            { label: "UNCLASSIFIED", n: intel.impact_counts.unclassified ?? 0, color: C.warn },
+          ]
+            .filter((b) => b.always || b.n > 0)
+            .map((b) => (
             <div
               key={b.label}
               style={{
@@ -722,6 +751,21 @@ function IntelPanel({ sel, toast }: { sel: Incident; toast: (m: string) => void 
                 </span>
                 <span style={{ color: TIER[f.tier] }}>T{f.tier}</span> {f.source_name} · {fmtTime(f.observed_at)}
                 {f.evac_status && <span style={{ color: C.evac }}> · {f.evac_status.toUpperCase()}</span>}
+                {/* The mission rule is verbatim text + the official deep-link +
+                    the notice. The link was the missing third: without it an
+                    operator cannot open the issuing agency's own page and
+                    confirm an order before repeating it to the public. */}
+                {f.source_url && (
+                  <a
+                    href={f.source_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={`open the issuing source: ${f.source_url}`}
+                    style={{ color: C.blue, marginLeft: "auto", textDecoration: "none", border: `1px solid ${C.blue}55`, borderRadius: 3, padding: "0 5px" }}
+                  >
+                    OPEN SOURCE ⧉
+                  </a>
+                )}
               </div>
             </div>
           ))}
@@ -2685,7 +2729,11 @@ export default function Workstation() {
         )}
       </div>
 
-      {mode === "ops" && <OpsMode toast={toast} />}
+      {/* keyed on uiKey: SettingsPanel bumps it after a save, which remounts
+          the mode subtree so basemap / timeline order / poll interval are re-read.
+          Without the key these were useState initialisers that never re-ran, so
+          the toast said "settings saved" and the map stayed dark. */}
+      {mode === "ops" && <OpsMode key={uiKey} toast={toast} />}
       {mode === "news" && <NewsroomMode toast={toast} />}
       {mode === "watch" && <WatchMode toast={toast} />}
       {mode === "archive" && <ArchiveMode toast={toast} />}

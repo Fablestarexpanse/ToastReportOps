@@ -23,15 +23,32 @@ import { TzMode, age, fmtStamp, setTzMode } from "@/lib/time";
 export const LS_TZ = "toast-tz-mode";
 export const LS_TIMELINE = "toast-timeline-order";
 export const LS_BASEMAP = "toast-map-basemap";
+export const LS_POLL = "toast-poll-interval-s";
 
-export function loadDisplayPrefs(): { tz: TzMode; timelineOrder: string; basemap: string } {
-  if (typeof window === "undefined") return { tz: "utc", timelineOrder: "newest", basemap: "dark" };
+export type DisplayPrefs = {
+  tz: TzMode;
+  timelineOrder: string;
+  basemap: string;
+  /** how often the workstation refetches. The OPTIONS field wrote this to the
+      server and nothing ever read it back — the UI polled every 5 s forever
+      while the panel said "saved". */
+  pollMs: number;
+};
+
+const DEFAULT_POLL_S = 5;
+
+export function loadDisplayPrefs(): DisplayPrefs {
+  if (typeof window === "undefined")
+    return { tz: "utc", timelineOrder: "newest", basemap: "dark", pollMs: DEFAULT_POLL_S * 1000 };
   const tz = (localStorage.getItem(LS_TZ) as TzMode) || "utc";
   setTzMode(tz);
+  const pollS = Number(localStorage.getItem(LS_POLL)) || DEFAULT_POLL_S;
   return {
     tz,
     timelineOrder: localStorage.getItem(LS_TIMELINE) || "newest",
     basemap: localStorage.getItem(LS_BASEMAP) || "dark",
+    // clamp: a 0 would busy-loop the backend, an hour would look frozen
+    pollMs: Math.min(300, Math.max(1, pollS)) * 1000,
   };
 }
 
@@ -44,13 +61,16 @@ export async function syncDisplayPrefs(): Promise<boolean> {
     const tz = (settings.timezone_display?.value as TzMode) || "utc";
     const order = settings.timeline_order?.value || "newest";
     const basemap = settings.map_basemap?.value || "dark";
+    const poll = settings.ui_poll_interval_s?.value || String(DEFAULT_POLL_S);
     const changed =
       tz !== localStorage.getItem(LS_TZ) ||
       order !== localStorage.getItem(LS_TIMELINE) ||
-      basemap !== localStorage.getItem(LS_BASEMAP);
+      basemap !== localStorage.getItem(LS_BASEMAP) ||
+      poll !== localStorage.getItem(LS_POLL);
     localStorage.setItem(LS_TZ, tz);
     localStorage.setItem(LS_TIMELINE, order);
     localStorage.setItem(LS_BASEMAP, basemap);
+    localStorage.setItem(LS_POLL, poll);
     setTzMode(tz);
     return changed;
   } catch {
