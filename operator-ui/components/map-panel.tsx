@@ -44,6 +44,7 @@ const BASEMAPS: Record<string, BaseSpec | null> = {
 };
 
 const CA_CENTER: [number, number] = [37.4, -119.6];
+const DEFAULT_ZOOM = 6; // whole state in view
 // Below this zoom the operator is looking at the state, not a street corner,
 // so a temporary imagery swap reverts to their chosen basemap.
 const WIDE_VIEW_ZOOM = 11;
@@ -92,7 +93,7 @@ export default function MapPanel({
     if (map.current || !holder.current) return;
     const m = L.map(holder.current, {
       center: CA_CENTER,
-      zoom: 6,
+      zoom: DEFAULT_ZOOM,
       zoomControl: true,
       attributionControl: true,
       preferCanvas: true,
@@ -207,6 +208,13 @@ export default function MapPanel({
     if (!m.getBounds().contains([inc.lat, inc.lon])) m.panTo([inc.lat, inc.lon]);
   }, [selected, incidents]);
 
+  // back to the whole state on the operator's chosen basemap — one action, so
+  // there is always a way out of a zoomed-in imagery view
+  const resetView = useCallback(() => {
+    setOverride(null);
+    map.current?.flyTo(CA_CENTER, DEFAULT_ZOOM, { duration: 0.8 });
+  }, []);
+
   const placed = incidents.filter((i) => i.lat != null && i.lon != null);
   const evacCount = placed.filter(hasActiveEvac).length;
 
@@ -214,12 +222,43 @@ export default function MapPanel({
     <div style={{ position: "relative", height: "100%", minWidth: 0, background: "#10141a" }}>
       <div ref={holder} style={{ position: "absolute", inset: 0 }} />
 
+      {/* always-available escape hatch: whole state, chosen basemap. Sits
+          directly under the zoom buttons so it reads as part of that cluster. */}
+      <div
+        onClick={resetView}
+        title="reset the map: whole of California, your chosen basemap"
+        style={{
+          position: "absolute",
+          top: 78,
+          left: 10,
+          zIndex: 500,
+          width: 30,
+          height: 30,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "#1b2128",
+          border: `1px solid ${C.line}`,
+          borderRadius: 4,
+          color: C.dim,
+          fontSize: 14,
+          cursor: "pointer",
+          userSelect: "none",
+          boxShadow: "0 1px 5px rgba(0,0,0,0.4)",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.color = C.ember;
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.color = C.dim;
+        }}
+      >
+        ⌂
+      </div>
+
       {override && (
         <div
-          onClick={() => {
-            setOverride(null);
-            map.current?.setZoom(7);
-          }}
+          onClick={resetView}
           title="click to return to the state view and your chosen basemap"
           style={{
             position: "absolute",
