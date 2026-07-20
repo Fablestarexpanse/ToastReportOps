@@ -479,7 +479,15 @@ def get_draft(request: Request, draft_id: str) -> dict:
                 cited_ids,
             )
         ]
-    return {"draft": draft, "cited_facts": cited}
+    pubs = [
+        dict(r)
+        for r in conn.execute(
+            """SELECT id, channel, status, external_url, sent_at
+               FROM publications WHERE draft_id = ? ORDER BY sent_at""",
+            (draft_id,),
+        )
+    ]
+    return {"draft": draft, "cited_facts": cited, "publications": pubs}
 
 
 @router.post("/drafts/{draft_id}/social")
@@ -525,7 +533,7 @@ def transition_draft(request: Request, draft_id: str, body: dict) -> dict:
 
     conn = _conn(request)
     target = body.get("status")
-    row = conn.execute("SELECT status FROM drafts WHERE id = ?", (draft_id,)).fetchone()
+    row = conn.execute("SELECT status, kind FROM drafts WHERE id = ?", (draft_id,)).fetchone()
     if row is None:
         raise HTTPException(404, "draft not found")
     current = row["status"]
@@ -557,6 +565,27 @@ def transition_draft(request: Request, draft_id: str, body: dict) -> dict:
             (ulid(), draft_id, now),
         )
         jobs.enqueue(conn, "build_site", {}, priority=2)
+
+        # SOCIAL drafts additionally fan out to every credentialed channel.
+        channels: list[str] = []
+        if row["kind"] == "social":
+            from toast.publishers import configured_publishers
+
+            for p in configured_publishers():
+                pub_id = ulid()
+                conn.execute(
+                    "INSERT INTO publications (id, draft_id, channel, status)"
+                    " VALUES (?, ?, ?, 'queued')",
+                    (pub_id, draft_id, p.channel),
+                )
+                jobs.enqueue(
+                    conn,
+                    "publish",
+                    {"draft_id": draft_id, "channel": p.channel, "publication_id": pub_id},
+                    priority=3,
+                )
+                channels.append(p.channel)
+        return {"ok": True, "draft_id": draft_id, "status": target, "channels": channels}
     return {"ok": True, "draft_id": draft_id, "status": target}
 
 

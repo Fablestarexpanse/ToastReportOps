@@ -47,6 +47,17 @@ class Settings(BaseSettings):
     ldr_username: str = "toast-operator"
     ldr_password: str = "change-me-local-research"
 
+    # social publishing credentials (all optional — a channel is active only
+    # when its credentials are present; see docs/API-KEYS.md)
+    bluesky_handle: str = ""
+    bluesky_app_password: str = ""
+    x_api_key: str = ""
+    x_api_secret: str = ""
+    x_access_token: str = ""
+    x_access_secret: str = ""
+    fb_page_id: str = ""
+    fb_page_token: str = ""
+
     # logging
     log_level: str = "INFO"
 

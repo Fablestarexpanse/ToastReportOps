@@ -8,6 +8,7 @@ import sqlite3
 from typing import Any
 
 from toast.core.config import Settings
+from toast.core.db import utcnow
 from toast.core.envelope import insert_envelope
 from toast.core.logging import get_logger
 from toast.core.rawstore import store_raw
@@ -216,6 +217,50 @@ def build_site_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> Non
 
     counts = build_site(conn, Settings().site_dir)
     get_logger("sitegen").info("site_built", **counts)
+
+
+@register("publish")
+def publish_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Deliver an approved+published SOCIAL draft to one external channel.
+
+    No retries on failure: a retry after an ambiguous network error risks a
+    duplicate public post. Failures are recorded on the publications row for
+    the operator to re-send deliberately."""
+    import json as _json
+
+    from toast.publishers import PublishError, get_publisher, split_social_body
+
+    draft_id = payload["draft_id"]
+    channel = payload["channel"]
+    publication_id = payload["publication_id"]
+    log = get_logger("publisher")
+
+    draft = conn.execute("SELECT * FROM drafts WHERE id = ?", (draft_id,)).fetchone()
+    if draft is None or draft["status"] != "published":
+        conn.execute(
+            "UPDATE publications SET status = 'failed', receipt = ? WHERE id = ?",
+            (_json.dumps({"error": "draft missing or no longer published"}), publication_id),
+        )
+        return
+    post_text, short_text = split_social_body(draft["body_md"] or "")
+    # short version for length-capped channels, full post for the rest
+    text = short_text if channel in ("bluesky", "x") else post_text
+
+    try:
+        receipt = get_publisher(channel).publish(text)
+    except PublishError as exc:
+        conn.execute(
+            "UPDATE publications SET status = 'failed', receipt = ? WHERE id = ?",
+            (_json.dumps({"error": str(exc)}), publication_id),
+        )
+        log.warning("publish_failed", channel=channel, draft_id=draft_id, error=str(exc))
+        return
+    conn.execute(
+        "UPDATE publications SET status = 'sent', external_url = ?, receipt = ?, sent_at = ?"
+        " WHERE id = ?",
+        (receipt.get("url"), _json.dumps(receipt), utcnow(), publication_id),
+    )
+    log.info("published", channel=channel, draft_id=draft_id, url=receipt.get("url"))
 
 
 def _requeue_rate_limited(conn: sqlite3.Connection, stage: str, payload: dict[str, Any]) -> None:
