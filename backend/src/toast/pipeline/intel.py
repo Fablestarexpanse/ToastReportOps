@@ -15,7 +15,11 @@ from typing import Any
 _METRICS = {"acreage": "acreage", "containment": "containment_pct"}
 
 # kinds rendered as CURRENT SITUATION bullets (latest non-superseded each)
-_SITUATION_KINDS = ("damage", "resource", "weather", "cause", "other")
+# Kinds rendered as CURRENT SITUATION bullets — deliberately excluding kinds
+# that already have their own block in the panel. 'resource' has the RESOURCES
+# DEPLOYED tiles and 'cause' has a header tile; repeating them as bullets makes
+# one fact look like two independent reports.
+_SITUATION_KINDS = ("damage", "weather", "other")
 
 _NOT_SUPERSEDED = "id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)"
 

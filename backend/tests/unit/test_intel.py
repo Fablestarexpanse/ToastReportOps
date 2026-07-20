@@ -43,13 +43,26 @@ def test_metric_without_chain_has_no_delta(seeded):
 
 
 def test_situation_shows_latest_non_superseded_per_kind(seeded):
-    old = _fact(seeded, "resource", "two engines", observed_at="2026-07-18T00:00:00.000Z")
-    _fact(seeded, "resource", "fourth tanker assigned", supersedes=old)
-    _fact(seeded, "damage", "3 structures lost")
+    old = _fact(seeded, "damage", "two structures damaged", observed_at="2026-07-18T00:00:00.000Z")
+    _fact(seeded, "damage", "3 structures lost", supersedes=old)
+    _fact(seeded, "other", "crews holding the eastern line")
     intel = incident_intel(seeded, "i1")
     by_kind = {s["kind"]: s["content"] for s in intel["situation"]}
-    assert by_kind["resource"] == "fourth tanker assigned"
     assert by_kind["damage"] == "3 structures lost"
+    assert by_kind["other"] == "crews holding the eastern line"
+
+
+def test_resources_and_cause_are_not_repeated_as_situation_bullets(seeded):
+    """Both have their own block; repeating them makes one fact look like two
+    independent reports."""
+    _fact(seeded, "resource", "513 total personnel assigned")
+    _fact(seeded, "cause", "Under investigation")
+    intel = incident_intel(seeded, "i1")
+    kinds = {s["kind"] for s in intel["situation"]}
+    assert "resource" not in kinds and "cause" not in kinds
+    # …but they are still present where they belong
+    assert intel["metrics"]["cause"]["content"] == "Under investigation"
+    assert intel["resources"]["notes"][0]["content"].startswith("513 total personnel")
 
 
 def test_evac_facts_returned_verbatim(seeded):
