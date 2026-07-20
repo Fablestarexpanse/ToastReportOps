@@ -536,6 +536,67 @@ function IntelPanel({ sel, toast }: { sel: Incident; toast: (m: string) => void 
         </StatTile>
       </div>
 
+      {/* OFFICIAL vs REPORTED — kept apart deliberately. The agency record is
+          authoritative but lags; scraped reporting is faster but noisier, and
+          where they disagree is itself information. */}
+      {(m.acreage.reported || m.containment.reported) && (
+        <div style={{ border: `1px solid ${C.line}`, borderRadius: 6, background: C.bg, overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "72px 1fr 1fr", background: C.panelUp }}>
+            <span />
+            <span style={{ fontFamily: font.mono, fontSize: 7.5, color: TIER[1], letterSpacing: 1, padding: "4px 6px" }}>
+              OFFICIAL
+            </span>
+            <span style={{ fontFamily: font.mono, fontSize: 7.5, color: C.ember, letterSpacing: 1, padding: "4px 6px" }}>
+              REPORTED
+            </span>
+          </div>
+          {([
+            ["ACRES", m.acreage, (v: number) => Math.round(v).toLocaleString()],
+            ["CONT.", m.containment, (v: number) => `${v}%`],
+          ] as const).map(([label, metric, fmt]) => (
+            <div
+              key={label}
+              style={{ display: "grid", gridTemplateColumns: "72px 1fr 1fr", borderTop: `1px solid ${C.line}44` }}
+            >
+              <span style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint, padding: "5px 6px" }}>
+                {label}
+              </span>
+              {[metric.official, metric.reported].map((side, i) => (
+                <span key={i} style={{ padding: "5px 6px" }}>
+                  {side?.value != null ? (
+                    <>
+                      <span style={{ fontFamily: font.disp, fontSize: 13, fontWeight: 700, color: i === 0 ? C.txt : C.dim }}>
+                        {fmt(side.value)}
+                      </span>
+                      <span
+                        title={`${side.source_name} · ${fmtFull(side.observed_at)}`}
+                        style={{ fontFamily: font.mono, fontSize: 7.5, color: C.faint, display: "block" }}
+                      >
+                        T{side.tier} · {age(side.observed_at)} old
+                      </span>
+                    </>
+                  ) : (
+                    <span style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint }}>—</span>
+                  )}
+                </span>
+              ))}
+            </div>
+          ))}
+          {(m.acreage.divergence || m.containment.divergence) && (
+            <div style={{ borderTop: `1px solid ${C.warn}44`, background: C.warn + "10", padding: "5px 7px", fontFamily: font.mono, fontSize: 8.5, color: C.warn }}>
+              ⚠ sources disagree
+              {m.acreage.divergence &&
+                ` · press reports ${Math.round(m.acreage.divergence.gap).toLocaleString()} ac ${m.acreage.divergence.reported_higher ? "MORE" : "LESS"} than CAL FIRE`}
+              {m.containment.divergence &&
+                ` · containment differs by ${Math.round(m.containment.divergence.gap)} pts`}
+              <div style={{ color: C.faint, marginTop: 2 }}>
+                could be an early scoop or an error — check both before publishing
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* source confidence meter — the signature stat */}
       <div style={{ background: C.bg, border: `1px solid ${C.line}`, borderRadius: 6, padding: "8px 10px" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
@@ -622,7 +683,24 @@ function IntelPanel({ sel, toast }: { sel: Incident; toast: (m: string) => void 
           {intel[impactOpen].map((f) => (
             <div key={f.id} style={{ borderTop: `1px solid ${C.line}44`, padding: "6px 0" }}>
               <div style={{ fontSize: 11.5, whiteSpace: "pre-wrap" }}>{f.content}</div>
-              <div style={{ fontFamily: font.mono, fontSize: 8.5, color: C.dim, marginTop: 3 }}>
+              <div style={{ fontFamily: font.mono, fontSize: 8.5, color: C.dim, marginTop: 3, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                <span
+                  title={
+                    f.official
+                      ? "issued by an agency source — this is the instruction itself"
+                      : "a newsroom's account of an instruction — verify against the agency before acting"
+                  }
+                  style={{
+                    fontSize: 7.5,
+                    letterSpacing: 0.5,
+                    color: f.official ? C.ok : C.warn,
+                    border: `1px solid ${f.official ? C.ok : C.warn}66`,
+                    borderRadius: 3,
+                    padding: "0 4px",
+                  }}
+                >
+                  {f.official ? "OFFICIAL" : "REPORTED"}
+                </span>
                 <span style={{ color: TIER[f.tier] }}>T{f.tier}</span> {f.source_name} · {fmtTime(f.observed_at)}
                 {f.evac_status && <span style={{ color: C.evac }}> · {f.evac_status.toUpperCase()}</span>}
               </div>

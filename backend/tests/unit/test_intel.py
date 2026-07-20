@@ -25,6 +25,84 @@ def _fact(
     return fid
 
 
+def _tiered_fact(seeded, kind, tier, *, acreage=None, containment_pct=None, source="s1"):
+    """A fact from a specific trust tier (T1-2 official, T3+ press/scraped)."""
+    if source != "s1":
+        seeded.execute(
+            "INSERT OR IGNORE INTO sources (id, name, type, adapter, tier, created_at, updated_at)"
+            " VALUES (?, ?, 'scrape', 'rss', ?, ?, ?)",
+            (source, f"Outlet {source}", tier, NOW, NOW),
+        )
+        seeded.execute(
+            "INSERT OR IGNORE INTO envelopes (id, source_id, external_id, kind, payload,"
+            " content_hash, fetched_at) VALUES (?, ?, ?, 'article', '{}', ?, ?)",
+            (f"e-{source}", source, source, f"h-{source}", NOW),
+        )
+    fid = ulid()
+    seeded.execute(
+        "INSERT INTO facts (id, incident_id, envelope_id, source_id, tier, content, kind,"
+        " acreage, containment_pct, confidence, observed_at, ingested_at)"
+        " VALUES (?, 'i1', ?, ?, ?, 'claim', ?, ?, ?, 0.9, ?, ?)",
+        (
+            fid,
+            "e1" if source == "s1" else f"e-{source}",
+            source,
+            tier,
+            kind,
+            acreage,
+            containment_pct,
+            NOW,
+            NOW,
+        ),
+    )
+    return fid
+
+
+def test_official_and_reported_are_kept_apart(seeded):
+    """Averaging an agency figure with a newsroom figure would hide both."""
+    _tiered_fact(seeded, "acreage", 1, acreage=12000)  # CAL FIRE
+    _tiered_fact(seeded, "acreage", 4, acreage=30000, source="s-press")
+
+    m = incident_intel(seeded, "i1")["metrics"]["acreage"]
+    assert m["official"]["value"] == 12000
+    assert m["reported"]["value"] == 30000
+    # the headline number is the official one — a tile must not show press figures
+    assert m["value"] == 12000
+
+
+def test_material_disagreement_is_flagged(seeded):
+    _tiered_fact(seeded, "acreage", 1, acreage=12000)
+    _tiered_fact(seeded, "acreage", 4, acreage=30000, source="s-press")
+    d = incident_intel(seeded, "i1")["metrics"]["acreage"]["divergence"]
+    assert d is not None and d["reported_higher"] is True
+    assert d["gap"] == 18000
+
+
+def test_small_differences_are_not_flagged(seeded):
+    _tiered_fact(seeded, "acreage", 1, acreage=12000)
+    _tiered_fact(seeded, "acreage", 4, acreage=12500, source="s-press")
+    assert incident_intel(seeded, "i1")["metrics"]["acreage"]["divergence"] is None
+
+
+def test_reported_only_still_shows_but_is_labelled(seeded):
+    """With no agency figure the press number is all we have — show it, and be
+    clear that is what it is."""
+    _tiered_fact(seeded, "acreage", 4, acreage=800, source="s-press")
+    m = incident_intel(seeded, "i1")["metrics"]["acreage"]
+    assert m["official"] is None
+    assert m["reported"]["value"] == 800 and m["value"] == 800
+    assert m["tier"] == 4
+
+
+def test_evac_facts_are_marked_official_or_not(seeded):
+    """Whether an evacuation instruction is the agency's or a paraphrase is the
+    most important thing about it."""
+    _tiered_fact(seeded, "evac", 1)
+    _tiered_fact(seeded, "evac", 4, source="s-press")
+    evac = incident_intel(seeded, "i1")["evac"]
+    assert {e["official"] for e in evac} == {True, False}
+
+
 def test_metric_delta_comes_from_supersession_chain(seeded):
     old = _fact(seeded, "acreage", acreage=100, observed_at="2026-07-18T00:00:00.000Z")
     _fact(seeded, "acreage", acreage=1334, supersedes=old)

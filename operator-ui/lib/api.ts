@@ -423,13 +423,22 @@ export async function createSource(body: {
   return res.json();
 }
 
-export type MetricValue = {
+export type Reading = {
   value: number | null;
   prev: number | null;
   delta: number | null;
   observed_at: string | null;
   source_name?: string;
   tier?: number;
+};
+
+export type MetricValue = Reading & {
+  /** the agency record (T1–T2) */
+  official: Reading | null;
+  /** press, social and scraped reporting (T3+) */
+  reported: Reading | null;
+  /** set only when the two disagree materially */
+  divergence: { gap: number; pct: number; reported_higher: boolean } | null;
 };
 
 export type TextMetric = {
@@ -447,6 +456,8 @@ export type ImpactFact = {
   tier: number;
   structured: string;
   source_name: string;
+  /** agency instruction vs. a newsroom paraphrase of one */
+  official: boolean;
 };
 
 export type IncidentIntel = {
