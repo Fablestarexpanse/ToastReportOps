@@ -42,7 +42,8 @@ FACT_COLS = """f.id, f.incident_id, f.source_id, f.tier, f.content, f.kind,
     (SELECT corroborating_sources FROM fact_assessments a WHERE a.fact_id = f.id)
         AS corroborating_sources,
     (SELECT COALESCE(json_extract(e.payload, '$.url'), json_extract(e.payload, '$.link'))
-       FROM envelopes e WHERE e.id = f.envelope_id) AS source_url"""
+       FROM envelopes e WHERE e.id = f.envelope_id) AS source_url,
+    (SELECT e.kind FROM envelopes e WHERE e.id = f.envelope_id) AS media_kind"""
 
 
 @router.get("/incidents")

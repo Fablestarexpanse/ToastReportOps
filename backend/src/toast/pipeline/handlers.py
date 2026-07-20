@@ -36,6 +36,9 @@ def poll_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
 
     config = json.loads(source["config"])
     config["source_id"] = source["id"]
+    # adapters that must check robots.txt themselves need to know whether the
+    # operator has explicitly taken that decision (sources.robots_override)
+    config["robots_override"] = bool(source["robots_override"])
     # inject an operator-entered credential so keys added in OPTIONS work
     # without editing .env or restarting; never logged (see core/logging.py)
     if key_env := config.get("map_key_env"):
@@ -75,9 +78,10 @@ def normalize_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None
 
     env_id = payload["envelope_id"]
     kind = conn.execute("SELECT kind FROM envelopes WHERE id = ?", (env_id,)).fetchone()["kind"]
-    # Articles need the LLM extractor — route to its own retryable stage instead
-    # of doing model work on the normalize path.
-    if kind == "article":
+    # Articles and videos need the LLM extractor — route to its own retryable
+    # stage instead of doing model work on the normalize path. A video carries
+    # no page to fetch, so extraction runs on its title + description.
+    if kind in ("article", "video"):
         jobs.enqueue(conn, "extract", {"envelope_id": env_id}, priority=6)
         return
     facts = normalize_envelope(conn, env_id)
@@ -115,8 +119,9 @@ def extract_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     raw_ref: str | None = None
     text: str | None = None
     fetched_full = False
-    # try the full article page when robots permits
-    if url and (src["robots_override"] or robots_allows(url)):
+    # try the full article page when robots permits. `text_only` sources (video
+    # feeds) never fetch: we extract from what the uploader wrote, nothing else.
+    if url and not env_payload.get("text_only") and (src["robots_override"] or robots_allows(url)):
         try:
             raw_ref, text = fetch_article_text(conn, url)
             fetched_full = bool(text and len(text) >= MIN_ARTICLE_CHARS)

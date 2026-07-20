@@ -39,6 +39,33 @@ value-per-minute-of-signup.
 | **ADSBExchange** | paid (RapidAPI) | Formerly free; skip unless the free aggregators prove insufficient. |
 | **Own receiver** | ~$30 hardware once | RTL-SDR dongle + antenna feeding your own data — unlimited, offline-capable, and feeding aggregators usually earns free API access. Pairs with the future scanner-audio SDR decision. |
 
+## YouTube channels (decision, not a key)
+
+CAL FIRE units, county OES, and local TV post footage and press conferences on
+YouTube, and every channel has a public, keyless, quota-free feed:
+`https://www.youtube.com/feeds/videos.xml?channel_id=UC…`
+
+**But** `youtube.com/robots.txt` says `Disallow: /feeds/videos.xml` for every
+crawler. The feed is public and unauthenticated, and nothing technical stops us
+— but that line is an explicit "no automated fetching", and this project honors
+robots.txt by default. So the `youtube` adapter **refuses to poll** and raises
+`RobotsDisallowed` unless you set `robots_override = 1` on that source.
+
+Your call, not the software's. Ways to go:
+
+| Option | Cost | Notes |
+|---|---|---|
+| **Leave it off** | — | Default. YouTube video simply isn't an ingest source. |
+| **Set `robots_override` per channel** | free | Only for official channels (CAL FIRE units, county OES) at a slow schedule. Public-safety-information use, one request per poll — but it is still against a stated directive, and it is you making that choice. |
+| **YouTube Data API v3** | free, quota'd | 10,000 units/day, keyed, no robots question: the API is the sanctioned path. Costs a Google Cloud project + key; `search.list` is 100 units a call, so budget it. |
+
+Finding a channel id: open the channel, View Source, search `channelId`. Then
+add the source with adapter `youtube`, config `{"channel_id": "UC…"}` (add
+`"keywords": []` for a channel that is nothing but fire).
+
+Whatever you choose, we only ever read the uploader's own title and description
+— the video page is never fetched and nothing is transcribed.
+
 ## Already handled / no key needed
 
 - CAL FIRE incidents, NWS CAP alerts, InciWeb, RSS/news/social feeds, SearXNG,

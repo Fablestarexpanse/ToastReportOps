@@ -52,6 +52,8 @@ export type Fact = {
   effective_confidence: number | null;
   corroborating_sources: number | null;
   source_url: string | null;
+  /** envelope kind behind this fact: report | article | video | image … */
+  media_kind: string | null;
 };
 
 export type SourceStats = {

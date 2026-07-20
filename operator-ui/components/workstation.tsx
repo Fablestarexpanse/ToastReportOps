@@ -200,6 +200,10 @@ function FactRow({
             }}
           >
             {f.source_name}
+            {/* video reads differently from text: a claim from an upload is the
+                uploader's own words, and the operator can go watch it */}
+            {f.media_kind === "video" && <span style={{ color: C.violet }}> ▶</span>}
+            {f.media_kind === "image" && <span style={{ color: C.blue }}> ▣</span>}
             {f.source_url && <span style={{ color: C.blue }}> ⧉</span>}
           </span>
           {showIncident && f.incident_name && (

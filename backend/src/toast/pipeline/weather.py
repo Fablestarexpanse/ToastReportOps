@@ -59,7 +59,7 @@ def _kmh_to_mph(kmh: float | None) -> float | None:
 def _value(prop: Any) -> float | None:
     if isinstance(prop, dict):
         v = prop.get("value")
-        return float(v) if isinstance(v, (int, float)) else None
+        return float(v) if isinstance(v, int | float) else None
     return None
 
 
