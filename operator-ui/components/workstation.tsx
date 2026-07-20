@@ -37,6 +37,7 @@ import {
   dismissTierSuggestion,
   probeSource,
   recomputeSourceStats,
+  refreshResources,
   resolveAdjudication,
   searchFires,
   setSourceTier,
@@ -486,6 +487,7 @@ function IntelPanel({ sel, toast }: { sel: Incident; toast: (m: string) => void 
   const [notes, setNotes] = useState<Note[]>([]);
   const [noteText, setNoteText] = useState("");
   const [impactOpen, setImpactOpen] = useState<"evac" | "road" | null>(null);
+  const [resBusy, setResBusy] = useState(false);
 
   const refreshNotes = useCallback(async () => {
     try {
@@ -628,6 +630,88 @@ function IntelPanel({ sel, toast }: { sel: Incident; toast: (m: string) => void 
           ))}
         </div>
       )}
+
+      {/* deployed resources — the official total, plus what reporting says */}
+      <div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
+          <span style={{ fontFamily: font.mono, fontSize: 8, color: C.faint, letterSpacing: 1 }}>
+            RESOURCES DEPLOYED
+          </span>
+          <span
+            onClick={async () => {
+              setResBusy(true);
+              try {
+                const r = await refreshResources(sel.id);
+                toast(
+                  r.matched
+                    ? r.recorded
+                      ? `WFIGS: ${r.personnel ? r.personnel.toLocaleString() + " personnel" : "figures updated"}`
+                      : r.reason || "matched, nothing new"
+                    : r.reason || "no interagency record for this fire",
+                );
+              } catch (e) {
+                toast(`lookup failed: ${e instanceof Error ? e.message : e}`);
+              } finally {
+                setResBusy(false);
+              }
+            }}
+            style={{ marginLeft: "auto", fontFamily: font.mono, fontSize: 8, color: C.blue, cursor: "pointer", border: `1px solid ${C.blue}55`, borderRadius: 3, padding: "1px 6px" }}
+          >
+            {resBusy ? "CHECKING…" : "↻ WFIGS"}
+          </span>
+        </div>
+
+        {Object.keys(intel.resources?.metrics ?? {}).length > 0 ? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }}>
+            {[
+              { key: "personnel", label: "PERSONNEL" },
+              { key: "complexity", label: "COMPLEXITY" },
+              { key: "cost_to_date", label: "COST TO DATE" },
+            ]
+              .filter((m) => intel.resources.metrics[m.key])
+              .map((m) => {
+                const v = intel.resources.metrics[m.key];
+                return (
+                  <div
+                    key={m.key}
+                    title={`${v.source} · ${fmtFull(v.observed_at)}`}
+                    style={{ background: C.bg, border: `1px solid ${C.line}`, borderRadius: 6, padding: "6px 8px" }}
+                  >
+                    <div style={{ fontFamily: font.mono, fontSize: 7.5, color: C.faint, letterSpacing: 0.5 }}>
+                      {m.label}
+                    </div>
+                    <div style={{ fontFamily: font.disp, fontSize: 15, fontWeight: 700, marginTop: 1 }}>
+                      {m.key === "cost_to_date"
+                        ? `$${Number(v.value).toLocaleString()}`
+                        : typeof v.value === "number"
+                          ? v.value.toLocaleString()
+                          : v.value}
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        ) : (
+          <div style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint }}>
+            no official personnel figures — WFIGS only carries them for incidents with an
+            interagency record
+          </div>
+        )}
+
+        {/* reported wording, kept as text: never parsed into a number we would
+            then present as an official count */}
+        {intel.resources?.notes?.map((n, i) => (
+          <div key={i} style={{ display: "flex", gap: 6, padding: "3px 0", fontSize: 10.5, marginTop: 2 }}>
+            <span style={{ color: TIER[n.tier] }}>▸</span>
+            <span style={{ flex: 1 }}>
+              {n.content}
+              <span style={{ fontFamily: font.mono, fontSize: 8, color: C.faint, marginLeft: 5 }}>
+                {n.source} · {fmtTime(n.observed_at)}
+              </span>
+            </span>
+          </div>
+        ))}
+      </div>
 
       {/* current situation */}
       <div>

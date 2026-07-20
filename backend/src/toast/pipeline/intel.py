@@ -120,9 +120,12 @@ def incident_intel(conn: sqlite3.Connection, incident_id: str) -> dict[str, Any]
         "road_closures": len(impacts["road"]),
     }
 
+    from toast.pipeline.resources import current_resources
+
     return {
         "metrics": metrics,
         "confidence": dict(conf) if conf else {},
+        "resources": current_resources(conn, incident_id),
         "situation": situation,
         "evac": impacts["evac"],
         "road": impacts["road"],

@@ -163,6 +163,21 @@ def get_incident_intel(request: Request, incident_id: str) -> dict:
     return incident_intel(conn, incident_id)
 
 
+@router.post("/incidents/{incident_id}/resources/refresh")
+def refresh_resources(request: Request, incident_id: str) -> dict:
+    """Pull deployed-resource figures from WFIGS for this fire. Results land in
+    the ledger as ordinary facts, so they supersede and carry provenance."""
+    from toast.core.fetch import FetchError
+    from toast.pipeline.resources import enrich_incident
+
+    try:
+        return enrich_incident(_conn(request), incident_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except FetchError as exc:
+        raise HTTPException(502, f"could not reach WFIGS: {exc}") from exc
+
+
 @router.get("/incidents/{incident_id}/origin-check")
 def check_origin(request: Request, incident_id: str) -> dict:
     """Re-verify an incident's coordinates against CAL FIRE before the operator

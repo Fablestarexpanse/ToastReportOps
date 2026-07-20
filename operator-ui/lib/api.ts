@@ -470,6 +470,10 @@ export type IncidentIntel = {
     tier: number;
     confidence: number;
   }[];
+  resources: {
+    metrics: Record<string, { value: number | string; observed_at: string; source: string; tier: number }>;
+    notes: { content: string; observed_at: string; source: string; tier: number }[];
+  };
   evac: ImpactFact[];
   road: ImpactFact[];
   impact_counts: {
@@ -646,6 +650,21 @@ export type OriginCheck = {
   } | null;
   checks: { check: string; ok: boolean | null; detail: string }[];
 };
+
+export async function refreshResources(incidentId: string): Promise<{
+  matched: boolean;
+  recorded?: number;
+  reason?: string;
+  personnel?: number | null;
+  match_distance_km?: number;
+}> {
+  const res = await fetch(`/api/incidents/${incidentId}/resources/refresh`, { method: "POST" });
+  if (!res.ok) {
+    const detail = await res.json().then((d) => d.detail).catch(() => res.status);
+    throw new Error(String(detail));
+  }
+  return res.json();
+}
 
 export const fetchOriginCheck = (incidentId: string) =>
   get<OriginCheck>(`/incidents/${incidentId}/origin-check`);
