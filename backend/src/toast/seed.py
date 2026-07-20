@@ -64,6 +64,98 @@ SEEDS: list[dict[str, Any]] = [
     },
 ]
 
+# Curated California wildfire media feeds. The extractor's California-relevance
+# gate filters anything not about a CA fire, so broad feeds are safe. Aggregator
+# feeds (Google News) are headline-level — the extract stage falls back to the
+# feed title+summary when the article page can't be fetched. Operators add more
+# via SOURCES → ADD SOURCE.
+_GNEWS = "https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en"
+
+
+def _gnews(query: str) -> str:
+    from urllib.parse import quote
+
+    return _GNEWS.format(q=quote(query))
+
+
+MEDIA_SEEDS: list[dict[str, Any]] = [
+    {
+        "name": "InciWeb incidents (national)",
+        "type": "api",
+        "adapter": "rss",
+        "tier": 2,
+        "config": {"feed_url": "https://inciweb.wildfire.gov/incidents/rss.xml"},
+        "schedule": "900",
+        "enabled": 1,
+        "tos_notes": "Official interagency incident feed (public). Reviewed 2026-07-20.",
+    },
+    {
+        "name": "Google News: California wildfire",
+        "type": "scrape",
+        "adapter": "rss",
+        "tier": 4,
+        "config": {"feed_url": _gnews("california wildfire when:2d"), "max_entries": 15},
+        "schedule": "900",
+        "enabled": 1,
+        "tos_notes": "Google News RSS (headline-level). Reviewed 2026-07-20.",
+    },
+    {
+        "name": "Google News: CA fire evacuation",
+        "type": "scrape",
+        "adapter": "rss",
+        "tier": 4,
+        "config": {"feed_url": _gnews("california fire evacuation when:2d"), "max_entries": 12},
+        "schedule": "900",
+        "enabled": 1,
+        "tos_notes": "Google News RSS (headline-level). Reviewed 2026-07-20.",
+    },
+    {
+        "name": "Google News: Butte County fire",
+        "type": "scrape",
+        "adapter": "rss",
+        "tier": 4,
+        "config": {"feed_url": _gnews('"Butte County" fire when:7d'), "max_entries": 10},
+        "schedule": "1800",
+        "enabled": 1,
+        "tos_notes": "Google News RSS, operator's home county. Reviewed 2026-07-20.",
+    },
+    {
+        "name": "Wildfire Today",
+        "type": "scrape",
+        "adapter": "rss",
+        "tier": 4,
+        "config": {"feed_url": "https://wildfiretoday.com/feed/", "max_entries": 8},
+        "schedule": "1800",
+        "enabled": 1,
+        "tos_notes": "Wildfire news blog; robots allows articles. Reviewed 2026-07-20.",
+    },
+    {
+        "name": "KQED News (Bay Area)",
+        "type": "scrape",
+        "adapter": "rss",
+        "tier": 4,
+        "config": {"feed_url": "https://ww2.kqed.org/news/feed/", "max_entries": 12},
+        "schedule": "1800",
+        "enabled": 1,
+        "tos_notes": "Public media RSS. Reviewed 2026-07-20.",
+    },
+    {
+        "name": "ABC10 Sacramento (local)",
+        "type": "scrape",
+        "adapter": "rss",
+        "tier": 4,
+        "config": {
+            "feed_url": "https://www.abc10.com/feeds/syndication/rss/news/local",
+            "max_entries": 12,
+        },
+        "schedule": "1800",
+        "enabled": 1,
+        "tos_notes": "NorCal local news RSS. Reviewed 2026-07-20.",
+    },
+]
+
+SEEDS = SEEDS + MEDIA_SEEDS
+
 
 def seed(conn) -> list[str]:
     created = []

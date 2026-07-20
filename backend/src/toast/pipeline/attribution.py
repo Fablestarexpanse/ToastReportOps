@@ -84,12 +84,18 @@ def score_candidates(
     limit: int = 5,
 ) -> list[Candidate]:
     out: list[Candidate] = []
-    for inc in conn.execute(
+    incidents = conn.execute(
         """SELECT i.id, i.canonical_name, i.lat, i.lon,
                   COALESCE((SELECT MAX(observed_at) FROM facts WHERE incident_id = i.id),
                            i.updated_at) AS last_activity
            FROM incidents i WHERE i.status IN ('candidate', 'active', 'contained')"""
-    ):
+    ).fetchall()
+    # Geo is unavailable for most media/news facts (extracted claims are
+    # coordless). When the fact has no coordinates, score over the available
+    # signals (name + time) and renormalize — otherwise a coordless fact could
+    # never reach the auto-attribute threshold even on a perfect name match.
+    geo_available = lat is not None and lon is not None
+    for inc in incidents:
         aliases = [
             r["alias"]
             for r in conn.execute(
@@ -97,14 +103,19 @@ def score_candidates(
             )
         ]
         n = name_similarity(incident_name, inc["canonical_name"], aliases)
-        g = geo_score(lat, lon, inc["lat"], inc["lon"])
         idle_s = abs(
             conn.execute(
                 "SELECT unixepoch(?) - unixepoch(?)", (observed_at, inc["last_activity"])
             ).fetchone()[0]
         )
         t = max(0.0, 1.0 - idle_s / TIME_ZERO_S)
-        score = WEIGHTS["name"] * n + WEIGHTS["geo"] * g + WEIGHTS["time"] * t
+        if geo_available:
+            g = geo_score(lat, lon, inc["lat"], inc["lon"])
+            score = WEIGHTS["name"] * n + WEIGHTS["geo"] * g + WEIGHTS["time"] * t
+        else:
+            g = 0.0
+            denom = WEIGHTS["name"] + WEIGHTS["time"]
+            score = (WEIGHTS["name"] * n + WEIGHTS["time"] * t) / denom
         if score > 0.05:
             out.append(Candidate(inc["id"], inc["canonical_name"], score, n, g, t))
     out.sort(key=lambda c: c.score, reverse=True)

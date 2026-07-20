@@ -77,13 +77,19 @@ def normalize_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None
     get_logger("pipeline.normalize").info("normalize_done", envelope_id=env_id, facts=len(facts))
 
 
+MIN_ARTICLE_CHARS = 200  # below this, prefer the feed headline+summary
+
+
 @register("extract")
 def extract_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
-    """Fetch an article envelope's page and extract claims into facts (LLM)."""
+    """Extract claims from an article envelope. Prefers the full article page;
+    falls back to the RSS entry's title+summary when the page can't be fetched
+    (robots-blocked aggregators like Google News, paywalls, errors) so we still
+    get headline-level signal to cross-check."""
     import json as _json
 
-    from toast.core.fetch import robots_allows
-    from toast.pipeline.analyze import extract_article, fetch_article_text
+    from toast.core.fetch import FetchError, robots_allows
+    from toast.pipeline.analyze import extract_article, fetch_article_text, html_to_text
 
     env_id = payload["envelope_id"]
     env = conn.execute("SELECT * FROM envelopes WHERE id = ?", (env_id,)).fetchone()
@@ -92,36 +98,59 @@ def extract_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     src = conn.execute(
         "SELECT tier, robots_override FROM sources WHERE id = ?", (env["source_id"],)
     ).fetchone()
-    url = _json.loads(env["payload"]).get("url")
-    if not url:
-        return
-    # robots disallow is permanent — skip (done), don't retry/dead-letter.
-    if not src["robots_override"] and not robots_allows(url):
-        get_logger("pipeline.extract").info("extract_skipped_robots", envelope_id=env_id, url=url)
+    env_payload = _json.loads(env["payload"])
+    url = env_payload.get("url")
+    title = env_payload.get("title") or ""
+    summary_text = env_payload.get("summary") or ""
+
+    raw_ref: str | None = None
+    text: str | None = None
+    fetched_full = False
+    # try the full article page when robots permits
+    if url and (src["robots_override"] or robots_allows(url)):
+        try:
+            raw_ref, text = fetch_article_text(conn, url)
+            fetched_full = bool(text and len(text) >= MIN_ARTICLE_CHARS)
+        except FetchError:
+            text = None
+
+    # fall back to feed headline + summary (strip any HTML in the summary)
+    if not fetched_full:
+        clean_summary = html_to_text(summary_text.encode()) if "<" in summary_text else summary_text
+        headline = f"{title}. {clean_summary}".strip(" .")
+        if len(headline) >= 10:
+            text = headline
+            raw_ref = None  # no page snapshot for headline-only
+
+    if not text:
+        get_logger("pipeline.extract").info("extract_no_text", envelope_id=env_id, url=url)
         return
 
-    raw_ref, text = fetch_article_text(conn, url)
-    summary = extract_article(
+    result = extract_article(
         conn,
-        url=url,
+        url=url or "feed",
         source_id=env["source_id"],
         tier=src["tier"],
         envelope_id=env_id,
         raw_ref=raw_ref,
         text=text,
     )
-    for fact in summary["facts"]:
+    for fact in result["facts"]:
         jobs.enqueue(conn, "embed", {"fact_id": fact["fact_id"]}, priority=7)
-    if summary.get("skipped") == "not_california":
+    if result.get("skipped") == "not_california":
         get_logger("pipeline.extract").info(
             "extract_skipped_non_ca",
             envelope_id=env_id,
             url=url,
-            location=summary.get("primary_location"),
+            location=result.get("primary_location"),
         )
     else:
         get_logger("pipeline.extract").info(
-            "extract_done", envelope_id=env_id, url=url, facts=len(summary["facts"])
+            "extract_done",
+            envelope_id=env_id,
+            url=url,
+            facts=len(result["facts"]),
+            mode="full" if fetched_full else "headline",
         )
 
 

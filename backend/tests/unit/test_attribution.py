@@ -95,6 +95,51 @@ def test_ambiguous_goes_to_review_not_auto(seeded):
     assert len(cands) >= 2
 
 
+def test_coordless_media_fact_auto_attributes_on_name(seeded):
+    # a news/InciWeb fact with no coordinates but an exact incident-name match
+    # should auto-attribute (geo weight redistributed to name+time)
+    _incident(seeded, "i-elephant", "ELEPHANT FIRE", 39.6, -120.5)
+    fid = write_fact(
+        seeded,
+        incident_id=None,
+        envelope_id="e1",
+        source_id="s1",
+        tier=4,
+        content="The Elephant Fire has burned 13,926 acres",
+        kind="acreage",
+        observed_at=NOW,
+        confidence=0.6,
+        lat=None,
+        lon=None,
+        structured={"incident_name": "Elephant Fire"},
+    )
+    outcome, cands = attribute_fact(seeded, fid)
+    assert outcome == "attributed"
+    assert cands[0].score >= 0.75  # renormalized name+time clears the threshold
+
+
+def test_coordless_ambiguous_name_still_reviews(seeded):
+    # two same-named incidents, coordless fact -> can't pick -> adjudication
+    _incident(seeded, "i-a", "OAK FIRE", 38.0, -120.0)
+    _incident(seeded, "i-b", "OAK FIRE", 40.0, -122.0)
+    fid = write_fact(
+        seeded,
+        incident_id=None,
+        envelope_id="e1",
+        source_id="s1",
+        tier=5,
+        content="Oak Fire grows",
+        kind="acreage",
+        observed_at=NOW,
+        confidence=0.5,
+        lat=None,
+        lon=None,
+        structured={"incident_name": "Oak Fire"},
+    )
+    outcome, _ = attribute_fact(seeded, fid)
+    assert outcome == "review"  # tie on name, no geo tiebreaker
+
+
 def test_no_candidate_leaves_unattributed(seeded):
     fid = write_fact(
         seeded,

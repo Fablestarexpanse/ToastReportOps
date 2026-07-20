@@ -2,6 +2,25 @@
 
 Architectural decision log. Newest first. Each entry: context → decision → why.
 
+## 2026-07-20 — More media sources + headline-fallback extraction
+
+- **Breadth over any single feed.** Seeded a curated CA wildfire media set
+  (InciWeb national feed, Google News queries for CA wildfire / evacuation /
+  Butte County, KQED, ABC10 Sacramento, Wildfire Today) so facts get
+  cross-checked across independent sources. Operators keep adding via the probe.
+- **Headline-fallback extraction.** The extract stage now prefers the full
+  article but falls back to the RSS entry's title+summary when the page can't be
+  fetched (robots-blocked aggregators like Google News, paywalls, errors). A
+  headline like "Biscar Fire burns 12,338 acres in Lassen County" still yields a
+  cross-check fact. Logged with mode=full|headline.
+- **The CA-relevance gate is the safety net** for broad feeds — non-CA headlines
+  produce zero facts, so we can subscribe widely without polluting the ledger.
+- **Aggregator feeds are capped** (`max_entries`) and polled less often
+  (15–30 min) so one feed can't flood the queue; each headline is still one LLM
+  call, serialized through the worker.
+- Reddit RSS returns 429 to default clients (rate-limited) — left out of the
+  seed; addable later via probe with a tuned UA/interval.
+
 ## 2026-07-19 — Phase 4 (newsroom): AI draft generation + approval
 
 - **Draft generation from the ledger, not free-form.** `draft_update.v1` writes
