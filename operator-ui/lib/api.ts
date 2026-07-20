@@ -315,6 +315,15 @@ export async function triageBulk(
   return res.json();
 }
 
+export const fetchDeferredCount = () =>
+  get<{ deferred: number }>("/adjudication/deferred").then((r) => r.deferred);
+
+export async function restoreDeferred(): Promise<number> {
+  const res = await fetch("/api/adjudication/restore-deferred", { method: "POST" });
+  if (!res.ok) throw new Error(`restore failed (${res.status})`);
+  return (await res.json()).restored;
+}
+
 export type AnalyzeResult = {
   url: string;
   claims: number;

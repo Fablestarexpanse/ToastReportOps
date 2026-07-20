@@ -687,6 +687,26 @@ def untriage_fact(request: Request, fact_id: str) -> dict:
     return {"ok": True}
 
 
+@router.get("/adjudication/deferred")
+def deferred_count(request: Request) -> dict:
+    """How many facts the operator has set aside. 'Deferred' means 'later', so
+    there must always be a way back to them — this is what the restore control
+    counts against."""
+    n = _conn(request).execute(
+        "SELECT COUNT(*) AS n FROM fact_triage WHERE state = 'deferred'"
+    ).fetchone()["n"]
+    return {"deferred": n}
+
+
+@router.post("/adjudication/restore-deferred")
+def restore_deferred(request: Request) -> dict:
+    """Bring every deferred fact back into the queue. The counterpart to DEFER
+    ALL — without it, 'set aside, recoverable' would be a promise the UI cannot
+    keep."""
+    cur = _conn(request).execute("DELETE FROM fact_triage WHERE state = 'deferred'")
+    return {"ok": True, "restored": cur.rowcount}
+
+
 @router.post("/adjudication/{fact_id}")
 def resolve_adjudication(request: Request, fact_id: str, body: dict) -> dict:
     """Operator resolves attribution: {"incident_id": "..."} attaches the fact

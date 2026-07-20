@@ -189,3 +189,32 @@ def test_satellite_pixels_stay_out_of_the_adjudication_queue(seeded):
     queued = {i["fact"]["id"] for i in _queue(req)}
     assert hotspot not in queued, "a satellite pixel is not adjudication work"
     assert news in queued, "news claims must still reach the operator"
+
+
+def test_defer_all_then_restore_round_trips(seeded):
+    """DEFER ALL sets the whole queue aside; RESTORE brings it back. 'Deferred'
+    must never be a one-way trip — that is the only thing separating it from
+    'not this fire'."""
+    req = Req(seeded)
+    ids = [_unattributed(seeded, content=f"claim {i}") for i in range(4)]
+    assert routes.triage_bulk(req, {"state": "deferred", "fact_ids": ids})["triaged"] == 4
+    assert _queue(req) == []  # all set aside
+    assert routes.deferred_count(req)["deferred"] == 4
+
+    restored = routes.restore_deferred(req)["restored"]
+    assert restored == 4
+    assert routes.deferred_count(req)["deferred"] == 0
+    assert len(_queue(req)) == 4  # every one is back, none destroyed
+
+
+def test_restore_leaves_other_triage_states_alone(seeded):
+    """RESTORE brings back deferred facts only — a fact the operator judged
+    'not an incident' stays cleared."""
+    req = Req(seeded)
+    a = _unattributed(seeded, content="a deferred one")
+    b = _unattributed(seeded, content="a dismissed one")
+    routes.triage_bulk(req, {"state": "deferred", "fact_ids": [a]})
+    routes.triage_bulk(req, {"state": "not_incident", "fact_ids": [b]})
+    routes.restore_deferred(req)
+    queued = {i["fact"]["id"] for i in _queue(req)}
+    assert a in queued and b not in queued

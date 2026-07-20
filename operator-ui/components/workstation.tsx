@@ -51,6 +51,8 @@ import {
   startResearch,
   toggleNote,
   triageBulk,
+  fetchDeferredCount,
+  restoreDeferred,
   triageFact,
 } from "@/lib/api";
 import { C, TIER, TIER_TITLES, confColor, font, Z } from "@/lib/theme";
@@ -401,37 +403,77 @@ function AnalyzeBox({ toast }: { toast: (m: string) => void }) {
   );
 }
 
+const LS_ADJ_COLLAPSED = "toast-adjudication-collapsed";
+
 function AdjudicationStrip({
   items,
   onResolve,
   onTriage,
   onTriageAllUnmatched,
+  onDeferAll,
 }: {
   items: AdjudicationItem[];
   onResolve: (factId: string, incidentId: string, name: string) => void;
   onTriage: (factId: string, state: TriageState) => void;
   onTriageAllUnmatched: (factIds: string[]) => void;
+  onDeferAll: (factIds: string[]) => void;
 }) {
+  // Collapse is display-only and remembered, so the queue can be pushed out of
+  // the way without changing a single fact. The operator's choice is honoured and
+  // persisted; no auto-collapse heuristic, which mis-fired on mount timing and is
+  // exactly the kind of guessing this tool avoids.
+  const [collapsed, setCollapsed] = useState<boolean>(
+    () => typeof window !== "undefined" && localStorage.getItem(LS_ADJ_COLLAPSED) === "1",
+  );
+  const toggle = () => {
+    setCollapsed((c) => {
+      const next = !c;
+      localStorage.setItem(LS_ADJ_COLLAPSED, next ? "1" : "0");
+      return next;
+    });
+  };
+
   if (!items.length) return null;
   // nothing named, nothing scored — these can never be attributed by hand
   const unmatched = items.filter((i) => !i.candidates.length && !i.claimed_name);
   return (
     <div style={{ margin: "0 10px 10px", border: `1px solid ${C.violet}44`, borderRadius: 7, background: C.panel }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 11px 3px" }}>
-        <span style={{ fontFamily: font.disp, fontSize: 12, letterSpacing: 2, color: C.violet }}>
+        <span
+          onClick={toggle}
+          title={collapsed ? "show the queue" : "minimize the queue (nothing is changed)"}
+          style={{ cursor: "pointer", color: C.violet, fontFamily: font.mono, fontSize: 11, width: 12 }}
+        >
+          {collapsed ? "▸" : "▾"}
+        </span>
+        <span
+          onClick={toggle}
+          style={{ fontFamily: font.disp, fontSize: 12, letterSpacing: 2, color: C.violet, cursor: "pointer" }}
+        >
           ADJUDICATION QUEUE · {items.length} awaiting attribution
         </span>
-        {unmatched.length > 1 && (
-          <span
-            onClick={() => onTriageAllUnmatched(unmatched.map((i) => i.fact.id))}
-            title="clear every item that names no fire and matches none — they aren't about a tracked incident"
-            style={{ marginLeft: "auto", fontFamily: font.mono, fontSize: 8.5, cursor: "pointer", color: C.dim, border: `1px solid ${C.line}`, borderRadius: 3, padding: "2px 7px" }}
-          >
-            CLEAR {unmatched.length} UNMATCHED
-          </span>
-        )}
+        <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+          {unmatched.length > 1 && (
+            <span
+              onClick={() => onTriageAllUnmatched(unmatched.map((i) => i.fact.id))}
+              title="clear every item that names no fire and matches none — they aren't about a tracked incident"
+              style={{ fontFamily: font.mono, fontSize: 8.5, cursor: "pointer", color: C.dim, border: `1px solid ${C.line}`, borderRadius: 3, padding: "2px 7px" }}
+            >
+              CLEAR {unmatched.length} UNMATCHED
+            </span>
+          )}
+          {items.length > 1 && (
+            <span
+              onClick={() => onDeferAll(items.map((i) => i.fact.id))}
+              title="set the whole queue aside — nothing is deleted or marked wrong, and any of it can be brought back from the triaged view"
+              style={{ fontFamily: font.mono, fontSize: 8.5, cursor: "pointer", color: C.warn, border: `1px solid ${C.warn}66`, borderRadius: 3, padding: "2px 7px" }}
+            >
+              DEFER ALL {items.length}
+            </span>
+          )}
+        </span>
       </div>
-      <div style={{ maxHeight: 180, overflowY: "auto" }}>
+      <div style={{ maxHeight: 180, overflowY: "auto", display: collapsed ? "none" : "block" }}>
         {items.map(({ fact, candidates, claimed_name, unknown_fire }) => (
           <div key={fact.id} style={{ padding: "6px 11px", borderTop: `1px solid ${C.line}44` }}>
             <div style={{ fontSize: 11.5 }}>{fact.content}</div>
@@ -1217,6 +1259,10 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
   const incidents = usePolling(fetchIncidents);
   const intake = usePolling(fetchIntake);
   const adjudication = usePolling(fetchAdjudication);
+  // Tracked separately from the queue because deferred facts are NOT in it — the
+  // restore control has to show even when the queue is empty, or "set aside,
+  // recoverable" is a dead end.
+  const deferredCount = usePolling(fetchDeferredCount);
   const [resolved, setResolved] = useState<Record<string, boolean>>({});
   const onResolve = async (factId: string, incidentId: string, name: string) => {
     try {
@@ -1243,6 +1289,27 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
       toast(`cleared ${r.triaged} unmatched fact${r.triaged === 1 ? "" : "s"}`);
     } catch (e) {
       toast(`bulk triage failed: ${e instanceof Error ? e.message : e}`);
+    }
+  };
+  // Set the whole queue aside as 'deferred' — reversible, and it asserts nothing
+  // about the facts (unlike 'not_incident', which says they are not fires). They
+  // leave the queue but stay recoverable from the triaged view.
+  const onDeferAll = async (factIds: string[]) => {
+    try {
+      const r = await triageBulk(factIds, "deferred");
+      setResolved((s) => ({ ...s, ...Object.fromEntries(factIds.map((id) => [id, true])) }));
+      toast(`${r.triaged} set aside · use RESTORE to bring them back`);
+    } catch (e) {
+      toast(`defer failed: ${e instanceof Error ? e.message : e}`);
+    }
+  };
+  const onRestoreDeferred = async () => {
+    try {
+      const n = await restoreDeferred();
+      setResolved({}); // they are queue items again
+      toast(`restored ${n} to the queue`);
+    } catch (e) {
+      toast(`restore failed: ${e instanceof Error ? e.message : e}`);
     }
   };
   const [selected, setSelected] = useState<string | null>(null);
@@ -1598,7 +1665,25 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
           onResolve={onResolve}
           onTriage={onTriage}
           onTriageAllUnmatched={onTriageAllUnmatched}
+          onDeferAll={onDeferAll}
         />
+        {/* Always-present way back for deferred facts, shown even when the queue
+            itself is empty — that is the whole point of 'deferred' over
+            'not_incident'. */}
+        {!!deferredCount && (
+          <div
+            style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 10px 10px", padding: "5px 11px", border: `1px solid ${C.warn}44`, borderRadius: 6, background: C.panel, fontFamily: font.mono, fontSize: 9, color: C.dim }}
+          >
+            <span>{deferredCount} set aside</span>
+            <span
+              onClick={onRestoreDeferred}
+              title="bring every set-aside fact back into the queue"
+              style={{ marginLeft: "auto", cursor: "pointer", color: C.warn, border: `1px solid ${C.warn}66`, borderRadius: 3, padding: "2px 8px" }}
+            >
+              RESTORE
+            </span>
+          </div>
+        )}
         <div style={{ flex: 1, minHeight: 0 }}>
           <MapPanel
             incidents={incidents ?? []}
