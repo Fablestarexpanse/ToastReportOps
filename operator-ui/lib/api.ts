@@ -347,15 +347,52 @@ async function get<T>(path: string): Promise<T> {
   return res.json();
 }
 
+/** Drop repeated ids from a server list.
+ *
+ * React keys must be unique, and a repeated row is a bug wherever it came from:
+ * rendering the same fire or the same claim twice is wrong on screen before it
+ * is wrong in React. Enforcing it here means no list component has to think
+ * about it, and the warning names the endpoint so the next occurrence points at
+ * its own cause instead of at a stack trace inside the renderer. */
+function uniqueBy<T>(rows: T[], key: (row: T) => string, what: string): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const row of rows) {
+    const k = key(row);
+    if (seen.has(k)) {
+      console.warn(`[toast] duplicate ${what} from the API, dropped:`, k, row);
+      continue;
+    }
+    seen.add(k);
+    out.push(row);
+  }
+  return out;
+}
+
+const byId = <T extends { id: string }>(rows: T[], what: string) =>
+  uniqueBy(rows, (r) => r.id, `${what} id`);
+
 export const fetchIncidents = () =>
-  get<{ incidents: Incident[] }>("/incidents").then((r) => r.incidents);
+  get<{ incidents: Incident[] }>("/incidents").then((r) => byId(r.incidents, "incident"));
 export const fetchIncidentFacts = (id: string) =>
-  get<{ facts: Fact[] }>(`/incidents/${id}/facts`).then((r) => r.facts);
-export const fetchIntake = () => get<{ facts: Fact[] }>("/intake?limit=80").then((r) => r.facts);
+  get<{ facts: Fact[] }>(`/incidents/${id}/facts`).then((r) => byId(r.facts, "incident fact"));
+export const fetchIntake = () =>
+  get<{ facts: Fact[] }>("/intake?limit=80").then((r) => byId(r.facts, "intake fact"));
 export const fetchSources = () => get<{ sources: Source[] }>("/sources").then((r) => r.sources);
 
 export const fetchAdjudication = () =>
-  get<{ queue: AdjudicationItem[] }>("/adjudication").then((r) => r.queue);
+  get<{ queue: AdjudicationItem[] }>("/adjudication").then((r) =>
+    // one row per fact, and one chip per candidate incident — a repeat in
+    // either is a bug worth naming rather than a silent React key collision
+    uniqueBy(
+      r.queue.map((it) => ({
+        ...it,
+        candidates: uniqueBy(it.candidates, (c) => c.incident_id, "adjudication candidate"),
+      })),
+      (it) => it.fact.id,
+      "adjudication row",
+    ),
+  );
 
 export async function resolveAdjudication(factId: string, incidentId: string): Promise<void> {
   const res = await fetch(`/api/adjudication/${factId}`, {

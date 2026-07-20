@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AdjudicationItem,
   Fact,
@@ -64,9 +64,21 @@ const POLL_MS = 5000;
 function usePolling<T>(fn: () => Promise<T>, deps: unknown[] = []): T | null {
   const [data, setData] = useState<T | null>(null);
   const cb = useCallback(fn, deps); // eslint-disable-line react-hooks/exhaustive-deps
+  // Ticks overlap when the backend is slow, and they resolve in whatever order
+  // they finish — so a stale response could land after a fresher one and the
+  // panel would visibly jump backwards to older numbers. Only the newest
+  // request in flight is allowed to write.
+  const latest = useRef(0);
   useEffect(() => {
     let live = true;
-    const tick = () => cb().then((d) => live && setData(d)).catch(() => {});
+    const tick = () => {
+      const seq = ++latest.current;
+      cb()
+        .then((d) => {
+          if (live && seq === latest.current) setData(d);
+        })
+        .catch(() => {});
+    };
     tick();
     const id = setInterval(tick, POLL_MS);
     return () => {
