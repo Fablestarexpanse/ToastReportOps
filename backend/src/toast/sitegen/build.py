@@ -2,7 +2,8 @@
 
 Renders published reports + active incidents into plain static HTML — no server,
 no JS required, zero attack surface (the mission's public-facing guarantee). The
-output directory is what gets pushed to Cloudflare Pages (deploy step deferred
+output directory is a local preview the operator reads and copies from by hand;
+nothing deploys it (deploy step removed
 until a token is provided).
 
 Every report carries a burned-in timestamp and a "verify with officials" notice;

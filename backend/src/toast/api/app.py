@@ -41,7 +41,8 @@ from toast.api.routes import router  # noqa: E402
 
 app.include_router(router)
 
-# Serve the generated static site for local preview (production is Cloudflare
+# Serve the generated static site for local preview. There is no production
+# host: publishing is manual by operator decision (see DECISIONS.md 2026-07-20).
 # Pages). The dir is created so the mount succeeds before the first build.
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 

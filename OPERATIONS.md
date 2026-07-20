@@ -22,8 +22,12 @@ docker compose restart <service>           # any service is individually restart
 docker compose logs -f <service>
 ```
 
-Health: every service exposes `/healthz`; the operator UI top bar shows
-GPU / FEEDS / SOCIAL / BUILD dots wired to these.
+Health: `api` exposes `/healthz` and `/queue`. The operator UI top bar shows
+two dots — **API** (is the backend answering) and **FEEDS** (are jobs dying
+right now: `dead_recent`, a 6-hour window, not the lifetime total) — plus a
+queue chip. **Click the queue chip** to open the dead-letter panel: what died,
+why, how long ago, and a RETRY button per stage. Publishing is deliberately
+excluded from bulk retry, because a dead publish job may already have posted.
 
 ## Configuration (Phase 0)
 
@@ -66,13 +70,30 @@ and swap that in rather than deleting the WAL.
 For ad-hoc queries against live data, prefer the API or
 `docker compose exec worker python …` so the container owns the handle.
 
-## Backup / restore (Phase 0 local, Phase 5 drilled)
+## Backup / restore
 
-- Continuous: Litestream replicates `toast.db` to B2 (`infra/litestream.yml`).
-- Nightly: `VACUUM INTO` snapshot + rclone sync of `data/raw/` to B2.
-- **Restore drill** (to be documented step-by-step and actually executed in
-  Phase 5): fresh machine → install → restore DB from B2 → verify ledger counts →
-  rclone raw archive → compose up.
+**Full procedure, with the drill that was actually executed and its recorded
+output: [docs/BACKUP-RESTORE.md](docs/BACKUP-RESTORE.md).** Read that one, not
+this summary.
+
+What exists **today**, stated exactly:
+
+| | status |
+|---|---|
+| Nightly `VACUUM INTO` snapshot, verified + secret-stripped | **working**, local `data/backups/` |
+| Restore drill on a clean database | **executed**, output recorded in docs/BACKUP-RESTORE.md |
+| Litestream continuous replication | **local disk only** — the s3 block in `infra/litestream.yml` is commented out |
+| Snapshot upload to B2 | **code ready, inactive** — needs `B2_KEY_ID` / `B2_APPLICATION_KEY` / `B2_BUCKET` |
+| `data/raw/` (the CAS archive of every source response) offsite | **NOT IMPLEMENTED** — no code path, in any state |
+
+So: **there is currently no offsite copy of anything.** Both live copies are on
+one disk, in a house inside a fire zone. That is the single largest risk on this
+project, and it is one operator task away — see docs/API-KEYS.md (Backblaze B2,
+10 GB free).
+
+Secrets never ride along: `_strip_secrets` deletes the credentials table and
+scrubs known key values out of `jobs.last_error` before a snapshot is uploaded.
+A restore therefore comes back with no credentials — re-enter them in OPTIONS.
 
 ## Adding a source (Phase 1 manual, Phase 3 AI probe)
 
@@ -82,13 +103,26 @@ For ad-hoc queries against live data, prefer the API or
 3. Phase 3+: paste a URL and the AI probe detects what it is (YouTube channel →
    live-stream watcher; article site → scraper; audio URL → Whisper pipeline).
 
-## PSPS degraded mode (Phase 5)
+## PSPS degraded mode
 
-When the desktop loses power, a free-tier cloud VM runs the same codebase with
-`docker compose --profile degraded up`: official-API polling + static site updates
-only. On power restore, stop the sentinel, Litestream-restore any delta, and
-resume the desktop profile. (Public-site cutover is out of scope while
-publishing is manual — revisit when a host is wired up.)
+A free-tier cloud VM runs the same codebase with
+`docker compose --profile degraded up`. The profile contains `api`, `worker`,
+and `scheduler` — enough to keep ingesting official feeds and to answer the
+operator UI. It deliberately excludes the GPU-adjacent and research services
+(`searxng`, `ldr`), which need hardware the sentinel does not have.
+
+**What this does NOT do yet, so nobody plans around it:**
+
+- **No shared replication target.** Litestream's only replica is a local file
+  path, so there is no "Litestream-restore the delta" step — the sentinel's
+  ledger and the desktop's ledger are separate databases that will diverge.
+  Reconciling them is unsolved and blocked on B2 (above).
+- **No public-site cutover.** Publishing is manual by operator decision, so the
+  sentinel does not push a site anywhere.
+
+Treat degraded mode as *"keep watching the fires while the power is out"*, not
+as failover. Run it, use the UI, and when power returns, stop the sentinel and
+go back to the desktop profile — knowing the two ledgers diverged.
 
 ## Active fires vs. historical (source of truth)
 

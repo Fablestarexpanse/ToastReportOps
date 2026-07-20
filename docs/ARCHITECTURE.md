@@ -34,9 +34,10 @@ serialized through one gpu-worker that owns the 4090.
                   Next.js operator UI (localhost only)
                                  │  operator approves
                                  ▼
-                  site-builder (Next.js static export)
+                  sitegen (build_site job, on demand — nothing deploys it)
                         │            │
-                 Cloudflare Pages   publishers: X / FB / RSS+email / webhook
+            local preview only     publishers: X / FB / RSS+email / webhook
+            (manual publishing)
 ```
 
 Language split: **Python** for workers, pipeline, API, and site data generation
@@ -48,18 +49,20 @@ frontend framework total.
 
 | Service | Role | Notes |
 |---|---|---|
-| `scheduler` | APScheduler; enqueues polls per `sources.schedule` | reads sources table; does no work itself |
+| `scheduler` | plain scan loop (10 s); enqueues polls per `sources.schedule` — APScheduler was dropped, the loop is ~40 lines | reads sources table; does no work itself |
 | `worker` | generic pipeline worker pool (CPU stages) | scale by replica count |
-| `gpu-worker` | Whisper, VLM, embeddings, smoke model | single process; priority queue; active-incident transcription preempts batch work |
+| ~~`gpu-worker`~~ | **not built.** Embeddings run inside `worker` against the host Ollama; Whisper/VLM/smoke are unstarted |
 | `api` | FastAPI: REST + SSE for operator UI; health endpoints | binds 127.0.0.1 by default |
-| `operator-ui` | Next.js server | localhost only; auth required if ever exposed |
-| `publisher` | consumes approved publications; per-channel adapters | the only service holding outbound social credentials |
-| `site-builder` | regenerates the public static site on publish events | pushes to Cloudflare Pages via wrangler |
-| `litestream` | continuous SQLite replication to B2 | plus nightly snapshot job |
+| `operator-ui` | Next.js — **runs on the host, not in compose** (`scripts/launch.ps1`, port 3005) | localhost only; auth required if ever exposed |
+| ~~`publisher`~~ | **not built as a service.** Publishing runs inside `worker` via the `publish` job — so social credentials are NOT isolated to a separate process, contrary to what this table used to claim |
+| ~~`site-builder`~~ | **not built.** Site generation runs in `worker` via the `build_site` job, triggered on demand from ARCHIVE — never by publishing |
+| `litestream` | replication — **local disk only today**; the B2 replica is commented out pending keys | desktop profile only; nightly snapshot is a `backup` job in `worker` |
 | (external) | Ollama/LM Studio OpenAI-compatible endpoint | reached via `LLM_BASE_URL` |
 
-Compose **profiles**: `desktop` (everything) and `degraded` (PSPS sentinel: scheduler +
-worker polling official APIs only + site-builder — deployable to a free-tier cloud VM).
+Compose **profiles**: `desktop` (everything) and `degraded` (PSPS sentinel:
+`api` + `worker` + `scheduler` — official-API polling with a usable UI, on a
+free-tier cloud VM). Degraded is *not* failover: there is no shared replication
+target, so the sentinel's ledger diverges from the desktop's. See OPERATIONS.md.
 Same codebase, config via environment variables, no hardcoded paths.
 
 ## 3. Core abstractions (plugin interfaces)

@@ -95,7 +95,8 @@ a prompt-injection fixture visibly refused.
 - Editor UI with approval workflow (DB state machine already enforced)
 - Public site: Next.js static export + MapLibre/PMTiles incident maps
 - Share-card generation (Pillow, burned-in timestamp)
-- Publishers: Cloudflare Pages deploy, X, Facebook Page, RSS, email digest, webhook/Discord
+- Publishers: X, Facebook Page, RSS, email digest, webhook/Discord.
+  (Site deploy removed 2026-07-20 — publishing to a website is manual.)
 - Supersessions/corrections visible on the public site; evac rendered verbatim with
   deep link + "verify with officials" notice
 

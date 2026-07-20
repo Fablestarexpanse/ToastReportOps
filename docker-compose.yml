@@ -18,7 +18,9 @@ x-backend: &backend
 services:
   api:
     <<: *backend
-    profiles: [desktop]
+    # degraded too: a PSPS sentinel with no API serves nothing and can build
+    # nothing — the runbook told the operator to use it, and it was not there.
+    profiles: [desktop, degraded]
     command: python -m toast.api.app
     environment:
       TOAST_DB_PATH: /data/toast.db

@@ -2,6 +2,42 @@
 
 Architectural decision log. Newest first. Each entry: context → decision → why.
 
+## 2026-07-20 — Audit: three DB guarantees were decorative, and are now real
+
+Three separate rules the schema *claimed* to enforce did not. Found by an audit
+that ran the statements instead of reading the comments.
+
+- **Append-only was not append-only.** `facts_limited_update` only aborted when
+  id/content/observed_at/ingested_at changed, so any other column could ride
+  along with a legal change: `UPDATE facts SET incident_id='i', acreage=99999,
+  tier=1` rewrote a T4 press claim into a T1 agency number with no supersession
+  record. Inverted to a whitelist — refused unless all 20 other columns are
+  byte-identical. A whitelist fails closed when a migration adds a column; the
+  blacklist silently opened a new hole each time. (0018)
+- **`CHECK (x IN (NULL, ...))` constrains nothing** — `IN` with NULL yields NULL,
+  and CHECK passes on NULL. `evac_status = 'Order — Zone BUT-1043'` stored fine
+  and then counted as *unclassified*, so the panel would report zero evacuation
+  orders while an order was live. Rebuilt as `x IS NULL OR x IN (...)`. (0019)
+- **Timestamps are enforced now too.** An LLM writes `observed_at`; unixepoch()
+  returns NULL for prose, and NULL propagated silently into every time window.
+  Normalized at the extractor and the ledger, with a DB CHECK behind both. (0020)
+
+**The general lesson, recorded because it will recur:** a guarantee stated in a
+comment is a guess. Every DB-level rule this project relies on now has a test
+that attempts the violation and asserts the refusal.
+
+## 2026-07-20 — No automatic publishing to any website (supersedes the entry below)
+
+- **Operator decision**: reports are published by hand until Toast Report is
+  wired into Brian's own site. Nothing auto-deploys.
+- **Cloudflare removed entirely** — config, docs, and the deploy step. There is
+  no production host and no CF token to acquire.
+- `approved → published` fans out to *social* channels only (credential-gated).
+  The static site is still generated, but **on demand from ARCHIVE**, never as a
+  side effect of publishing — `POST /site/build`, previewed at `/site/`.
+- Why it matters beyond plumbing: publishing is the one irreversible action in
+  the system. Keeping it manual keeps a human between the ledger and the public.
+
 ## 2026-07-20 — Active research layer (Local Deep Research + SearXNG)
 
 - **LDR (MIT) + self-hosted SearXNG = active hunting** to complement our
@@ -19,7 +55,11 @@ Architectural decision log. Newest first. Each entry: context → decision → w
   retries, so rate-limited jobs park for 10 min instead of burning attempts;
   SearXNG needs `formats: [html, json]` for LDR's API queries.
 
-## 2026-07-20 — Public static site + publish wiring
+## 2026-07-20 — Public static site + publish wiring (SUPERSEDED — see above)
+
+> The `site` publish channel and the Cloudflare deploy described here were
+> removed the same day. Kept for the reasoning about static output and
+> immutable published drafts, which still holds.
 
 - **The site is the no-credential publish channel.** `approved → published` now
   succeeds (was a blanket 501): it records a `publications` row (channel `site`)
