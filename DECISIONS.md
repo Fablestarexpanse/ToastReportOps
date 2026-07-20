@@ -2,6 +2,26 @@
 
 Architectural decision log. Newest first. Each entry: context → decision → why.
 
+## 2026-07-19 — Phase 4 (newsroom): AI draft generation + approval
+
+- **Draft generation from the ledger, not free-form.** `draft_update.v1` writes
+  an incident update strictly from the incident's non-superseded facts in an
+  observed_at window; every sentence must cite a fact `[#n]`.
+- **Citation ids are indirected.** The prompt sees short `[#1..N]` numbers, not
+  ULIDs; generate_draft maps the model's cited numbers back to real fact ids and
+  drops any the model invented — a bad citation can't reference a nonexistent fact.
+- **Evacuations are verbatim.** Evac facts are flagged in the prompt with an
+  explicit "reproduce verbatim" contract and passed with their official text
+  intact; the model may not paraphrase evacuation orders (mission requirement).
+- **Approval workflow enforced at two layers.** The API validates transitions
+  (draft→needs_review→approved) and sets approved_by/at; the DB trigger is the
+  real guard (published requires approver fields). Publishing is a deliberate
+  **501** until channel credentials + CF Pages/FB app setup are provided — approve
+  is the current final step. The AI drafts; nothing publishes itself.
+- **Draft `title` column** added (migration 0006) for the queue/report headline.
+- Superseded facts are excluded from drafting (the ledger's current view), so an
+  update never re-reports a corrected figure.
+
 ## 2026-07-19 — Phase 3 (news): RSS ingestion + add-source probe
 
 - **Automated news ingestion via RSS** (feedparser). An `rss` adapter turns feed

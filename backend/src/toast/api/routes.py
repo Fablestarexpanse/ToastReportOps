@@ -190,6 +190,138 @@ def resolve_adjudication(request: Request, fact_id: str, body: dict) -> dict:
     return {"ok": True, "fact_id": fact_id, "incident_id": incident_id}
 
 
+# ---------------- newsroom: drafts ----------------
+
+DRAFT_TRANSITIONS = {
+    "draft": {"needs_review", "rejected"},
+    "needs_review": {"approved", "draft", "rejected"},
+    "approved": {"published", "draft"},
+}
+OPERATOR = "operator"  # single-operator system; auth arrives if UI is ever exposed
+
+
+@router.post("/incidents/{incident_id}/draft")
+def create_draft(request: Request, incident_id: str, body: dict) -> dict:
+    """Generate an AI draft update for an incident over an observed_at window."""
+    from toast.core.fetch import FetchError
+    from toast.llm.client import LLMError
+    from toast.pipeline.drafting import generate_draft
+
+    try:
+        result = generate_draft(
+            _conn(request),
+            incident_id,
+            window_start=body.get("window_start"),
+            window_end=body.get("window_end"),
+        )
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except (LLMError, FetchError) as exc:
+        raise HTTPException(503, f"LLM unavailable: {exc}") from exc
+    if not result.get("created"):
+        raise HTTPException(422, result.get("reason", "nothing to draft"))
+    return result
+
+
+@router.get("/drafts")
+def list_drafts(request: Request, status: str | None = None) -> dict:
+    where, params = "", []
+    if status:
+        where = "WHERE d.status = ?"
+        params.append(status)
+    rows = (
+        _conn(request)
+        .execute(
+            f"""SELECT d.id, d.incident_id, d.kind, d.status, d.title, d.window_start,
+                   d.window_end, d.approved_by, d.approved_at, d.created_at, d.updated_at,
+                   i.canonical_name AS incident_name,
+                   json_array_length(d.cited_fact_ids) AS cited_count
+            FROM drafts d LEFT JOIN incidents i ON i.id = d.incident_id
+            {where}
+            ORDER BY d.updated_at DESC""",
+            params,
+        )
+        .fetchall()
+    )
+    return {"drafts": [dict(r) for r in rows]}
+
+
+@router.get("/drafts/{draft_id}")
+def get_draft(request: Request, draft_id: str) -> dict:
+    conn = _conn(request)
+    row = conn.execute("SELECT * FROM drafts WHERE id = ?", (draft_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "draft not found")
+    draft = dict(row)
+    cited_ids = json.loads(draft.get("cited_fact_ids") or "[]")
+    cited = []
+    if cited_ids:
+        placeholders = ",".join("?" * len(cited_ids))
+        cited = [
+            dict(r)
+            for r in conn.execute(
+                f"""SELECT f.id, f.content, f.kind, f.tier, f.observed_at, s.name AS source_name
+                    FROM facts f JOIN sources s ON s.id = f.source_id
+                    WHERE f.id IN ({placeholders})""",
+                cited_ids,
+            )
+        ]
+    return {"draft": draft, "cited_facts": cited}
+
+
+@router.put("/drafts/{draft_id}")
+def edit_draft(request: Request, draft_id: str, body: dict) -> dict:
+    """Edit the draft body/title. Only allowed before publish."""
+    from toast.core.db import utcnow
+
+    conn = _conn(request)
+    row = conn.execute("SELECT status FROM drafts WHERE id = ?", (draft_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "draft not found")
+    if row["status"] == "published":
+        raise HTTPException(409, "published drafts are immutable")
+    conn.execute(
+        "UPDATE drafts SET body_md = COALESCE(?, body_md), title = COALESCE(?, title),"
+        " updated_at = ? WHERE id = ?",
+        (body.get("body_md"), body.get("title"), utcnow(), draft_id),
+    )
+    return {"ok": True, "draft_id": draft_id}
+
+
+@router.post("/drafts/{draft_id}/status")
+def transition_draft(request: Request, draft_id: str, body: dict) -> dict:
+    """Advance a draft through the approval workflow. The DB trigger is the
+    real guard; this validates + sets approver fields before publish is possible."""
+    from toast.core.db import utcnow
+
+    conn = _conn(request)
+    target = body.get("status")
+    row = conn.execute("SELECT status FROM drafts WHERE id = ?", (draft_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "draft not found")
+    current = row["status"]
+    if target not in DRAFT_TRANSITIONS.get(current, set()):
+        raise HTTPException(409, f"cannot go {current} → {target}")
+    # publishing is deferred (needs channel credentials); block it explicitly
+    if target == "published":
+        raise HTTPException(
+            501, "channel publishing not configured yet — approve is the final step for now"
+        )
+    now = utcnow()
+    if target == "approved":
+        conn.execute(
+            "UPDATE drafts SET approved_by = ?, approved_at = ?, updated_at = ? WHERE id = ?",
+            (OPERATOR, now, now, draft_id),
+        )
+    try:
+        conn.execute(
+            "UPDATE drafts SET status = ?, updated_at = ? WHERE id = ?", (target, now, draft_id)
+        )
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(409, f"illegal transition: {exc}") from exc
+    return {"ok": True, "draft_id": draft_id, "status": target}
+
+
 @router.post("/analyze")
 def analyze(request: Request, body: dict) -> dict:
     """Operator points the AI at a URL; claims are extracted, written as T4

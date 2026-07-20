@@ -61,6 +61,70 @@ export type Source = {
 
 export type Health = { api: boolean; queue: Record<string, number> };
 
+export type Draft = {
+  id: string;
+  incident_id: string | null;
+  incident_name: string | null;
+  kind: string;
+  status: "draft" | "needs_review" | "approved" | "published" | "rejected";
+  title: string | null;
+  window_start: string | null;
+  window_end: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  created_at: string;
+  updated_at: string;
+  cited_count: number;
+};
+
+export type CitedFact = {
+  id: string;
+  content: string;
+  kind: string;
+  tier: number;
+  observed_at: string;
+  source_name: string;
+};
+
+export type DraftDetail = {
+  draft: Draft & { body_md: string; cited_fact_ids: string };
+  cited_facts: CitedFact[];
+};
+
+export const fetchDrafts = () => get<{ drafts: Draft[] }>("/drafts").then((r) => r.drafts);
+export const fetchDraft = (id: string) => get<DraftDetail>(`/drafts/${id}`);
+
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`/api${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const detail = await res.json().then((d) => d.detail).catch(() => res.status);
+    throw new Error(String(detail));
+  }
+  return res.json();
+}
+
+export const generateDraft = (incidentId: string, window?: { window_start?: string }) =>
+  post<{ draft_id: string; title: string; facts_used: number; cited: number }>(
+    `/incidents/${incidentId}/draft`,
+    window ?? {},
+  );
+
+export const transitionDraft = (id: string, status: string) =>
+  post<{ status: string }>(`/drafts/${id}/status`, { status });
+
+export async function saveDraft(id: string, body: { body_md?: string; title?: string }): Promise<void> {
+  const res = await fetch(`/api/drafts/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`save: ${res.status}`);
+}
+
 export type AdjudicationCandidate = {
   incident_id: string;
   incident_name: string;
