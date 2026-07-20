@@ -1,24 +1,26 @@
-
-!.env.example
-# data (local-first store, raw archive, tiles)
-# node
-# os / editor
-# python
 # secrets
-*.py[cod]
-*.tsbuildinfo
-.DS_Store
 .env
 .env.*
-.mypy_cache/
-.next/
-.pytest_cache/
-.ruff_cache/
-.uv/
-.venv/
-Thumbs.db
-__pycache__/
+!.env.example
+
+# data (local-first store, raw archive, generated site, tiles)
 data/
-data/site/
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+.uv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# node
 node_modules/
+.next/
 out/
+*.tsbuildinfo
+
+# os / editor
+Thumbs.db
+.DS_Store
