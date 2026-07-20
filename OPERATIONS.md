@@ -2,6 +2,17 @@
 
 Sections below are seeded now and filled in as each capability lands (phase noted).
 
+## Launch as a standalone app (recommended)
+
+Double-click **`ToastReport.cmd`** in the repo root. It starts the Docker
+backend, starts the operator UI (port 3005), and opens the workstation in an
+Edge **app window** — its own taskbar icon, no browser chrome. Safe to run
+repeatedly; anything already running is reused. Pin the window to the taskbar
+for one-click relaunch. (Public site preview: http://localhost:8400/site/)
+
+To stop: close the window, then `docker compose --profile desktop down` if you
+want the backend down too (it's fine to leave it running).
+
 ## Start / stop (Phase 0)
 
 ```sh
