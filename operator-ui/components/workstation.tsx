@@ -1015,18 +1015,20 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
   const sel = incidents?.find((i) => i.id === selected);
   const staleCount = facts?.filter((f) => f.stale).length ?? 0;
   const [panelTab, setPanelTab] = useState<"intel" | "weather" | "ledger" | "timeline">("intel");
-  const [basemap, setBasemap] = useState(() => loadDisplayPrefs().basemap);
-  const [focus, setFocus] = useState<{ lat: number; lon: number; zoom: number; nonce: number } | null>(null);
-  // Street detail needs street tiles: an offline basemap has no streets to
-  // zoom into, so switch to the street map for this look rather than flying
-  // the operator into an empty grey square.
+  const [basemap] = useState(() => loadDisplayPrefs().basemap);
+  const [focus, setFocus] = useState<{
+    lat: number;
+    lon: number;
+    zoom: number;
+    nonce: number;
+    basemap?: string;
+  } | null>(null);
+  // Street-level detail needs imagery, not a styled street map: at a fire
+  // origin what matters is terrain, structures and vegetation. The swap is
+  // temporary — the map reverts to the chosen basemap on zooming back out.
   const onZoomToOrigin = (inc: Incident) => {
     if (inc.lat == null || inc.lon == null) return;
-    if (basemap === "offline") {
-      setBasemap("osm");
-      toast("switched to the street basemap for this zoom (OPTIONS to keep it)");
-    }
-    setFocus({ lat: inc.lat, lon: inc.lon, zoom: 16, nonce: Date.now() });
+    setFocus({ lat: inc.lat, lon: inc.lon, zoom: 16, nonce: Date.now(), basemap: "satellite" });
   };
   const [followOverride, setFollowOverride] = useState<Record<string, boolean>>({});
   const isFollowed = sel ? (followOverride[sel.id] ?? !!sel.followed) : false;

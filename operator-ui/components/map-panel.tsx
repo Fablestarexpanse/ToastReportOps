@@ -14,7 +14,14 @@ import { C, font } from "@/lib/theme";
    no tile server is contacted at all. Fire positions come from our own ledger
    either way, so the map keeps working with the network down. */
 
-const BASEMAPS: Record<string, { url: string; attribution: string; label: string } | null> = {
+type BaseSpec = {
+  url: string;
+  attribution: string;
+  label: string;
+  maxNativeZoom?: number;
+};
+
+const BASEMAPS: Record<string, BaseSpec | null> = {
   offline: null,
   dark: {
     url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
@@ -26,9 +33,20 @@ const BASEMAPS: Record<string, { url: string; attribution: string; label: string
     attribution: '© <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     label: "STREET",
   },
+  // USGS National Map orthoimagery: US government, public domain, no key —
+  // no third-party terms to honour, which matters for a public-safety tool.
+  satellite: {
+    url: "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}",
+    attribution: 'Imagery: <a href="https://www.usgs.gov/">USGS</a> The National Map (public domain)',
+    label: "SATELLITE",
+    maxNativeZoom: 16, // upscale past this rather than serving blank tiles
+  },
 };
 
 const CA_CENTER: [number, number] = [37.4, -119.6];
+// Below this zoom the operator is looking at the state, not a street corner,
+// so a temporary imagery swap reverts to their chosen basemap.
+const WIDE_VIEW_ZOOM = 11;
 
 function pinColor(inc: Incident): string {
   // People-at-risk outranks fire behavior: an active evacuation is the thing
@@ -55,7 +73,7 @@ export default function MapPanel({
   onSelect: (id: string) => void;
   basemap?: string;
   /** bump `nonce` to fly to a point; `zoom` 16+ is street level */
-  focus?: { lat: number; lon: number; zoom: number; nonce: number } | null;
+  focus?: { lat: number; lon: number; zoom: number; nonce: number; basemap?: string } | null;
 }) {
   const holder = useRef<HTMLDivElement | null>(null);
   const map = useRef<L.Map | null>(null);
@@ -63,6 +81,11 @@ export default function MapPanel({
   const markers = useRef<L.LayerGroup | null>(null);
   const [tileError, setTileError] = useState(false);
   const [ready, setReady] = useState(false);
+  // A zoom-to-origin swaps in imagery so the operator can see the ground.
+  // It is temporary: zooming back out to a regional view restores whatever
+  // basemap they actually chose, so the swap never quietly becomes permanent.
+  const [override, setOverride] = useState<string | null>(null);
+  const effective = override ?? basemap;
 
   // create once
   useEffect(() => {
@@ -98,18 +121,19 @@ export default function MapPanel({
       tiles.current = null;
     }
     setTileError(false);
-    const spec = BASEMAPS[basemap] ?? null;
+    const spec = BASEMAPS[effective] ?? null;
     if (!spec) return; // offline: outline only, nothing fetched
     const layer = L.tileLayer(spec.url, {
       attribution: spec.attribution,
-      maxZoom: 18,
+      maxZoom: 19,
+      maxNativeZoom: spec.maxNativeZoom,
       crossOrigin: true,
     });
     layer.on("tileerror", () => setTileError(true));
     layer.addTo(m);
     layer.bringToBack();
     tiles.current = layer;
-  }, [basemap, ready]);
+  }, [effective, ready]);
 
   const draw = useCallback(() => {
     const group = markers.current;
@@ -158,8 +182,22 @@ export default function MapPanel({
   // stays obvious that the view moved rather than the data changing
   useEffect(() => {
     if (!focus || !map.current) return;
+    if (focus.basemap && focus.basemap !== basemap) setOverride(focus.basemap);
     map.current.flyTo([focus.lat, focus.lon], focus.zoom, { duration: 1.2 });
-  }, [focus]);
+  }, [focus, basemap]);
+
+  // zooming back out to a regional view ends the temporary imagery swap
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+    const onZoom = () => {
+      if (override && m.getZoom() < WIDE_VIEW_ZOOM) setOverride(null);
+    };
+    m.on("zoomend", onZoom);
+    return () => {
+      m.off("zoomend", onZoom);
+    };
+  }, [override, ready]);
 
   // keep the selected fire in view without yanking the map around
   useEffect(() => {
@@ -176,7 +214,33 @@ export default function MapPanel({
     <div style={{ position: "relative", height: "100%", minWidth: 0, background: "#10141a" }}>
       <div ref={holder} style={{ position: "absolute", inset: 0 }} />
 
-      {tileError && basemap !== "offline" && (
+      {override && (
+        <div
+          onClick={() => {
+            setOverride(null);
+            map.current?.setZoom(7);
+          }}
+          title="click to return to the state view and your chosen basemap"
+          style={{
+            position: "absolute",
+            top: 8,
+            right: 10,
+            zIndex: 500,
+            fontFamily: font.mono,
+            fontSize: 9,
+            color: C.ember,
+            background: C.panel + "e6",
+            border: `1px solid ${C.ember}66`,
+            borderRadius: 4,
+            padding: "3px 8px",
+            cursor: "pointer",
+          }}
+        >
+          {BASEMAPS[override]?.label ?? override} · ↩ BACK TO MAP
+        </div>
+      )}
+
+      {tileError && effective !== "offline" && (
         <div
           style={{
             position: "absolute",

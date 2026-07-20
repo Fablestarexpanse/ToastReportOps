@@ -70,6 +70,7 @@ const CHOICES: Record<string, { value: string; label: string }[]> = {
   map_basemap: [
     { value: "dark", label: "DARK" },
     { value: "osm", label: "STREET" },
+    { value: "satellite", label: "SATELLITE" },
     { value: "offline", label: "OFFLINE" },
   ],
 };
