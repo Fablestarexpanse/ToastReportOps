@@ -36,6 +36,7 @@ import {
   resolveAdjudication,
   searchFires,
   setSourceTier,
+  starFact,
   startResearch,
   toggleNote,
   triageBulk,
@@ -43,6 +44,7 @@ import {
 } from "@/lib/api";
 import { C, TIER, TIER_TITLES, confColor, font } from "@/lib/theme";
 import AlertBell from "@/components/alerts";
+import AnalyticsMode from "@/components/analytics";
 import SettingsPanel, { loadDisplayPrefs, syncDisplayPrefs } from "@/components/settings";
 import { age, ageColor, fmtFull, fmtStamp, lag } from "@/lib/time";
 import MapPanel from "@/components/map-panel";
@@ -106,8 +108,43 @@ function Chip({
   );
 }
 
-function FactRow({ f, showIncident }: { f: Fact; showIncident?: boolean }) {
+/* Topic tags — derived from the fact's own kind and wording, never invented.
+   They exist to make the stream scannable, so they only ever restate what the
+   claim already says. */
+const TAG_RULES: [RegExp, string][] = [
+  [/\bevacuat/i, "EVACUATION"],
+  [/\b(structure|home|building|residence)s?\b/i, "STRUCTURES"],
+  [/\b(highway|hwy|road|route|interstate|closure)\b/i, "ROADS"],
+  [/\b(air ?tanker|helicopter|aircraft|air attack|retardant)\b/i, "AIRCRAFT"],
+  [/\b(engine|crew|dozer|personnel|firefighter)s?\b/i, "RESOURCES"],
+  [/\b(spot|ember|spotting)\b/i, "SPOTTING"],
+  [/\bred flag|wind|gust|humidity\b/i, "WEATHER"],
+  [/\blightning\b/i, "LIGHTNING"],
+  [/\b(injur|fatal|death|casualt)/i, "CASUALTIES"],
+  [/\bpower|psps|utility\b/i, "POWER"],
+];
+
+function factTags(f: Fact): string[] {
+  const tags = new Set<string>();
+  const kindTag = { evac: "EVACUATION", road: "ROADS", resource: "RESOURCES", weather: "WEATHER" }[
+    f.kind
+  ];
+  if (kindTag) tags.add(kindTag);
+  for (const [re, tag] of TAG_RULES) if (re.test(f.content)) tags.add(tag);
+  return [...tags].slice(0, 3);
+}
+
+function FactRow({
+  f,
+  showIncident,
+  onStar,
+}: {
+  f: Fact;
+  showIncident?: boolean;
+  onStar?: (f: Fact) => void;
+}) {
   const superseded = f.superseded_by != null;
+  const tags = factTags(f);
   const openSource = () => {
     if (f.source_url) window.open(f.source_url, "_blank", "noopener,noreferrer");
   };
@@ -208,8 +245,40 @@ function FactRow({ f, showIncident }: { f: Fact; showIncident?: boolean }) {
             </span>
           )}
         </div>
+        {tags.length > 0 && (
+          <div style={{ display: "flex", gap: 4, marginTop: 3, flexWrap: "wrap" }}>
+            {tags.map((tag) => (
+              <span
+                key={tag}
+                style={{
+                  fontFamily: font.mono,
+                  fontSize: 7.5,
+                  letterSpacing: 0.5,
+                  color: tag === "EVACUATION" ? C.evac : C.dim,
+                  border: `1px solid ${tag === "EVACUATION" ? C.evac + "66" : C.line}`,
+                  borderRadius: 3,
+                  padding: "0 4px",
+                }}
+              >
+                #{tag}
+              </span>
+            ))}
+          </div>
+        )}
         <div style={{ fontFamily: font.mono, fontSize: 9, marginTop: 3, display: "flex", gap: 8 }}>
           <span style={{ color: C.faint }}>{f.kind}</span>
+          {onStar && (
+            <span
+              onClick={(e) => {
+                e.stopPropagation(); // the row itself opens the source
+                onStar(f);
+              }}
+              title={f.starred ? "unpin" : "pin this fact"}
+              style={{ color: f.starred ? C.warn : C.faint, cursor: "pointer", fontSize: 10 }}
+            >
+              {f.starred ? "★" : "☆"}
+            </span>
+          )}
           {f.supersedes && (
             <span style={{ color: C.blue }} title={`supersedes ${f.supersedes}`}>
               ⤷ supersedes #{f.supersedes.slice(-6)}
@@ -477,7 +546,44 @@ function IntelPanel({ sel, toast }: { sel: Incident; toast: (m: string) => void 
         </div>
       </div>
 
-      {/* evac & road impacts — counts; detail is VERBATIM, never summarized */}
+      {/* Orders and warnings are different instructions to a person deciding
+          whether to leave, so they are never collapsed into one number. */}
+      {(intel.impact_counts?.orders > 0 ||
+        intel.impact_counts?.warnings > 0 ||
+        intel.impact_counts?.road_closures > 0) && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }}>
+          {[
+            { label: "EVAC ORDERS", n: intel.impact_counts.orders, color: C.evac },
+            { label: "WARNINGS", n: intel.impact_counts.warnings, color: C.warn },
+            { label: "ROAD CLOSURES", n: intel.impact_counts.road_closures, color: C.blue },
+          ].map((b) => (
+            <div
+              key={b.label}
+              style={{
+                background: b.n ? b.color + "14" : C.bg,
+                border: `1px solid ${b.n ? b.color + "66" : C.line}`,
+                borderRadius: 6,
+                padding: "5px 8px",
+                textAlign: "center",
+              }}
+            >
+              <div style={{ fontFamily: font.disp, fontSize: 17, fontWeight: 700, color: b.n ? b.color : C.dim }}>
+                {b.n}
+              </div>
+              <div style={{ fontFamily: font.mono, fontSize: 7.5, color: C.dim, letterSpacing: 0.5 }}>
+                {b.label}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {intel.impact_counts?.lifted > 0 && (
+        <div style={{ fontFamily: font.mono, fontSize: 8.5, color: C.ok }}>
+          ✓ {intel.impact_counts.lifted} evacuation{intel.impact_counts.lifted === 1 ? "" : "s"} lifted
+        </div>
+      )}
+
+      {/* full verbatim detail behind the counts */}
       <div style={{ display: "flex", gap: 6 }}>
         {(["evac", "road"] as const).map((k) => (
           <div
@@ -764,6 +870,17 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
     return [...map.entries()].sort((a, b) => b[1].length - a[1].length);
   }, [shown, groupByFire]);
 
+  const [starred, setStarred] = useState<Record<string, boolean>>({});
+  const onStar = async (f: Fact) => {
+    const next = !(starred[f.id] ?? !!f.starred);
+    setStarred((s) => ({ ...s, [f.id]: next }));
+    try {
+      await starFact(f.id, next);
+    } catch {
+      setStarred((s) => ({ ...s, [f.id]: !next }));
+    }
+  };
+
   const filtersOn =
     kindFilter || sourceFilter || hideStale || onlyLinked || kw || Object.values(tiers).some((v) => !v);
   const clearFilters = () => {
@@ -981,13 +1098,13 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
                     <span style={{ marginLeft: "auto", color: C.faint }}>{rows.length}</span>
                   </div>
                   {rows.map((f) => (
-                    <FactRow key={f.id} f={f} showIncident />
+                    <FactRow key={f.id} f={{ ...f, starred: (starred[f.id] ?? !!f.starred) ? 1 : 0 }} showIncident onStar={onStar} />
                   ))}
                 </div>
               ))
             : shown.map((f, i) => (
                 <div key={f.id} className={i === 0 ? "tr-in" : undefined}>
-                  <FactRow f={f} showIncident />
+                  <FactRow f={{ ...f, starred: (starred[f.id] ?? !!f.starred) ? 1 : 0 }} showIncident onStar={onStar} />
                 </div>
               ))}
           {!shown.length && (
@@ -1854,6 +1971,7 @@ const MODES: [string, string, boolean][] = [
   ["watch", "WATCH", true],
   ["archive", "ARCHIVE", true],
   ["sources", "SOURCES", true],
+  ["analytics", "ANALYTICS", true],
 ];
 
 export default function Workstation() {
@@ -1962,6 +2080,7 @@ export default function Workstation() {
       {mode === "watch" && <WatchMode toast={toast} />}
       {mode === "archive" && <ArchiveMode toast={toast} />}
       {mode === "sources" && <SourcesMode toast={toast} />}
+      {mode === "analytics" && <AnalyticsMode />}
 
       {showSettings && (
         <SettingsPanel

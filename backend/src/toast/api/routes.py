@@ -134,6 +134,22 @@ def intake(
     return {"facts": [_fact_dict(r) for r in rows]}
 
 
+@router.post("/facts/{fact_id}/star")
+def star_fact(request: Request, fact_id: str, body: dict) -> dict:
+    """Pin a fact. `starred` is one of only two columns the append-only trigger
+    lets the operator change — the claim itself stays exactly as observed."""
+    starred = 1 if body.get("starred") else 0
+    cur = _conn(request).execute(
+        "UPDATE facts SET starred = ? WHERE id = ? AND starred <> ?",
+        (starred, fact_id, starred),
+    )
+    if cur.rowcount == 0:
+        exists = _conn(request).execute("SELECT 1 FROM facts WHERE id = ?", (fact_id,)).fetchone()
+        if not exists:
+            raise HTTPException(404, "fact not found")
+    return {"ok": True, "fact_id": fact_id, "starred": bool(starred)}
+
+
 @router.get("/incidents/{incident_id}/intel")
 def get_incident_intel(request: Request, incident_id: str) -> dict:
     """Aggregated intelligence for the OPS panel: header metrics with
@@ -234,6 +250,14 @@ def build_site_now(request: Request) -> dict:
     from toast.queue import jobs
 
     return {"ok": True, "job_id": jobs.enqueue(_conn(request), "build_site", {}, priority=4)}
+
+
+@router.get("/analytics")
+def get_analytics(request: Request, days: int = Query(14, ge=1, le=365)) -> dict:
+    """Ledger self-report: volume, quality, coverage, source performance."""
+    from toast.pipeline.analytics import overview
+
+    return overview(_conn(request), days=days)
 
 
 # ---------------- prompts ----------------

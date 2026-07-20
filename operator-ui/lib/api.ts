@@ -472,6 +472,14 @@ export type IncidentIntel = {
   }[];
   evac: ImpactFact[];
   road: ImpactFact[];
+  impact_counts: {
+    orders: number;
+    warnings: number;
+    shelter_in_place: number;
+    lifted: number;
+    unclassified: number;
+    road_closures: number;
+  };
 };
 
 export type TimelineEntry = {
@@ -619,6 +627,44 @@ export type BackupStatus = {
   at_risk: boolean;
   snapshot_dir: string;
 };
+
+export type Analytics = {
+  window_days: number;
+  totals: Record<string, number>;
+  quality: {
+    attributed: number;
+    unattributed_open: number;
+    triaged: number;
+    attribution_rate: number | null;
+    assessed: number;
+    corroborated: number;
+    corroboration_rate: number | null;
+    avg_confidence: number | null;
+    superseded: number;
+  };
+  daily: { day: string; facts: number; sources: number }[];
+  by_kind: { kind: string; n: number }[];
+  by_tier: { tier: number; n: number }[];
+  by_county: { county: string; incidents: number; active: number }[];
+  top_sources: {
+    name: string;
+    tier: number;
+    facts: number;
+    lead_time_median_s: number | null;
+    superseded_rate: number | null;
+  }[];
+};
+
+export const fetchAnalytics = (days = 14) => get<Analytics>(`/analytics?days=${days}`);
+
+export async function starFact(factId: string, starred: boolean): Promise<void> {
+  const res = await fetch(`/api/facts/${factId}/star`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ starred }),
+  });
+  if (!res.ok) throw new Error(`star failed (${res.status})`);
+}
 
 export type EditablePrompt = {
   id: string;

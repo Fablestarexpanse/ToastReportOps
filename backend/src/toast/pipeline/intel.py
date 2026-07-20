@@ -107,12 +107,26 @@ def incident_intel(conn: sqlite3.Connection, incident_id: str) -> dict[str, Any]
         ).fetchall()
         impacts[kind] = [dict(r) for r in rows]
 
+    # Orders and warnings mean very different things to someone deciding
+    # whether to leave, so they are never collapsed into one number.
+    impact_counts = {
+        "orders": sum(1 for f in impacts["evac"] if f["evac_status"] == "order"),
+        "warnings": sum(1 for f in impacts["evac"] if f["evac_status"] == "warning"),
+        "shelter_in_place": sum(
+            1 for f in impacts["evac"] if f["evac_status"] == "shelter_in_place"
+        ),
+        "lifted": sum(1 for f in impacts["evac"] if f["evac_status"] == "lifted"),
+        "unclassified": sum(1 for f in impacts["evac"] if not f["evac_status"]),
+        "road_closures": len(impacts["road"]),
+    }
+
     return {
         "metrics": metrics,
         "confidence": dict(conf) if conf else {},
         "situation": situation,
         "evac": impacts["evac"],
         "road": impacts["road"],
+        "impact_counts": impact_counts,
     }
 
 
