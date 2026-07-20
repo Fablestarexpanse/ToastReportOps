@@ -5,6 +5,7 @@ import {
   Draft,
   DraftDetail,
   Incident,
+  ResearchJob,
   fetchDraft,
   fetchDrafts,
   fetchIncidents,
@@ -26,6 +27,7 @@ const WINDOWS: [string, number | null][] = [
 
 export default function NewsroomMode({ toast }: { toast: (m: string) => void }) {
   const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [research, setResearch] = useState<ResearchJob[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [selId, setSelId] = useState<string | null>(null);
   const [detail, setDetail] = useState<DraftDetail | null>(null);
@@ -40,7 +42,8 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
     // fetches must never produce duplicate React keys
     const seen = new Set<string>();
     const unique = inc.filter((i) => !seen.has(i.id) && seen.add(i.id) !== undefined);
-    setDrafts(d);
+    setDrafts(d.drafts);
+    setResearch(d.research_jobs ?? []);
     setIncidents(unique);
     // functional update: no dependency on genIncident, so refresh keeps a
     // stable identity and the mount effect runs exactly once (the previous
@@ -50,6 +53,10 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
 
   useEffect(() => {
     refresh();
+    // keep the queue live: in-flight research entries update, and finished
+    // research pops in as a draft without a manual reload
+    const id = setInterval(refresh, 8000);
+    return () => clearInterval(id);
   }, [refresh]);
 
   useEffect(() => {
@@ -149,6 +156,47 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
           DRAFT QUEUE
         </div>
         <div style={{ flex: 1, overflowY: "auto" }}>
+          {research.map((r) => {
+            const cfg =
+              r.state === "failed"
+                ? { color: C.evac, icon: "✕", label: "RESEARCH FAILED" }
+                : r.state === "parked"
+                  ? { color: C.warn, icon: "⏸", label: "RESEARCH PARKED — rate limited, retrying" }
+                  : { color: C.violet, icon: "⌕", label: r.state === "starting" ? "RESEARCH STARTING" : "RESEARCHING…" };
+            return (
+              <div
+                key={r.key}
+                style={{
+                  padding: "9px 12px",
+                  borderLeft: `3px solid ${cfg.color}`,
+                  background: cfg.color + "0d",
+                  borderBottom: `1px solid ${C.line}55`,
+                }}
+                title={r.error ?? r.query}
+              >
+                <div style={{ display: "flex", gap: 7, alignItems: "center" }}>
+                  <span
+                    className={r.state === "failed" ? undefined : "tr-blink"}
+                    style={{ color: cfg.color, fontSize: 13 }}
+                  >
+                    {cfg.icon}
+                  </span>
+                  <span style={{ fontSize: 11.5, fontWeight: 600, lineHeight: 1.3, minWidth: 0 }}>
+                    {r.incident_name ? `${r.incident_name} — deep research` : r.query.slice(0, 60)}
+                  </span>
+                </div>
+                <div style={{ fontFamily: font.mono, fontSize: 8.5, color: cfg.color, marginTop: 3 }}>
+                  {cfg.label}
+                  <span style={{ color: C.faint }}> · since {r.since.slice(11, 16)}Z · lands here when done</span>
+                </div>
+                {r.error && (
+                  <div style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint, marginTop: 2 }}>
+                    {r.error}
+                  </div>
+                )}
+              </div>
+            );
+          })}
           {drafts.map((dr) => (
             <div
               key={dr.id}
@@ -164,7 +212,7 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
               </div>
             </div>
           ))}
-          {!drafts.length && (
+          {!drafts.length && !research.length && (
             <div style={{ padding: 14, fontFamily: font.mono, fontSize: 10, color: C.faint }}>
               no drafts yet — generate one above
             </div>

@@ -125,7 +125,18 @@ export type DraftDetail = {
   cited_facts: CitedFact[];
 };
 
-export const fetchDrafts = () => get<{ drafts: Draft[] }>("/drafts").then((r) => r.drafts);
+export type ResearchJob = {
+  key: string;
+  query: string;
+  state: "starting" | "researching" | "parked" | "failed";
+  incident_id: string | null;
+  incident_name: string | null;
+  since: string;
+  error: string | null;
+};
+
+export const fetchDrafts = () =>
+  get<{ drafts: Draft[]; research_jobs: ResearchJob[] }>("/drafts");
 export const fetchDraft = (id: string) => get<DraftDetail>(`/drafts/${id}`);
 
 async function post<T>(path: string, body: unknown): Promise<T> {

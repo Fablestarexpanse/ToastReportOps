@@ -66,6 +66,19 @@ textarea::placeholder {
 .tr-pulse {
   animation: trpulse 2s ease-out infinite;
 }
+
+.tr-blink {
+  animation: trblink 1.4s ease-in-out infinite;
+}
+@keyframes trblink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
 @keyframes trpulse {
   0% {
     opacity: 0.8;

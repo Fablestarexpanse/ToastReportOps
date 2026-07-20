@@ -282,21 +282,67 @@ def list_drafts(request: Request, status: str | None = None) -> dict:
     if status:
         where = "WHERE d.status = ?"
         params.append(status)
-    rows = (
-        _conn(request)
-        .execute(
-            f"""SELECT d.id, d.incident_id, d.kind, d.status, d.title, d.window_start,
-                   d.window_end, d.approved_by, d.approved_at, d.created_at, d.updated_at,
-                   i.canonical_name AS incident_name,
-                   json_array_length(d.cited_fact_ids) AS cited_count
-            FROM drafts d LEFT JOIN incidents i ON i.id = d.incident_id
-            {where}
-            ORDER BY d.updated_at DESC""",
-            params,
-        )
-        .fetchall()
-    )
-    return {"drafts": [dict(r) for r in rows]}
+    conn = _conn(request)
+    rows = conn.execute(
+        f"""SELECT d.id, d.incident_id, d.kind, d.status, d.title, d.window_start,
+               d.window_end, d.approved_by, d.approved_at, d.created_at, d.updated_at,
+               i.canonical_name AS incident_name,
+               json_array_length(d.cited_fact_ids) AS cited_count
+        FROM drafts d LEFT JOIN incidents i ON i.id = d.incident_id
+        {where}
+        ORDER BY d.updated_at DESC""",
+        params,
+    ).fetchall()
+    return {"drafts": [dict(r) for r in rows], "research_jobs": _active_research(conn)}
+
+
+def _active_research(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """In-flight deep-research runs for the draft queue — so the operator can
+    see a research is working before its draft lands. Dead runs from the last
+    24h surface as 'failed' so silent losses are visible."""
+    rows = conn.execute(
+        """SELECT id, stage, state, payload, run_after, created_at, last_error
+           FROM jobs
+           WHERE stage IN ('deep_research', 'deep_research_poll')
+             AND (state IN ('queued', 'running')
+                  OR (state = 'dead'
+                      AND unixepoch('now') - unixepoch(created_at) < 86400))
+           ORDER BY created_at ASC"""
+    ).fetchall()
+    items: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        payload = json.loads(row["payload"])
+        query = payload.get("query", "research")
+        key = payload.get("research_id") or query  # poll hops share research_id
+        if row["state"] == "dead":
+            state = "failed"
+        elif payload.get("rl_hops") and row["state"] == "queued":
+            state = "parked"  # waiting out LDR's rate limiter
+        elif row["stage"] == "deep_research":
+            state = "starting"
+        else:
+            state = "researching"
+        incident_id = payload.get("incident_id")
+        incident_name = None
+        if incident_id:
+            inc = conn.execute(
+                "SELECT canonical_name FROM incidents WHERE id = ?", (incident_id,)
+            ).fetchone()
+            incident_name = inc["canonical_name"] if inc else None
+        # later rows (newer hops) overwrite earlier ones; failed wins over stale
+        prior = items.get(key)
+        if prior and prior["state"] == "failed" and state != "failed":
+            continue
+        items[key] = {
+            "key": key,
+            "query": query,
+            "state": state,
+            "incident_id": incident_id,
+            "incident_name": incident_name,
+            "since": row["created_at"],
+            "error": (row["last_error"] or "")[:140] if row["state"] == "dead" else None,
+        }
+    return list(items.values())
 
 
 @router.get("/drafts/{draft_id}")
