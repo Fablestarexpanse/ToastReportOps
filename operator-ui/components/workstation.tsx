@@ -20,6 +20,7 @@ import {
   searchFires,
 } from "@/lib/api";
 import { C, TIER, TIER_TITLES, confColor, font } from "@/lib/theme";
+import MapPanel from "@/components/map-panel";
 
 const POLL_MS = 5000;
 
@@ -390,53 +391,47 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
         </div>
       </div>
 
-      {/* incident list */}
+      {/* map + compact incident list */}
       <div style={{ background: C.bg, display: "flex", flexDirection: "column", minHeight: 0 }}>
         <AnalyzeBox toast={toast} />
-        <SectionLabel>ACTIVE INCIDENTS — CALIFORNIA (map lands in Phase 3)</SectionLabel>
-        <div style={{ flex: 1, overflowY: "auto", padding: "0 10px 10px" }}>
-          <AdjudicationStrip
-            items={(adjudication ?? []).filter((it) => !resolved[it.fact.id])}
-            onResolve={onResolve}
-          />
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 8 }}>
-            {(incidents ?? []).map((inc) => (
-              <div
-                key={inc.id}
-                onClick={() => setSelected(inc.id)}
-                className="tr-row"
-                style={{
-                  background: C.panel,
-                  border: `1px solid ${inc.id === selected ? C.ember : C.line}`,
-                  borderRadius: 7,
-                  padding: "9px 11px",
-                  cursor: "pointer",
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                  <span style={{ fontFamily: font.disp, fontSize: 15, fontWeight: 700 }}>
-                    {inc.canonical_name}
-                  </span>
-                  <span
-                    style={{
-                      fontFamily: font.mono,
-                      fontSize: 8.5,
-                      color: inc.status === "active" ? C.emberHot : C.dim,
-                    }}
-                  >
-                    {inc.status.toUpperCase()}
-                  </span>
-                </div>
-                <div style={{ fontFamily: font.mono, fontSize: 9.5, color: C.dim, marginTop: 3 }}>
-                  {inc.county ? `${inc.county} County · ` : ""}
-                  {inc.fact_count} facts · last {fmtTime(inc.last_observed)}
-                </div>
-              </div>
-            ))}
-          </div>
+        <AdjudicationStrip
+          items={(adjudication ?? []).filter((it) => !resolved[it.fact.id])}
+          onResolve={onResolve}
+        />
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <MapPanel incidents={incidents ?? []} selected={selected} onSelect={setSelected} />
+        </div>
+        {/* compact incident chip strip below the map */}
+        <div style={{ flexShrink: 0, borderTop: `1px solid ${C.line}`, maxHeight: 150, overflowY: "auto", background: C.panel }}>
+          {(incidents ?? []).map((inc) => (
+            <div
+              key={inc.id}
+              onClick={() => setSelected(inc.id)}
+              className="tr-row"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "5px 11px",
+                borderBottom: `1px solid ${C.line}44`,
+                borderLeft: `3px solid ${inc.id === selected ? C.ember : "transparent"}`,
+                cursor: "pointer",
+              }}
+            >
+              <span style={{ fontFamily: font.disp, fontSize: 13, fontWeight: 700 }}>{inc.canonical_name}</span>
+              <span style={{ fontFamily: font.mono, fontSize: 9, color: C.dim }}>
+                {inc.county ? `${inc.county} · ` : ""}
+                {inc.acreage != null ? `${inc.acreage.toLocaleString()} ac · ` : ""}
+                {inc.containment_pct != null ? `${inc.containment_pct}% cont` : ""}
+              </span>
+              <span style={{ marginLeft: "auto", fontFamily: font.mono, fontSize: 8, color: inc.status === "active" ? C.emberHot : C.dim }}>
+                {inc.status.toUpperCase()}
+              </span>
+            </div>
+          ))}
           {!incidents?.length && (
-            <div style={{ padding: 16, fontFamily: font.mono, fontSize: 10, color: C.faint }}>
-              no incidents yet — waiting for first WFIGS poll
+            <div style={{ padding: 14, fontFamily: font.mono, fontSize: 10, color: C.faint }}>
+              no active incidents — waiting for first CAL FIRE poll
             </div>
           )}
         </div>

@@ -52,10 +52,16 @@ def list_incidents(request: Request, status: str | None = None, include_rx: bool
     if not include_rx:
         clauses.append("COALESCE(i.incident_type, 'WF') != 'RX'")
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    # latest non-superseded value fact for a metric on an incident
+    latest = """(SELECT {col} FROM facts v WHERE v.incident_id = i.id AND v.kind = '{kind}'
+                 AND v.id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)
+                 ORDER BY v.observed_at DESC LIMIT 1)"""
     rows = (
         _conn(request)
         .execute(
-            f"""SELECT i.*, COUNT(f.id) AS fact_count, MAX(f.observed_at) AS last_observed
+            f"""SELECT i.*, COUNT(f.id) AS fact_count, MAX(f.observed_at) AS last_observed,
+                   {latest.format(col="acreage", kind="acreage")} AS acreage,
+                   {latest.format(col="containment_pct", kind="containment")} AS containment_pct
             FROM incidents i LEFT JOIN facts f ON f.incident_id = i.id
             {where}
             GROUP BY i.id ORDER BY last_observed DESC NULLS LAST""",

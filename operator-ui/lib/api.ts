@@ -13,6 +13,8 @@ export type Incident = {
   updated_at: string;
   fact_count: number;
   last_observed: string | null;
+  acreage: number | null;
+  containment_pct: number | null;
 };
 
 export type Fact = {
