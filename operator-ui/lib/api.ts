@@ -196,9 +196,20 @@ export type CitedFact = {
   source_name: string;
 };
 
+export type Publication = {
+  id: string;
+  channel: string;
+  /** 'unknown' means we never heard back — it may or may not have gone out */
+  status: "queued" | "sent" | "failed" | "unknown";
+  external_url: string | null;
+  receipt: string | null;
+  sent_at: string | null;
+};
+
 export type DraftDetail = {
   draft: Draft & { body_md: string; cited_fact_ids: string };
   cited_facts: CitedFact[];
+  publications: Publication[];
 };
 
 export type ResearchJob = {

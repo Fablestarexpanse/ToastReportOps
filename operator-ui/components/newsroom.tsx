@@ -358,6 +358,39 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
         <div style={{ padding: "10px 13px", fontFamily: font.disp, fontSize: 12, letterSpacing: 2, color: C.dim, borderBottom: `1px solid ${C.line}` }}>
           CITED FACTS {detail ? `· ${detail.cited_facts.length}` : ""}
         </div>
+
+        {/* Delivery outcomes. 'unknown' is the one that matters: the post may
+            have landed and we never heard back, so re-sending risks a duplicate
+            on a public account. Only a human who has looked can resolve it. */}
+        {!!detail?.publications?.length && (
+          <div style={{ padding: "8px 13px", borderBottom: `1px solid ${C.line}` }}>
+            {detail.publications.map((p) => {
+              const color =
+                p.status === "sent" ? C.ok
+                : p.status === "unknown" ? C.warn
+                : p.status === "failed" ? C.evac
+                : C.dim;
+              return (
+                <div
+                  key={p.id}
+                  title={p.status === "unknown"
+                    ? "delivery indeterminate — check the account before re-sending"
+                    : p.receipt ?? undefined}
+                  style={{ display: "flex", gap: 6, alignItems: "center", fontFamily: font.mono, fontSize: 9, marginTop: 3 }}
+                >
+                  <span style={{ width: 6, height: 6, borderRadius: 3, background: color }} />
+                  <span style={{ color: C.dim, minWidth: 58 }}>{p.channel.toUpperCase()}</span>
+                  <span style={{ color }}>
+                    {p.status === "unknown" ? "UNKNOWN — VERIFY MANUALLY" : p.status.toUpperCase()}
+                  </span>
+                  {p.external_url && (
+                    <a href={p.external_url} target="_blank" rel="noopener noreferrer" style={{ color: C.blue }}>⧉</a>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
         <div style={{ flex: 1, overflowY: "auto" }}>
           {(detail?.cited_facts ?? []).map((f) => (
             <div key={f.id} style={{ padding: "7px 11px", borderBottom: `1px solid ${C.line}44`, display: "flex", gap: 7 }}>

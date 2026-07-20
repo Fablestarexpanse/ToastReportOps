@@ -341,9 +341,19 @@ def backup_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
 def publish_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     """Deliver an approved+published SOCIAL draft to one external channel.
 
-    No retries on failure: a retry after an ambiguous network error risks a
-    duplicate public post. Failures are recorded on the publications row for
-    the operator to re-send deliberately."""
+    Never retries, and that is enforced rather than intended: this function
+    catches everything, records an outcome, and returns. If any exception
+    escaped, jobs.fail would requeue it and the queue would re-post — the
+    docstring used to promise no retries while catching only PublishError, so a
+    ReadTimeout from a post X had already accepted meant five identical public
+    posts.
+
+    Two guards:
+      * the publications row must still be 'queued'. requeue_stale can hand the
+        same job to a second worker; a row that is already resolved is not
+        re-sent.
+      * an ambiguous failure lands in 'unknown', not 'failed'. We do not know
+        whether it went out, so a human checks the account before deciding."""
     import json as _json
 
     from toast.publishers import PublishError, get_publisher, split_social_body
@@ -352,6 +362,20 @@ def publish_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     channel = payload["channel"]
     publication_id = payload["publication_id"]
     log = get_logger("publisher")
+
+    pub = conn.execute("SELECT status FROM publications WHERE id = ?", (publication_id,)).fetchone()
+    if pub is None:
+        log.warning("publish_row_missing", publication_id=publication_id, channel=channel)
+        return
+    if pub["status"] != "queued":
+        # already resolved by an earlier run — re-sending is the duplicate
+        log.info(
+            "publish_skipped_not_queued",
+            publication_id=publication_id,
+            channel=channel,
+            status=pub["status"],
+        )
+        return
 
     draft = conn.execute("SELECT * FROM drafts WHERE id = ?", (draft_id,)).fetchone()
     if draft is None or draft["status"] != "published":
@@ -369,11 +393,31 @@ def publish_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     try:
         receipt = get_publisher(channel, settings_with_credentials(conn)).publish(text)
     except PublishError as exc:
+        # the publisher got a definitive answer: it did not go out
         conn.execute(
             "UPDATE publications SET status = 'failed', receipt = ? WHERE id = ?",
             (_json.dumps({"error": str(exc)}), publication_id),
         )
         log.warning("publish_failed", channel=channel, draft_id=draft_id, error=str(exc))
+        return
+    except Exception as exc:
+        # Transport-level failure — timeout, reset, DNS. The post may well have
+        # landed; the response just never came back. Recording this as 'failed'
+        # would invite a re-send, and a re-send is the duplicate. Say we do not
+        # know, and stop.
+        conn.execute(
+            "UPDATE publications SET status = 'unknown', receipt = ? WHERE id = ?",
+            (
+                _json.dumps(
+                    {
+                        "error": repr(exc),
+                        "note": "delivery indeterminate — check the account before re-sending",
+                    }
+                ),
+                publication_id,
+            ),
+        )
+        log.error("publish_indeterminate", channel=channel, draft_id=draft_id, error=repr(exc))
         return
     conn.execute(
         "UPDATE publications SET status = 'sent', external_url = ?, receipt = ?, sent_at = ?"
