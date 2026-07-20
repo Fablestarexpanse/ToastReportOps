@@ -554,6 +554,13 @@ def adjudication_queue(request: Request, limit: int = Query(50, le=200)) -> dict
     rows = conn.execute(
         f"""SELECT {FACT_COLS} FROM facts f JOIN sources s ON s.id = f.source_id
             WHERE f.incident_id IS NULL AND f.kind NOT IN ('weather')
+              -- Satellite pixels are not adjudication work. A VIIRS hotspot that
+              -- did not geo-attach carries no name, no text and no context: there
+              -- is nothing for a human to match it against, and one FIRMS poll
+              -- adds hundreds. They are new-start SIGNALS, which is what the
+              -- WATCH board clusters — it reads unattributed facts too, so they
+              -- are still seen, just not as a queue of 126 identical pixels.
+              AND s.type != 'satellite'
               AND f.id NOT IN (SELECT fact_id FROM fact_triage)
             ORDER BY f.ingested_at DESC LIMIT ?""",
         (limit,),

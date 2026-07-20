@@ -157,3 +157,35 @@ def test_reattribution_skips_triaged_facts(seeded):
         ]
         is None
     )
+
+
+def test_satellite_pixels_stay_out_of_the_adjudication_queue(seeded):
+    """One FIRMS poll adds hundreds of unattached hotspots. A VIIRS pixel with no
+    nearby known fire carries no name, no text and no context — there is nothing
+    for a human to match it against, and 126 identical rows bury the news claims
+    that DO need a decision. They are new-start signals; the WATCH board reads
+    unattributed facts and clusters them there."""
+    req = Req(seeded)
+    seeded.execute(
+        "INSERT INTO sources (id, name, type, adapter, tier, created_at, updated_at)"
+        " VALUES ('s-sat', 'FIRMS', 'satellite', 'firms', 2, ?, ?)",
+        (NOW, NOW),
+    )
+    seeded.execute(
+        "INSERT INTO envelopes (id, source_id, external_id, kind, payload, content_hash,"
+        " fetched_at) VALUES ('e-sat', 's-sat', 'h1', 'hotspot', '{}', 'hh', ?)",
+        (NOW,),
+    )
+    hotspot = ulid()
+    seeded.execute(
+        "INSERT INTO facts (id, incident_id, envelope_id, source_id, tier, content, kind,"
+        " lat, lon, geo_method, confidence, observed_at, ingested_at)"
+        " VALUES (?, NULL, 'e-sat', 's-sat', 2, 'Hotspot detected at 40.7, -120.1', 'start',"
+        " 40.7, -120.1, 'source_fixed', 0.7, ?, ?)",
+        (hotspot, NOW, NOW),
+    )
+    news = _unattributed(seeded, content="The Sawmill Fire has burned 400 acres.")
+
+    queued = {i["fact"]["id"] for i in _queue(req)}
+    assert hotspot not in queued, "a satellite pixel is not adjudication work"
+    assert news in queued, "news claims must still reach the operator"
