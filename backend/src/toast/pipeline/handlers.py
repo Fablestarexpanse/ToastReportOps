@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import struct
 from typing import Any
 
 from toast.core.config import Settings
@@ -217,6 +218,49 @@ def build_site_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> Non
 
     counts = build_site(conn, Settings().site_dir)
     get_logger("sitegen").info("site_built", **counts)
+
+
+@register("reassess")
+def reassess_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Re-run corroboration over already-embedded facts.
+
+    fact_assessments is derived and rebuildable by design; when the
+    corroboration rules change, prior assessments are stale until recomputed.
+    Embeddings are reused, so this costs no GPU time."""
+    import json as _json
+
+    from toast.core.db import utcnow
+    from toast.pipeline.confidence import corroborated_confidence
+    from toast.pipeline.embeddings import corroborate, ensure_vec_tables, serialize_f32
+
+    if not ensure_vec_tables(conn):
+        get_logger("pipeline.reassess").warning("sqlite_vec_unavailable_skipping")
+        return
+    rows = conn.execute(
+        """SELECT f.id, f.confidence, f.source_id, e.embedding
+           FROM facts f JOIN fact_embeddings e ON e.fact_id = f.id"""
+    ).fetchall()
+    changed = 0
+    for row in rows:
+        vec = list(struct.unpack(f"{len(row['embedding']) // 4}f", row["embedding"]))
+        assert serialize_f32(vec) == row["embedding"]  # noqa: S101 - round-trip guard
+        sources_n, ids = corroborate(conn, row["id"], vec)
+        cur = conn.execute(
+            """UPDATE fact_assessments
+               SET corroborating_sources = ?, corroborated_by = ?,
+                   effective_confidence = ?, updated_at = ?
+               WHERE fact_id = ? AND corroborating_sources <> ?""",
+            (
+                sources_n,
+                _json.dumps(ids),
+                corroborated_confidence(row["confidence"], sources_n),
+                utcnow(),
+                row["id"],
+                sources_n,
+            ),
+        )
+        changed += cur.rowcount
+    get_logger("pipeline.reassess").info("reassessed", facts=len(rows), changed=changed)
 
 
 @register("trust")

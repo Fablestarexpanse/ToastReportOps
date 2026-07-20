@@ -91,6 +91,74 @@ def test_corroboration_respects_time_window(vecdb):
     assert n == 0  # outside the 12h window
 
 
+def _write_ex(
+    conn,
+    fid,
+    source_id,
+    envelope_id,
+    *,
+    incident_id="i1",
+    kind="acreage",
+    structured="{}",
+    observed=NOW,
+):
+    conn.execute(
+        "INSERT INTO facts (id, incident_id, envelope_id, source_id, tier, content, kind,"
+        " structured, confidence, observed_at, ingested_at)"
+        " VALUES (?, ?, ?, ?, 3, 'c', ?, ?, 0.7, ?, ?)",
+        (fid, incident_id, envelope_id, source_id, kind, structured, observed, utcnow()),
+    )
+    return fid
+
+
+def test_identical_boilerplate_about_different_fires_is_not_corroboration(vecdb):
+    """Wire copy like 'A new wildfire was reported in Los Angeles County' is
+    textually identical across stories about DIFFERENT fires. Counting that as
+    independent confirmation manufactures confidence out of boilerplate."""
+    vecdb.execute(
+        "INSERT INTO incidents (id, canonical_name, status, created_at, updated_at)"
+        " VALUES ('i2', 'OTHER FIRE', 'active', ?, ?)",
+        (NOW, NOW),
+    )
+    _write_ex(vecdb, "f1", "s1", "e1", incident_id="i1")
+    _write_ex(vecdb, "f2", "s2", "e2", incident_id="i2")  # different fire
+    v = _unit(1.0, 0.0)
+    store_fact_embedding(vecdb, "f1", v)
+    store_fact_embedding(vecdb, "f2", v)  # distance 0.0 — identical text
+    n, _ = corroborate(vecdb, "f1", v)
+    assert n == 0
+
+
+def test_different_kinds_do_not_corroborate(vecdb):
+    """An acreage claim does not confirm an evacuation claim."""
+    _write_ex(vecdb, "f1", "s1", "e1", kind="acreage")
+    _write_ex(vecdb, "f2", "s2", "e2", kind="evac")
+    v = _unit(1.0, 0.0)
+    store_fact_embedding(vecdb, "f1", v)
+    store_fact_embedding(vecdb, "f2", _unit(0.99, 0.01))
+    n, _ = corroborate(vecdb, "f1", v)
+    assert n == 0
+
+
+def test_unattributed_claims_corroborate_only_on_a_matching_fire_name(vecdb):
+    """Watch-board case: two sources naming the same unlisted fire genuinely
+    corroborate; generic unnamed claims do not."""
+    named = '{"incident_name": "Coast Fire"}'
+    _write_ex(vecdb, "f1", "s1", "e1", incident_id=None, structured=named)
+    _write_ex(vecdb, "f2", "s2", "e2", incident_id=None, structured=named)
+    v = _unit(1.0, 0.0)
+    store_fact_embedding(vecdb, "f1", v)
+    store_fact_embedding(vecdb, "f2", _unit(0.99, 0.01))
+    assert corroborate(vecdb, "f1", v)[0] == 1
+
+    # …but unnamed generic claims must not
+    _write_ex(vecdb, "f3", "s1", "e1", incident_id=None)
+    _write_ex(vecdb, "f4", "s2", "e2", incident_id=None)
+    store_fact_embedding(vecdb, "f3", _unit(0.0, 1.0))
+    store_fact_embedding(vecdb, "f4", _unit(0.0, 1.0))
+    assert corroborate(vecdb, "f3", _unit(0.0, 1.0))[0] == 0
+
+
 def test_near_duplicate_same_source(vecdb):
     _write(vecdb, "f1", "s1", "e1", NOW)
     _write(vecdb, "f2", "s1", "e1", NOW)

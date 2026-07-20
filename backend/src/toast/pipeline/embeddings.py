@@ -7,14 +7,19 @@ Python package, loaded per-connection). Distance is cosine; smaller = closer.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import struct
 
 from toast.core.config import Settings
 
 DUP_THRESHOLD = 0.10  # cosine distance below this = near-duplicate content
-CORROBORATION_THRESHOLD = 0.35  # similar-claim distance for corroboration
+# Tuned against the live ledger (see docs/CORROBORATION.md): with the same-kind
+# guard, 0.45 captures 22 genuine same-incident matches vs 14 at 0.35 while
+# admitting zero cross-kind pairs; 0.55 lets 14 cross-kind pairs in.
+CORROBORATION_THRESHOLD = 0.45
 CORROBORATION_WINDOW_S = 12 * 3600
+CORROBORATION_K = 16  # a chatty source's own repeats must not crowd out others
 
 
 def serialize_f32(vec: list[float]) -> bytes:
@@ -58,6 +63,33 @@ def nearest_facts(
     return [(r["fact_id"], r["distance"]) for r in rows if r["fact_id"] != exclude][:k]
 
 
+def _claimed_name(fact: sqlite3.Row) -> str:
+    try:
+        return (
+            str(json.loads(fact["structured"] or "{}").get("incident_name") or "").strip().lower()
+        )
+    except (json.JSONDecodeError, TypeError):
+        return ""
+
+
+def _same_subject(fact: sqlite3.Row, other: sqlite3.Row) -> bool:
+    """Are these two claims about the same fire?
+
+    Corroboration means independent sources asserting the SAME thing. Semantic
+    similarity alone does not establish that: wire copy like "A new wildfire was
+    reported in Los Angeles County" is textually identical (distance 0.0) across
+    stories about entirely different fires. Treating that as confirmation
+    manufactures confidence out of boilerplate, so subject identity must be
+    established from structure, never from the text alone."""
+    a, b = fact["incident_id"], other["incident_id"]
+    if a and b:
+        return bool(a == b)
+    # unattributed (watch-board) claims: only a matching claimed fire name ties
+    # them together. Generic text with no named fire corroborates nothing.
+    name_a, name_b = _claimed_name(fact), _claimed_name(other)
+    return bool(name_a and name_a == name_b)
+
+
 def corroborate(conn: sqlite3.Connection, fact_id: str, vec: list[float]) -> tuple[int, list[str]]:
     """Count independent-source corroborations of this fact within the
     observed_at window. Returns (corroborating_source_count, fact_ids)."""
@@ -65,12 +97,16 @@ def corroborate(conn: sqlite3.Connection, fact_id: str, vec: list[float]) -> tup
     if fact is None:
         return 0, []
     corroborating: dict[str, str] = {}
-    for other_id, distance in nearest_facts(conn, vec, k=8, exclude=fact_id):
+    for other_id, distance in nearest_facts(conn, vec, k=CORROBORATION_K, exclude=fact_id):
         if distance > CORROBORATION_THRESHOLD:
             continue
         other = conn.execute("SELECT * FROM facts WHERE id = ?", (other_id,)).fetchone()
         if other is None or other["source_id"] == fact["source_id"]:
             continue  # same source can't corroborate itself
+        if other["kind"] != fact["kind"]:
+            continue  # an acreage claim does not confirm an evacuation claim
+        if not _same_subject(fact, other):
+            continue
         gap = abs(
             conn.execute(
                 "SELECT unixepoch(?) - unixepoch(?)", (fact["observed_at"], other["observed_at"])

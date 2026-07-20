@@ -949,6 +949,16 @@ def dismiss_tier_suggestion(request: Request, source_id: str) -> dict:
     return {"ok": True}
 
 
+@router.post("/facts/reassess")
+def reassess_facts(request: Request) -> dict:
+    """Recompute corroboration for every embedded fact under the current rules.
+    fact_assessments is derived — rebuilding it never touches the ledger."""
+    from toast.queue import jobs
+
+    job_id = jobs.enqueue(_conn(request), "reassess", {}, priority=8)
+    return {"ok": True, "job_id": job_id}
+
+
 @router.post("/sources/stats/recompute")
 def recompute_source_stats(request: Request) -> dict:
     """Run the trust loop now instead of waiting for the nightly job."""
