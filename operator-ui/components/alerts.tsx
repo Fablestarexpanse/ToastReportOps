@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchIncidents, fetchWatch } from "@/lib/api";
-import { C, font } from "@/lib/theme";
+import { C, font, Z } from "@/lib/theme";
 import { fmtStamp } from "@/lib/time";
 
 /* New-fire alerts: watches /incidents and /watch; a newly-appearing active
@@ -146,7 +146,7 @@ export default function AlertBell() {
             border: `1px solid ${C.line}`,
             borderRadius: 7,
             boxShadow: "0 8px 30px #000c",
-            zIndex: 60,
+            zIndex: Z.dropdown, // must clear the map, whose panes reach 800
           }}
         >
           <div style={{ padding: "8px 12px", fontFamily: font.disp, fontSize: 11, letterSpacing: 2, color: C.dim, borderBottom: `1px solid ${C.line}` }}>

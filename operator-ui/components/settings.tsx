@@ -13,7 +13,7 @@ import {
 } from "@/lib/api";
 import CredentialsPanel from "@/components/credentials";
 import PromptsPanel from "@/components/prompts";
-import { C, font } from "@/lib/theme";
+import { C, font, Z } from "@/lib/theme";
 import { TzMode, age, fmtStamp, setTzMode } from "@/lib/time";
 
 /* OPTIONS — operator-adjustable runtime settings. Model choices live in the
@@ -360,7 +360,7 @@ export default function SettingsPanel({
   return (
     <div
       onClick={onClose}
-      style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 200, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: 70 }}
+      style={{ position: "fixed", inset: 0, background: "#000a", zIndex: Z.modal, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: 70 }}
     >
       <div
         onClick={(e) => e.stopPropagation()}

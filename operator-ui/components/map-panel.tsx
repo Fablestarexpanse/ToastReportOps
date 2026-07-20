@@ -5,7 +5,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Incident, PerimeterCollection, fetchPerimeters, hasActiveEvac } from "@/lib/api";
 import { CA_OUTLINE } from "@/lib/california";
-import { C, font } from "@/lib/theme";
+import { C, Z, font } from "@/lib/theme";
 import { age } from "@/lib/time";
 
 /* Real slippy map (Leaflet, bundled locally — no CDN, no API key).
@@ -274,7 +274,9 @@ export default function MapPanel({
   const evacCount = placed.filter(hasActiveEvac).length;
 
   return (
-    <div style={{ position: "relative", height: "100%", minWidth: 0, background: "#10141a" }}>
+    /* isolation + a z-index floor keeps every Leaflet pane (which numbers
+       itself up to 800) inside this box, where it cannot paint over a modal */
+    <div style={{ position: "relative", height: "100%", minWidth: 0, background: "#10141a", zIndex: Z.map, isolation: "isolate" }}>
       <div ref={holder} style={{ position: "absolute", inset: 0 }} />
 
       {/* always-available escape hatch: whole state, chosen basemap. Sits
@@ -286,7 +288,7 @@ export default function MapPanel({
           position: "absolute",
           top: 78,
           left: 10,
-          zIndex: 500,
+          zIndex: Z.mapControl,
           width: 30,
           height: 30,
           display: "flex",
@@ -319,7 +321,7 @@ export default function MapPanel({
             position: "absolute",
             top: 8,
             right: 10,
-            zIndex: 500,
+            zIndex: Z.mapControl,
             fontFamily: font.mono,
             fontSize: 9,
             color: C.ember,
@@ -340,7 +342,7 @@ export default function MapPanel({
             position: "absolute",
             top: 8,
             left: 52,
-            zIndex: 500,
+            zIndex: Z.mapControl,
             fontFamily: font.mono,
             fontSize: 9,
             color: C.warn,
@@ -359,7 +361,7 @@ export default function MapPanel({
           position: "absolute",
           bottom: 8,
           left: 10,
-          zIndex: 500,
+          zIndex: Z.mapControl,
           fontFamily: font.mono,
           fontSize: 9,
           color: C.dim,

@@ -53,7 +53,7 @@ import {
   triageBulk,
   triageFact,
 } from "@/lib/api";
-import { C, TIER, TIER_TITLES, confColor, font } from "@/lib/theme";
+import { C, TIER, TIER_TITLES, confColor, font, Z } from "@/lib/theme";
 import AlertBell from "@/components/alerts";
 import AnalyticsMode from "@/components/analytics";
 import SettingsPanel, { loadDisplayPrefs, syncDisplayPrefs } from "@/components/settings";
@@ -2544,7 +2544,7 @@ function Overlay({ title, onClose, children }: { title: string; onClose: () => v
   return (
     <div
       onClick={onClose}
-      style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 200, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: 70 }}
+      style={{ position: "fixed", inset: 0, background: "#000a", zIndex: Z.modal, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: 70 }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -2824,7 +2824,7 @@ export default function Workstation() {
             padding: "9px 16px",
             borderRadius: 7,
             boxShadow: "0 8px 30px #000c",
-            zIndex: 50,
+            zIndex: Z.toast, // a toast behind the map is a toast nobody reads
           }}
         >
           ✓ {toastMsg}
