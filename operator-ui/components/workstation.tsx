@@ -6,6 +6,7 @@ import {
   Fact,
   FireSearchResult,
   Incident,
+  IncidentWeather,
   Note,
   ProbeResult,
   Source,
@@ -23,6 +24,7 @@ import {
   fetchIncidents,
   fetchIntake,
   fetchIntel,
+  fetchWeather,
   fetchNotes,
   fetchSourceSuggestions,
   fetchSources,
@@ -692,6 +694,124 @@ function IntelPanel({ sel, toast }: { sel: Incident; toast: (m: string) => void 
   );
 }
 
+/* WEATHER — real observations from the nearest NWS/RAWS station, always shown
+   with which station, how far away, and how old. Weather from 30 km away over
+   a ridge is not weather at the fire. */
+function WeatherPanel({ incidentId }: { incidentId: string }) {
+  const [wx, setWx] = useState<IncidentWeather | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(
+    async (refresh = false) => {
+      setBusy(true);
+      try {
+        setWx(await fetchWeather(incidentId, refresh));
+      } catch {
+        setWx({ available: false, reason: "could not reach the weather service" });
+      } finally {
+        setBusy(false);
+      }
+    },
+    [incidentId],
+  );
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (!wx)
+    return <div style={{ padding: 14, fontFamily: font.mono, fontSize: 10, color: C.faint }}>loading weather…</div>;
+
+  if (wx.available === false)
+    return (
+      <div style={{ padding: 14, fontFamily: font.mono, fontSize: 9.5, color: C.faint }}>
+        {wx.reason}
+        <div
+          onClick={() => load(true)}
+          style={{ marginTop: 8, color: C.blue, cursor: "pointer", border: `1px solid ${C.blue}55`, borderRadius: 4, padding: "4px 8px", display: "inline-block" }}
+        >
+          ↻ TRY AGAIN
+        </div>
+      </div>
+    );
+
+  const cells: [string, string][] = [
+    ["WIND", wx.wind_mph != null ? `${wx.wind_compass ?? ""} ${wx.wind_mph} mph` : "—"],
+    ["GUSTS", wx.gust_mph != null ? `${wx.gust_mph} mph` : "—"],
+    ["RH", wx.relative_humidity != null ? `${Math.round(wx.relative_humidity)}%` : "—"],
+    ["TEMP", wx.temperature_f != null ? `${Math.round(wx.temperature_f)}°F` : "—"],
+  ];
+
+  return (
+    <div style={{ padding: "10px 11px", display: "flex", flexDirection: "column", gap: 10 }}>
+      {wx.red_flag && (
+        <div style={{ border: `1px solid ${C.evac}`, background: C.evac + "18", borderRadius: 6, padding: "7px 10px" }}>
+          <div style={{ fontFamily: font.disp, fontSize: 13, fontWeight: 700, color: C.evac, letterSpacing: 1 }}>
+            ⚠ RED FLAG WARNING
+          </div>
+          {wx.alerts?.filter((a) => a.event === "Red Flag Warning").map((a) => (
+            <div key={a.headline} style={{ fontFamily: font.mono, fontSize: 8.5, color: C.dim, marginTop: 3 }}>
+              {a.headline}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 6 }}>
+        {cells.map(([label, value]) => (
+          <div key={label} style={{ background: C.bg, border: `1px solid ${C.line}`, borderRadius: 6, padding: "7px 9px" }}>
+            <div style={{ fontFamily: font.mono, fontSize: 8, color: C.faint, letterSpacing: 1 }}>{label}</div>
+            <div style={{ fontFamily: font.disp, fontSize: 17, fontWeight: 700, marginTop: 1 }}>{value}</div>
+          </div>
+        ))}
+      </div>
+
+      {wx.conditions && (
+        <div style={{ fontSize: 11, color: C.dim }}>{wx.conditions}</div>
+      )}
+
+      {(wx.alerts?.length ?? 0) > 0 && (
+        <div>
+          <div style={{ fontFamily: font.mono, fontSize: 8, color: C.faint, letterSpacing: 1, marginBottom: 4 }}>
+            ACTIVE NWS ALERTS
+          </div>
+          {wx.alerts!.map((a) => (
+            <div key={a.headline} style={{ display: "flex", gap: 6, padding: "3px 0", fontSize: 10.5 }}>
+              <span style={{ color: a.critical ? C.evac : C.warn }}>▸</span>
+              <span style={{ flex: 1 }}>
+                {a.event}
+                <span style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint, marginLeft: 5 }}>
+                  {a.severity}
+                  {a.ends && ` · until ${fmtStamp(a.ends)}`}
+                </span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* provenance — a reading is only as good as where and when it was taken */}
+      <div style={{ borderTop: `1px solid ${C.line}44`, paddingTop: 7, fontFamily: font.mono, fontSize: 8.5, color: C.faint, lineHeight: 1.6 }}>
+        station <span style={{ color: C.dim }}>{wx.station?.name || wx.station?.id}</span>
+        {wx.station?.distance_km != null && ` · ${wx.station.distance_km} km from the fire`}
+        <br />
+        observed {fmtStamp(wx.observed_at)} ({age(wx.observed_at)} old){wx.cached && " · cached"}
+        <br />
+        {wx.source}
+        <span
+          onClick={() => load(true)}
+          style={{ color: C.blue, cursor: "pointer", marginLeft: 6 }}
+        >
+          {busy ? "…" : "↻ refresh"}
+        </span>
+      </div>
+      <div style={{ fontFamily: font.mono, fontSize: 8, color: C.faint }}>
+        Fire behaviour (flame length, fuel moisture) is not shown: it needs a fuels
+        and terrain model we do not have, and estimating it would be a guess.
+      </div>
+    </div>
+  );
+}
+
 function TimelinePanel({ incidentId }: { incidentId: string }) {
   const raw = usePolling(() => fetchTimeline(incidentId), [incidentId]);
   const [newestFirst, setNewestFirst] = useState(
@@ -894,8 +1014,20 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
 
   const sel = incidents?.find((i) => i.id === selected);
   const staleCount = facts?.filter((f) => f.stale).length ?? 0;
-  const [panelTab, setPanelTab] = useState<"intel" | "ledger" | "timeline">("intel");
-  const [basemap] = useState(() => loadDisplayPrefs().basemap);
+  const [panelTab, setPanelTab] = useState<"intel" | "weather" | "ledger" | "timeline">("intel");
+  const [basemap, setBasemap] = useState(() => loadDisplayPrefs().basemap);
+  const [focus, setFocus] = useState<{ lat: number; lon: number; zoom: number; nonce: number } | null>(null);
+  // Street detail needs street tiles: an offline basemap has no streets to
+  // zoom into, so switch to the street map for this look rather than flying
+  // the operator into an empty grey square.
+  const onZoomToOrigin = (inc: Incident) => {
+    if (inc.lat == null || inc.lon == null) return;
+    if (basemap === "offline") {
+      setBasemap("osm");
+      toast("switched to the street basemap for this zoom (OPTIONS to keep it)");
+    }
+    setFocus({ lat: inc.lat, lon: inc.lon, zoom: 16, nonce: Date.now() });
+  };
   const [followOverride, setFollowOverride] = useState<Record<string, boolean>>({});
   const isFollowed = sel ? (followOverride[sel.id] ?? !!sel.followed) : false;
   const toggleFollow = async () => {
@@ -1125,7 +1257,13 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
           onTriageAllUnmatched={onTriageAllUnmatched}
         />
         <div style={{ flex: 1, minHeight: 0 }}>
-          <MapPanel incidents={incidents ?? []} selected={selected} onSelect={setSelected} basemap={basemap} />
+          <MapPanel
+            incidents={incidents ?? []}
+            selected={selected}
+            onSelect={setSelected}
+            basemap={basemap}
+            focus={focus}
+          />
         </div>
         {/* compact incident chip strip below the map */}
         <div style={{ flexShrink: 0, borderTop: `1px solid ${C.line}`, maxHeight: 150, overflowY: "auto", background: C.panel }}>
@@ -1170,6 +1308,19 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
             <div style={{ fontFamily: font.disp, fontSize: 20, fontWeight: 700, flex: 1, minWidth: 0 }}>
               {sel?.canonical_name ?? "—"}
             </div>
+            {sel?.lat != null && sel?.lon != null && (
+              <span
+                onClick={() => onZoomToOrigin(sel)}
+                title={
+                  `fly the map to the reported origin (${sel.lat.toFixed(4)}, ${sel.lon.toFixed(4)}) ` +
+                  `at street zoom.\n\nThis is the point the reporting source gives for the fire — ` +
+                  `usually its origin area, not a surveyed ignition point.`
+                }
+                style={{ fontFamily: font.mono, fontSize: 9, color: C.ok, border: `1px solid ${C.ok}66`, borderRadius: 3, padding: "2px 7px", cursor: "pointer", whiteSpace: "nowrap" }}
+              >
+                ⌖ ZOOM TO ORIGIN
+              </span>
+            )}
             {sel && (
               <span
                 onClick={toggleFollow}
@@ -1204,7 +1355,7 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
           </div>
         </div>
         <div style={{ display: "flex", borderBottom: `1px solid ${C.line}`, flexShrink: 0 }}>
-          {(["intel", "ledger", "timeline"] as const).map((t) => (
+          {(["intel", "weather", "ledger", "timeline"] as const).map((t) => (
             <span
               key={t}
               onClick={() => setPanelTab(t)}
@@ -1227,6 +1378,7 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
         </div>
         <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
           {panelTab === "intel" && sel && <IntelPanel sel={sel} toast={toast} />}
+          {panelTab === "weather" && sel && <WeatherPanel incidentId={sel.id} />}
           {panelTab === "timeline" && sel && <TimelinePanel incidentId={sel.id} />}
           {panelTab === "ledger" && (
             <>

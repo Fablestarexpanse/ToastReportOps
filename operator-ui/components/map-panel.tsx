@@ -48,11 +48,14 @@ export default function MapPanel({
   selected,
   onSelect,
   basemap = "dark",
+  focus,
 }: {
   incidents: Incident[];
   selected: string | null;
   onSelect: (id: string) => void;
   basemap?: string;
+  /** bump `nonce` to fly to a point; `zoom` 16+ is street level */
+  focus?: { lat: number; lon: number; zoom: number; nonce: number } | null;
 }) {
   const holder = useRef<HTMLDivElement | null>(null);
   const map = useRef<L.Map | null>(null);
@@ -150,6 +153,13 @@ export default function MapPanel({
   useEffect(() => {
     if (ready) draw();
   }, [ready, draw]);
+
+  // operator asked to go somewhere specific — obey exactly, and animate so it
+  // stays obvious that the view moved rather than the data changing
+  useEffect(() => {
+    if (!focus || !map.current) return;
+    map.current.flyTo([focus.lat, focus.lon], focus.zoom, { duration: 1.2 });
+  }, [focus]);
 
   // keep the selected fire in view without yanking the map around
   useEffect(() => {

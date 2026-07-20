@@ -628,6 +628,29 @@ export type BackupStatus = {
   snapshot_dir: string;
 };
 
+export type IncidentWeather = {
+  available?: boolean;
+  reason?: string;
+  cached?: boolean;
+  fetched_at?: string;
+  observed_at?: string;
+  station?: { id: string; name: string | null; distance_km: number | null };
+  temperature_f?: number | null;
+  relative_humidity?: number | null;
+  wind_mph?: number | null;
+  gust_mph?: number | null;
+  wind_compass?: string | null;
+  wind_degrees?: number | null;
+  conditions?: string | null;
+  red_flag?: boolean;
+  critical?: boolean;
+  alerts?: { event: string; severity: string; headline: string; ends: string | null; critical: boolean }[];
+  source?: string;
+};
+
+export const fetchWeather = (incidentId: string, refresh = false) =>
+  get<IncidentWeather>(`/incidents/${incidentId}/weather${refresh ? "?refresh=true" : ""}`);
+
 export type Analytics = {
   window_days: number;
   totals: Record<string, number>;

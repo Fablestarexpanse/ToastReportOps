@@ -163,6 +163,19 @@ def get_incident_intel(request: Request, incident_id: str) -> dict:
     return incident_intel(conn, incident_id)
 
 
+@router.get("/incidents/{incident_id}/weather")
+def get_incident_weather(request: Request, incident_id: str, refresh: bool = False) -> dict:
+    """Current conditions + active NWS alerts at the fire (free, no key).
+    Cached ~20 minutes; `refresh=true` forces a fetch."""
+    from toast.pipeline.weather import WeatherError, incident_weather
+
+    try:
+        return incident_weather(_conn(request), incident_id, refresh=refresh)
+    except WeatherError as exc:
+        # a weather outage must not look like a broken workstation
+        return {"available": False, "reason": str(exc)}
+
+
 @router.get("/incidents/{incident_id}/timeline")
 def get_incident_timeline(request: Request, incident_id: str) -> dict:
     from toast.pipeline.intel import incident_timeline
