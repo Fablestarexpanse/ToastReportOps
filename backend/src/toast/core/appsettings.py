@@ -17,7 +17,10 @@ from toast.core.db import utcnow
 ALLOWED: dict[str, tuple[str | None, str, str]] = {
     "llm_model": ("llm_model", "Writing / extraction model", "model"),
     "embedding_model": ("embedding_model", "Embedding model", "model"),
-    "timezone_display": (None, "Time display", "choice"),  # 'utc' | 'local'
+    "timezone_display": (None, "Time zone", "choice"),  # 'utc' | 'local'
+    # 24-hour is the default because a fire log is read against dispatch and
+    # agency traffic, which is 24-hour. Kept as a preference, not a rule.
+    "clock_format": (None, "Clock format", "choice"),  # '24h' | '12h'
     # 'offline' draws the bundled outline only — no tile server, works in a
     # PSPS outage. The others fetch tiles and need network.
     "map_basemap": (None, "Map basemap", "choice"),  # 'offline' | 'osm' | 'dark'
@@ -27,6 +30,7 @@ ALLOWED: dict[str, tuple[str | None, str, str]] = {
 
 UI_DEFAULTS = {
     "timezone_display": "utc",
+    "clock_format": "24h",
     "map_basemap": "dark",
     "timeline_order": "newest",
     "ui_poll_interval_s": "10",

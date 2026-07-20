@@ -14,7 +14,7 @@ import {
 import CredentialsPanel from "@/components/credentials";
 import PromptsPanel from "@/components/prompts";
 import { C, font, Z } from "@/lib/theme";
-import { TzMode, age, fmtStamp, setTzMode } from "@/lib/time";
+import { ClockMode, TzMode, age, fmtStamp, setClockMode, setTzMode } from "@/lib/time";
 
 /* OPTIONS — operator-adjustable runtime settings. Model choices live in the
    DB (they change pipeline behavior); display preferences are mirrored to
@@ -24,9 +24,11 @@ export const LS_TZ = "toast-tz-mode";
 export const LS_TIMELINE = "toast-timeline-order";
 export const LS_BASEMAP = "toast-map-basemap";
 export const LS_POLL = "toast-poll-interval-s";
+export const LS_CLOCK = "toast-clock-format";
 
 export type DisplayPrefs = {
   tz: TzMode;
+  clock: ClockMode;
   timelineOrder: string;
   basemap: string;
   /** how often the workstation refetches. The OPTIONS field wrote this to the
@@ -39,12 +41,21 @@ const DEFAULT_POLL_S = 5;
 
 export function loadDisplayPrefs(): DisplayPrefs {
   if (typeof window === "undefined")
-    return { tz: "utc", timelineOrder: "newest", basemap: "dark", pollMs: DEFAULT_POLL_S * 1000 };
+    return {
+      tz: "utc",
+      clock: "24h",
+      timelineOrder: "newest",
+      basemap: "dark",
+      pollMs: DEFAULT_POLL_S * 1000,
+    };
   const tz = (localStorage.getItem(LS_TZ) as TzMode) || "utc";
   setTzMode(tz);
+  const clock = (localStorage.getItem(LS_CLOCK) as ClockMode) || "24h";
+  setClockMode(clock);
   const pollS = Number(localStorage.getItem(LS_POLL)) || DEFAULT_POLL_S;
   return {
     tz,
+    clock,
     timelineOrder: localStorage.getItem(LS_TIMELINE) || "newest",
     basemap: localStorage.getItem(LS_BASEMAP) || "dark",
     // clamp: a 0 would busy-loop the backend, an hour would look frozen
@@ -62,16 +73,20 @@ export async function syncDisplayPrefs(): Promise<boolean> {
     const order = settings.timeline_order?.value || "newest";
     const basemap = settings.map_basemap?.value || "dark";
     const poll = settings.ui_poll_interval_s?.value || String(DEFAULT_POLL_S);
+    const clock = (settings.clock_format?.value as ClockMode) || "24h";
     const changed =
       tz !== localStorage.getItem(LS_TZ) ||
       order !== localStorage.getItem(LS_TIMELINE) ||
       basemap !== localStorage.getItem(LS_BASEMAP) ||
-      poll !== localStorage.getItem(LS_POLL);
+      poll !== localStorage.getItem(LS_POLL) ||
+      clock !== localStorage.getItem(LS_CLOCK);
     localStorage.setItem(LS_TZ, tz);
     localStorage.setItem(LS_TIMELINE, order);
     localStorage.setItem(LS_BASEMAP, basemap);
     localStorage.setItem(LS_POLL, poll);
+    localStorage.setItem(LS_CLOCK, clock);
     setTzMode(tz);
+    setClockMode(clock);
     return changed;
   } catch {
     return false;
@@ -82,6 +97,10 @@ const CHOICES: Record<string, { value: string; label: string }[]> = {
   timezone_display: [
     { value: "utc", label: "ZULU / UTC" },
     { value: "local", label: "LOCAL" },
+  ],
+  clock_format: [
+    { value: "24h", label: "24-HOUR" },
+    { value: "12h", label: "AM / PM" },
   ],
   timeline_order: [
     { value: "newest", label: "NEWEST FIRST" },
@@ -259,12 +278,12 @@ export default function SettingsPanel({
     try {
       const d = await saveSettings(draft);
       setSettings(d.settings);
-      // display prefs take effect immediately, before any refetch
-      const tz = (d.settings.timezone_display?.value as TzMode) || "utc";
-      localStorage.setItem(LS_TZ, tz);
-      setTzMode(tz);
-      localStorage.setItem(LS_TIMELINE, d.settings.timeline_order?.value || "newest");
-      localStorage.setItem(LS_BASEMAP, d.settings.map_basemap?.value || "dark");
+      // Mirror every display pref through the one function that knows them all.
+      // This used to hand-copy tz/timeline/basemap, so each new preference was
+      // silently forgotten on save: the poll interval and the clock format both
+      // wrote to the server and then did nothing until a reload. Adding a pref
+      // to syncDisplayPrefs now makes both paths work.
+      await syncDisplayPrefs();
       toast("settings saved");
       onApplied();
       onClose();
@@ -388,7 +407,14 @@ export default function SettingsPanel({
             <div style={{ fontFamily: font.disp, fontSize: 11, letterSpacing: 2, color: C.ember, marginTop: 10 }}>
               DISPLAY
             </div>
-            {row("timezone_display", chips("timezone_display"), "all times shown 24-hour with the date (e.g. 20JUL 0137Z)")}
+            {row("timezone_display", chips("timezone_display"), "which clock every time is read on · the zone marker (Z or L) is always shown")}
+            {row(
+              "clock_format",
+              chips("clock_format"),
+              draft.clock_format === "12h"
+                ? "e.g. 20JUL 1:37AM Z — dates always shown, zone never dropped"
+                : "e.g. 20JUL 0137Z — matches dispatch and agency traffic",
+            )}
             {row("timeline_order", chips("timeline_order"), "default order for the incident TIMELINE tab")}
             {row(
               "map_basemap",

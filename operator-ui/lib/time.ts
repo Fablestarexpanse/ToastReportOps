@@ -1,19 +1,34 @@
-/* Time display — military 24h with real dates, one implementation for the
-   whole tool. Fire information is time-critical and bi-temporal: when a thing
-   happened (observed/published) is a different fact from when we received it
-   (ingested), and the operator needs the gap at a glance. */
+/* Time display — one implementation for the whole tool. Fire information is
+   time-critical and bi-temporal: when a thing happened (observed/published) is a
+   different fact from when we received it (ingested), and the operator needs the
+   gap at a glance.
+
+   Two independent choices, because they answer different questions:
+     ZONE   utc | local  — which clock the reading is on
+     FORMAT 24h | 12h    — how that reading is written
+   24-hour stays the default: a fire log is read alongside dispatch and agency
+   traffic, which is 24-hour. The zone marker (Z / L) is never dropped in either
+   format — a time without its zone is how you act on the wrong hour. */
 
 const MON = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 
 export type TzMode = "utc" | "local";
+export type ClockMode = "24h" | "12h";
 
 let tzMode: TzMode = "utc";
+let clockMode: ClockMode = "24h";
 
 export function setTzMode(mode: TzMode) {
   tzMode = mode;
 }
 export function getTzMode(): TzMode {
   return tzMode;
+}
+export function setClockMode(mode: ClockMode) {
+  clockMode = mode;
+}
+export function getClockMode(): ClockMode {
+  return clockMode;
 }
 
 function parts(iso: string, mode: TzMode = tzMode) {
@@ -40,20 +55,29 @@ function parts(iso: string, mode: TzMode = tzMode) {
 
 const p2 = (n: number) => String(n).padStart(2, "0");
 
-/** Time only, military: "0137Z". Use where the date is already obvious. */
-/** Date + time, military: "20JUL 0137Z" (adds year if not this year). */
+/** The time itself, in the operator's chosen format, always with its zone.
+ *  24h: "0137Z"      12h: "1:37AM Z" */
+function clock(hh: number, mm: number, suffix: string): string {
+  if (clockMode === "24h") return `${p2(hh)}${p2(mm)}${suffix}`;
+  const ampm = hh < 12 ? "AM" : "PM";
+  const h12 = hh % 12 === 0 ? 12 : hh % 12;
+  return `${h12}:${p2(mm)}${ampm} ${suffix}`;
+}
+
+/** Date + time: "20JUL 0137Z" or "20JUL 1:37AM Z" (adds year if not this year). */
 export function fmtStamp(iso: string | null | undefined): string {
   const p = iso ? parts(iso) : null;
   if (!p) return "—";
   const year = p.year !== new Date().getFullYear() ? String(p.year).slice(2) : "";
-  return `${p2(p.day)}${p.mon}${year} ${p2(p.hh)}${p2(p.mm)}${p.suffix}`;
+  return `${p2(p.day)}${p.mon}${year} ${clock(p.hh, p.mm, p.suffix)}`;
 }
 
-/** Full stamp for tooltips: "20JUL2026 0137Z (2026-07-20T01:37:00Z)". */
+/** Full stamp for tooltips, always ending in the raw ISO the ledger stores —
+ *  the formatted part is a convenience, the ISO is the record. */
 export function fmtFull(iso: string | null | undefined): string {
   const p = iso ? parts(iso) : null;
   if (!p || !iso) return "unknown time";
-  return `${p2(p.day)}${p.mon}${p.year} ${p2(p.hh)}${p2(p.mm)}${p.suffix}  (${iso})`;
+  return `${p2(p.day)}${p.mon}${p.year} ${clock(p.hh, p.mm, p.suffix)}  (${iso})`;
 }
 
 /** Compact age: "4m" "3h" "2d". Empty string when unknown. */
