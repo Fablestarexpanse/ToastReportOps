@@ -7,6 +7,7 @@ import {
   FireSearchResult,
   Incident,
   IncidentWeather,
+  OriginCheck,
   Note,
   ProbeResult,
   Source,
@@ -24,6 +25,7 @@ import {
   fetchIncidents,
   fetchIntake,
   fetchIntel,
+  fetchOriginCheck,
   fetchWeather,
   fetchNotes,
   fetchSourceSuggestions,
@@ -1023,12 +1025,37 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
     nonce: number;
     basemap?: string;
   } | null>(null);
-  // Street-level detail needs imagery, not a styled street map: at a fire
-  // origin what matters is terrain, structures and vegetation. The swap is
-  // temporary — the map reverts to the chosen basemap on zooming back out.
-  const onZoomToOrigin = (inc: Incident) => {
+  const [originCheck, setOriginCheck] = useState<OriginCheck | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  // Zooming to street level makes a coordinate look authoritative, so it is
+  // re-verified against CAL FIRE at that exact moment. We still fly there —
+  // the operator asked — but they see what the point is worth.
+  const onZoomToOrigin = async (inc: Incident) => {
     if (inc.lat == null || inc.lon == null) return;
+    setChecking(true);
+    setOriginCheck(null);
     setFocus({ lat: inc.lat, lon: inc.lon, zoom: 16, nonce: Date.now(), basemap: "satellite" });
+    try {
+      const check = await fetchOriginCheck(inc.id);
+      setOriginCheck(check);
+      // CAL FIRE has moved the point since we recorded it — go where CAL FIRE
+      // says, and say so, rather than showing the operator a stale spot.
+      if (check.official && check.official.delta_km > 1) {
+        setFocus({
+          lat: check.official.lat,
+          lon: check.official.lon,
+          zoom: 16,
+          nonce: Date.now(),
+          basemap: "satellite",
+        });
+        toast(`CAL FIRE has this fire ${check.official.delta_km} km from our stored point — showing CAL FIRE's`);
+      }
+    } catch {
+      setOriginCheck(null);
+    } finally {
+      setChecking(false);
+    }
   };
   const [followOverride, setFollowOverride] = useState<Record<string, boolean>>({});
   const isFollowed = sel ? (followOverride[sel.id] ?? !!sel.followed) : false;
@@ -1355,6 +1382,77 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
           <div style={{ fontFamily: font.mono, fontSize: 10, color: C.dim, marginTop: 2 }}>
             {sel ? `${sel.county ?? "?"} County · ${sel.status} · ${sel.fact_count} facts` : "select an incident"}
           </div>
+
+          {/* origin verification — what the coordinate we just flew to is worth */}
+          {(checking || (originCheck && originCheck.incident_id === sel?.id)) && (
+            <div
+              style={{
+                marginTop: 6,
+                borderRadius: 5,
+                border: `1px solid ${
+                  checking
+                    ? C.line
+                    : originCheck!.verified
+                      ? C.ok + "66"
+                      : originCheck!.confidence === "low"
+                        ? C.evac + "66"
+                        : C.warn + "66"
+                }`,
+                background: checking ? "transparent" : C.bg,
+                padding: "6px 8px",
+              }}
+            >
+              {checking ? (
+                <div style={{ fontFamily: font.mono, fontSize: 9, color: C.dim }}>
+                  ⌖ verifying origin against CAL FIRE…
+                </div>
+              ) : (
+                <>
+                  <div
+                    style={{
+                      fontFamily: font.mono,
+                      fontSize: 9,
+                      letterSpacing: 0.5,
+                      color: originCheck!.verified
+                        ? C.ok
+                        : originCheck!.confidence === "low"
+                          ? C.evac
+                          : C.warn,
+                    }}
+                  >
+                    {originCheck!.verified
+                      ? "✓ ORIGIN VERIFIED"
+                      : originCheck!.confidence === "low"
+                        ? "⚠ ORIGIN NOT VERIFIED"
+                        : "⚠ ORIGIN PARTLY VERIFIED"}
+                    {originCheck!.lat != null &&
+                      ` · ${originCheck!.lat.toFixed(4)}, ${originCheck!.lon!.toFixed(4)}`}
+                  </div>
+                  {originCheck!.checks.map((c) => (
+                    <div
+                      key={c.check}
+                      style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint, marginTop: 2 }}
+                    >
+                      <span style={{ color: c.ok === true ? C.ok : c.ok === false ? C.evac : C.dim }}>
+                        {c.ok === true ? "✓" : c.ok === false ? "✕" : "?"}
+                      </span>{" "}
+                      {c.detail}
+                    </div>
+                  ))}
+                  {originCheck!.official?.url && (
+                    <a
+                      href={originCheck!.official.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ fontFamily: font.mono, fontSize: 8.5, color: C.blue, marginTop: 3, display: "inline-block" }}
+                    >
+                      ↗ CAL FIRE incident page
+                    </a>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
         <div style={{ display: "flex", borderBottom: `1px solid ${C.line}`, flexShrink: 0 }}>
           {(["intel", "weather", "ledger", "timeline"] as const).map((t) => (

@@ -163,6 +163,19 @@ def get_incident_intel(request: Request, incident_id: str) -> dict:
     return incident_intel(conn, incident_id)
 
 
+@router.get("/incidents/{incident_id}/origin-check")
+def check_origin(request: Request, incident_id: str) -> dict:
+    """Re-verify an incident's coordinates against CAL FIRE before the operator
+    treats them as a precise location. Never rewrites the ledger — a
+    coordinate is evidence, and this reports on it."""
+    from toast.pipeline.geoverify import verify_origin
+
+    try:
+        return verify_origin(_conn(request), incident_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
 @router.get("/incidents/{incident_id}/weather")
 def get_incident_weather(request: Request, incident_id: str, refresh: bool = False) -> dict:
     """Current conditions + active NWS alerts at the fire (free, no key).

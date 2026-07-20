@@ -628,6 +628,28 @@ export type BackupStatus = {
   snapshot_dir: string;
 };
 
+export type OriginCheck = {
+  incident_id: string;
+  name?: string;
+  lat: number | null;
+  lon: number | null;
+  verified: boolean;
+  confidence: "high" | "medium" | "low" | "none";
+  official?: {
+    lat: number;
+    lon: number;
+    delta_km: number;
+    name: string | null;
+    county: string | null;
+    url: string | null;
+    updated: string | null;
+  } | null;
+  checks: { check: string; ok: boolean | null; detail: string }[];
+};
+
+export const fetchOriginCheck = (incidentId: string) =>
+  get<OriginCheck>(`/incidents/${incidentId}/origin-check`);
+
 export type IncidentWeather = {
   available?: boolean;
   reason?: string;
