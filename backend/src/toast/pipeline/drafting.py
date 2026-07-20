@@ -60,6 +60,35 @@ def _facts_block(facts: list[sqlite3.Row]) -> tuple[str, dict[str, str]]:
     return "\n".join(lines), id_map
 
 
+def _sources_section(conn: sqlite3.Connection, facts: list[sqlite3.Row]) -> str:
+    """A numbered Sources list (markdown) for the article, one entry per fact
+    the draft was built from — numbered 1..N to match the inline [#n] citations.
+    This is the permanent account: every report carries its own provenance."""
+    src_names = {
+        r["id"]: (r["name"], r["tier"]) for r in conn.execute("SELECT id, name, tier FROM sources")
+    }
+    # raw source urls, when a raw blob was preserved for the fact
+    refs = [f["raw_ref"] for f in facts if f["raw_ref"]]
+    urls: dict[str, str] = {}
+    if refs:
+        placeholders = ",".join("?" * len(refs))
+        urls = {
+            r["sha256"]: r["url"]
+            for r in conn.execute(
+                f"SELECT sha256, url FROM raw_blobs WHERE sha256 IN ({placeholders})", refs
+            )
+            if r["url"]
+        }
+    lines = ["", "---", "", "**Sources**", ""]
+    for i, f in enumerate(facts, start=1):
+        name, tier = src_names.get(f["source_id"], (f["source_id"], f["tier"]))
+        observed = (f["observed_at"] or "")[:16].replace("T", " ")
+        url = urls.get(f["raw_ref"] or "")
+        link = f" — {url}" if url else ""
+        lines.append(f"{i}. {name} (T{tier}) — {f['content']} — observed {observed} UTC{link}")
+    return "\n".join(lines)
+
+
 def generate_draft(
     conn: sqlite3.Connection,
     incident_id: str,
@@ -94,6 +123,11 @@ def generate_draft(
     # translate the model's short [#n] ids back to real fact ids
     cited_short = [str(c) for c in raw.get("cited_fact_ids", [])]
     cited_real = [id_map[c] for c in cited_short if c in id_map]
+
+    # Always append the source account — every report carries its provenance,
+    # listing every fact it was generated from (numbered to match [#n]).
+    if body_md:
+        body_md = body_md + "\n" + _sources_section(conn, facts)
 
     draft_id = ulid()
     now = utcnow()

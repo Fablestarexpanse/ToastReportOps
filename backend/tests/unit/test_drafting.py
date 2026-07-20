@@ -80,6 +80,41 @@ def test_no_facts_in_window_returns_not_created(seeded):
     assert result["created"] is False
 
 
+def test_body_includes_numbered_sources_section(seeded):
+    _w(seeded, "f1", "acreage", "Fire at 1200 acres", NOW, None, None)
+    _w(seeded, "f2", "containment", "0% contained", NOW, None, None)
+    fake = FakeLLM(
+        {
+            "title": "T",
+            "body_md": "Fire is 1,200 acres [#1], 0% contained [#2].",
+            "cited_fact_ids": ["1", "2"],
+        }
+    )
+    result = generate_draft(seeded, "i1", client=fake)
+    body = seeded.execute(
+        "SELECT body_md FROM drafts WHERE id=?", (result["draft_id"],)
+    ).fetchone()["body_md"]
+    assert "**Sources**" in body
+    # numbered entries match the inline [#n] citations, and name the source
+    assert "1. CAL FIRE" in body and "2. CAL FIRE" in body
+    assert "Fire at 1200 acres" in body and "0% contained" in body
+    # the article body (before the rule) still carries the inline citations
+    article, _, sources = body.partition("---")
+    assert "[#1]" in article and "[#2]" in article
+    assert "**Sources**" in sources
+
+
+def test_empty_body_gets_no_sources_section(seeded):
+    _w(seeded, "f1", "acreage", "1200 acres", NOW, None, None)
+    result = generate_draft(
+        seeded, "i1", client=FakeLLM({"title": "T", "body_md": "", "cited_fact_ids": []})
+    )
+    body = seeded.execute(
+        "SELECT body_md FROM drafts WHERE id=?", (result["draft_id"],)
+    ).fetchone()["body_md"]
+    assert body == ""  # nothing drafted → no sources appended
+
+
 def test_bad_citation_ids_are_dropped(seeded):
     _w(seeded, "f1", "acreage", "1200 acres", NOW, None, None)
     fake = FakeLLM({"title": "t", "body_md": "b [#1] [#9]", "cited_fact_ids": ["1", "9", "bogus"]})
