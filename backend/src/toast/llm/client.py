@@ -44,11 +44,17 @@ def _parse_json_lenient(content: str) -> Any:
 
 
 class LLMClient:
-    def __init__(self, settings: Settings | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        *,
+        model: str | None = None,
+        embed_model: str | None = None,
+    ) -> None:
         s = settings or Settings()
         self.base_url = s.llm_base_url.rstrip("/")
-        self.model = s.llm_model
-        self.embed_model = s.embedding_model
+        self.model = model or s.llm_model
+        self.embed_model = embed_model or s.embedding_model
         self.api_key = s.llm_api_key
         self.default_timeout_s = s.llm_timeout_s
         self.no_think_token = s.llm_no_think_token
@@ -98,3 +104,23 @@ class LLMClient:
             raise LLMError(f"embed failed: {resp.status_code} {resp.text[:300]}")
         data = resp.json()["data"]
         return [d["embedding"] for d in sorted(data, key=lambda d: d["index"])]
+
+    def list_models(self, *, timeout_s: float = 10.0) -> list[str]:
+        """Models the local endpoint actually has pulled (OpenAI-compatible
+        /models). Empty list when the endpoint is unreachable — the settings UI
+        degrades to a free-text field rather than failing."""
+        try:
+            resp = httpx.get(f"{self.base_url}/models", headers=self._headers(), timeout=timeout_s)
+            if resp.status_code != 200:
+                return []
+            return sorted(str(m["id"]) for m in resp.json().get("data", []))
+        except httpx.HTTPError:
+            return []
+
+
+def client_for(conn: Any, settings: Settings | None = None) -> LLMClient:
+    """LLMClient honoring the operator's model choices from app_settings."""
+    from toast.core.appsettings import llm_overrides
+
+    ov = llm_overrides(conn)
+    return LLMClient(settings, model=ov.get("llm_model"), embed_model=ov.get("embedding_model"))

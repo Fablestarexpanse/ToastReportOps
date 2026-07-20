@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchIncidents, fetchWatch } from "@/lib/api";
 import { C, font } from "@/lib/theme";
+import { fmtStamp } from "@/lib/time";
 
 /* New-fire alerts: watches /incidents and /watch; a newly-appearing active
    incident or a newly-corroborating watch candidate raises an alert — browser
@@ -157,7 +158,7 @@ export default function AlertBell() {
                 {a.title}
               </div>
               <div style={{ fontFamily: font.mono, fontSize: 9, color: C.dim, marginTop: 2 }}>
-                {a.detail} · {a.at.slice(11, 16)}Z
+                {a.detail} · {fmtStamp(a.at)}
               </div>
             </div>
           ))}

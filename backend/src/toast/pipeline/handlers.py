@@ -161,7 +161,7 @@ def embed_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     import json as _json
 
     from toast.core.db import utcnow
-    from toast.llm.client import LLMClient
+    from toast.llm.client import client_for
     from toast.pipeline.confidence import corroborated_confidence
     from toast.pipeline.embeddings import (
         corroborate,
@@ -176,7 +176,7 @@ def embed_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     if not ensure_vec_tables(conn):
         get_logger("pipeline.embed").warning("sqlite_vec_unavailable_skipping")
         return
-    vec = LLMClient().embed([fact["content"]])[0]
+    vec = client_for(conn).embed([fact["content"]])[0]
     store_fact_embedding(conn, fact["id"], vec)
 
     sources_n, corroborating_ids = corroborate(conn, fact["id"], vec)
@@ -295,7 +295,9 @@ def deep_research_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> 
             _requeue_rate_limited(conn, "deep_research", payload)
             return
         raise
-    research_id = client.start(payload["query"])
+    from toast.core.appsettings import get_setting
+
+    research_id = client.start(payload["query"], model=get_setting(conn, "llm_model"))
     jobs.enqueue(
         conn,
         "deep_research_poll",

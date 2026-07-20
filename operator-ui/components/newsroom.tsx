@@ -16,6 +16,7 @@ import {
   transitionDraft,
 } from "@/lib/api";
 import { C, TIER, font } from "@/lib/theme";
+import { age, fmtStamp } from "@/lib/time";
 
 const statusColor = (s: string) =>
   s.startsWith("published") ? C.ok : s === "needs_review" ? C.warn : s === "approved" ? C.blue : s === "rejected" ? C.evac : C.dim;
@@ -236,7 +237,10 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
                 </div>
                 <div style={{ fontFamily: font.mono, fontSize: 8.5, color: cfg.color, marginTop: 3 }}>
                   {cfg.label}
-                  <span style={{ color: C.faint }}> · since {r.since.slice(11, 16)}Z · lands here when done</span>
+                  <span style={{ color: C.faint }}>
+                    {" "}
+                    · running {age(r.since)} · since {fmtStamp(r.since)} · lands here when done
+                  </span>
                 </div>
                 {r.error && (
                   <div style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint, marginTop: 2 }}>

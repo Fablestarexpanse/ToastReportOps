@@ -13,7 +13,7 @@ from typing import Any
 
 from toast.core.db import utcnow
 from toast.core.ids import ulid
-from toast.llm.client import LLMClient, LLMError
+from toast.llm.client import LLMClient, LLMError, client_for
 from toast.llm.prompts import load_prompt
 
 
@@ -29,7 +29,7 @@ def generate_social(
 
     prompt = load_prompt("rewrite_social")
     rendered = prompt.render(report=src["body_md"])
-    client = client or LLMClient()
+    client = client or client_for(conn)
     raw = client.chat_json([{"role": "system", "content": rendered}], temperature=0.4)
 
     post_text = str(raw.get("post_text", "")).strip()

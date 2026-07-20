@@ -35,6 +35,8 @@ import {
 } from "@/lib/api";
 import { C, TIER, TIER_TITLES, confColor, font } from "@/lib/theme";
 import AlertBell from "@/components/alerts";
+import SettingsPanel, { loadDisplayPrefs, syncDisplayPrefs } from "@/components/settings";
+import { age, ageColor, fmtFull, fmtStamp, lag } from "@/lib/time";
 import MapPanel from "@/components/map-panel";
 import NewsroomMode from "@/components/newsroom";
 import WatchMode from "@/components/watch";
@@ -57,9 +59,8 @@ function usePolling<T>(fn: () => Promise<T>, deps: unknown[] = []): T | null {
   return data;
 }
 
-const fmtTime = (iso: string | null) =>
-  iso ? iso.slice(11, 16) + "Z" : "—";
-const fmtDate = (iso: string | null) => (iso ? iso.slice(0, 16).replace("T", " ") + "Z" : "—");
+const fmtTime = fmtStamp;
+const fmtDate = fmtFull;
 
 /* ---------------- shared bits ---------------- */
 
@@ -99,15 +100,26 @@ function Chip({
 
 function FactRow({ f, showIncident }: { f: Fact; showIncident?: boolean }) {
   const superseded = f.superseded_by != null;
+  const openSource = () => {
+    if (f.source_url) window.open(f.source_url, "_blank", "noopener,noreferrer");
+  };
+  const lagged = lag(f.observed_at, f.ingested_at);
   return (
     <div
       className="tr-row"
+      onClick={f.source_url ? openSource : undefined}
+      title={
+        f.source_url
+          ? `open source: ${f.source_url}\n\nPUBLISHED ${fmtFull(f.observed_at)}\nRECEIVED  ${fmtFull(f.ingested_at)}`
+          : `PUBLISHED ${fmtFull(f.observed_at)}\nRECEIVED  ${fmtFull(f.ingested_at)}`
+      }
       style={{
         padding: "7px 10px",
         borderBottom: `1px solid ${C.line}55`,
         display: "flex",
         gap: 8,
         opacity: superseded ? 0.55 : 1,
+        cursor: f.source_url ? "pointer" : "default",
       }}
     >
       <div style={{ width: 3, borderRadius: 2, background: TIER[f.tier], flexShrink: 0 }} />
@@ -124,7 +136,12 @@ function FactRow({ f, showIncident }: { f: Fact; showIncident?: boolean }) {
           <span style={{ color: TIER[f.tier] }} title={TIER_TITLES[f.tier]}>
             T{f.tier}
           </span>
-          <span title={f.observed_at}>{fmtTime(f.observed_at)}</span>
+          <span
+            title={`published ${fmtFull(f.observed_at)} — age ${age(f.observed_at)}`}
+            style={{ color: ageColor(f.observed_at, C) }}
+          >
+            {age(f.observed_at)} old
+          </span>
           <span
             style={{
               overflow: "hidden",
@@ -133,6 +150,7 @@ function FactRow({ f, showIncident }: { f: Fact; showIncident?: boolean }) {
             }}
           >
             {f.source_name}
+            {f.source_url && <span style={{ color: C.blue }}> ⧉</span>}
           </span>
           {showIncident && f.incident_name && (
             <span style={{ color: C.ember }}>{f.incident_name}</span>
@@ -167,6 +185,20 @@ function FactRow({ f, showIncident }: { f: Fact; showIncident?: boolean }) {
           }}
         >
           {f.content}
+        </div>
+        {/* bi-temporal: when it happened vs when we got it */}
+        <div style={{ fontFamily: font.mono, fontSize: 8.5, marginTop: 3, display: "flex", gap: 10, color: C.faint }}>
+          <span title={fmtFull(f.observed_at)}>
+            PUB <span style={{ color: C.dim }}>{fmtStamp(f.observed_at)}</span>
+          </span>
+          <span title={fmtFull(f.ingested_at)}>
+            RCV <span style={{ color: C.dim }}>{fmtStamp(f.ingested_at)}</span>
+          </span>
+          {lagged && (
+            <span style={{ color: f.stale ? C.warn : C.faint }} title="delay between publication and our receipt">
+              +{lagged} lag
+            </span>
+          )}
         </div>
         <div style={{ fontFamily: font.mono, fontSize: 9, marginTop: 3, display: "flex", gap: 8 }}>
           <span style={{ color: C.faint }}>{f.kind}</span>
@@ -508,11 +540,36 @@ function IntelPanel({ sel, toast }: { sel: Incident; toast: (m: string) => void 
 }
 
 function TimelinePanel({ incidentId }: { incidentId: string }) {
-  const tl = usePolling(() => fetchTimeline(incidentId), [incidentId]);
+  const raw = usePolling(() => fetchTimeline(incidentId), [incidentId]);
+  const [newestFirst, setNewestFirst] = useState(
+    () => loadDisplayPrefs().timelineOrder !== "oldest",
+  );
+  const tl = useMemo(() => (raw ? (newestFirst ? raw : [...raw].reverse()) : null), [raw, newestFirst]);
   if (!tl)
     return <div style={{ padding: 14, fontFamily: font.mono, fontSize: 10, color: C.faint }}>loading timeline…</div>;
   return (
     <div style={{ padding: "8px 11px" }}>
+      <div
+        onClick={() => setNewestFirst((v) => !v)}
+        title="flip the timeline direction"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          cursor: "pointer",
+          fontFamily: font.mono,
+          fontSize: 8.5,
+          color: C.dim,
+          border: `1px solid ${C.line}`,
+          borderRadius: 4,
+          padding: "3px 7px",
+          marginBottom: 7,
+          width: "fit-content",
+        }}
+      >
+        <span style={{ color: C.ember }}>{newestFirst ? "↓" : "↑"}</span>
+        {newestFirst ? "NEWEST FIRST" : "OLDEST FIRST"}
+      </div>
       {tl.map((e, i) => (
         <div key={i} style={{ display: "flex", gap: 9, padding: "5px 0", borderBottom: `1px solid ${C.line}33`, opacity: e.superseded ? 0.5 : 1 }}>
           <span style={{ fontFamily: font.mono, fontSize: 8.5, color: C.dim, width: 46, flexShrink: 0 }} title={e.at}>
@@ -551,6 +608,24 @@ function TimelinePanel({ incidentId }: { incidentId: string }) {
 
 /* ---------------- OPS mode ---------------- */
 
+type SortMode = "received" | "published" | "oldest" | "confidence" | "tier";
+
+const SORTERS: Record<SortMode, (a: Fact, b: Fact) => number> = {
+  received: (a, b) => b.ingested_at.localeCompare(a.ingested_at),
+  published: (a, b) => b.observed_at.localeCompare(a.observed_at),
+  oldest: (a, b) => a.observed_at.localeCompare(b.observed_at),
+  confidence: (a, b) => b.confidence - a.confidence,
+  tier: (a, b) => a.tier - b.tier || b.observed_at.localeCompare(a.observed_at),
+};
+
+const SORT_LABELS: Record<SortMode, string> = {
+  received: "NEWEST IN",
+  published: "NEWEST PUB",
+  oldest: "OLDEST",
+  confidence: "CONFIDENCE",
+  tier: "TRUST TIER",
+};
+
 function OpsMode({ toast }: { toast: (m: string) => void }) {
   const incidents = usePolling(fetchIncidents);
   const intake = usePolling(fetchIntake);
@@ -568,6 +643,13 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [tiers, setTiers] = useState<Record<number, boolean>>({ 1: true, 2: true, 3: true, 4: true, 5: true });
   const [kw, setKw] = useState("");
+  const [sortMode, setSortMode] = useState<SortMode>("received");
+  const [groupByFire, setGroupByFire] = useState(false);
+  const [kindFilter, setKindFilter] = useState<string>("");
+  const [sourceFilter, setSourceFilter] = useState<string>("");
+  const [hideStale, setHideStale] = useState(false);
+  const [onlyLinked, setOnlyLinked] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const facts = usePolling(
     () => (selected ? fetchIncidentFacts(selected) : Promise.resolve([] as Fact[])),
     [selected],
@@ -577,18 +659,56 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
     if (!selected && incidents?.length) setSelected(incidents[0].id);
   }, [incidents, selected]);
 
-  const shown = useMemo(
-    () =>
-      (intake ?? []).filter((f) => {
-        if (!tiers[f.tier]) return false;
-        if (kw && !(f.content + (f.source_name ?? "") + (f.incident_name ?? ""))
-          .toLowerCase()
-          .includes(kw.toLowerCase()))
-          return false;
-        return true;
-      }),
-    [intake, tiers, kw],
+  const kinds = useMemo(
+    () => [...new Set((intake ?? []).map((f) => f.kind))].sort(),
+    [intake],
   );
+  const sourceNames = useMemo(
+    () => [...new Set((intake ?? []).map((f) => f.source_name))].sort(),
+    [intake],
+  );
+
+  const shown = useMemo(() => {
+    const list = (intake ?? []).filter((f) => {
+      if (!tiers[f.tier]) return false;
+      if (kindFilter && f.kind !== kindFilter) return false;
+      if (sourceFilter && f.source_name !== sourceFilter) return false;
+      if (hideStale && f.stale) return false;
+      if (onlyLinked && !f.source_url) return false;
+      if (
+        kw &&
+        !(f.content + (f.source_name ?? "") + (f.incident_name ?? ""))
+          .toLowerCase()
+          .includes(kw.toLowerCase())
+      )
+        return false;
+      return true;
+    });
+    return [...list].sort(SORTERS[sortMode]);
+  }, [intake, tiers, kw, kindFilter, sourceFilter, hideStale, onlyLinked, sortMode]);
+
+  const grouped = useMemo(() => {
+    if (!groupByFire) return null;
+    const map = new Map<string, Fact[]>();
+    for (const f of shown) {
+      const key = f.incident_name ?? "UNATTRIBUTED";
+      const arr = map.get(key);
+      if (arr) arr.push(f);
+      else map.set(key, [f]);
+    }
+    return [...map.entries()].sort((a, b) => b[1].length - a[1].length);
+  }, [shown, groupByFire]);
+
+  const filtersOn =
+    kindFilter || sourceFilter || hideStale || onlyLinked || kw || Object.values(tiers).some((v) => !v);
+  const clearFilters = () => {
+    setKindFilter("");
+    setSourceFilter("");
+    setHideStale(false);
+    setOnlyLinked(false);
+    setKw("");
+    setTiers({ 1: true, 2: true, 3: true, 4: true, 5: true });
+  };
 
   const sel = incidents?.find((i) => i.id === selected);
   const staleCount = facts?.filter((f) => f.stale).length ?? 0;
@@ -634,13 +754,30 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
               </span>
             ))}
           </div>
+          <span
+            onClick={() => setShowFilters((v) => !v)}
+            title="more filters"
+            style={{
+              fontFamily: font.mono,
+              fontSize: 9,
+              cursor: "pointer",
+              color: filtersOn ? C.ember : C.dim,
+              border: `1px solid ${filtersOn ? C.ember : C.line}`,
+              borderRadius: 3,
+              padding: "1px 6px",
+            }}
+          >
+            ⚙{filtersOn ? " •" : ""}
+          </span>
+          <span style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint }}>
+            {shown.length}/{intake?.length ?? 0}
+          </span>
           <input
             value={kw}
             onChange={(e) => setKw(e.target.value)}
             placeholder="⌕ keyword"
             style={{
-              flex: 1,
-              minWidth: 70,
+              flex: "1 1 100%",
               background: C.bg,
               border: `1px solid ${C.line}`,
               borderRadius: 4,
@@ -651,19 +788,145 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
               outline: "none",
             }}
           />
-          <span style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint }}>
-            {shown.length}/{intake?.length ?? 0}
-          </span>
+          {/* sort + group row */}
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", width: "100%" }}>
+            {(Object.keys(SORT_LABELS) as SortMode[]).map((m) => (
+              <span
+                key={m}
+                onClick={() => setSortMode(m)}
+                title={
+                  m === "received"
+                    ? "order by when we received it"
+                    : m === "published"
+                      ? "order by when the source published it"
+                      : m === "oldest"
+                        ? "oldest publication first"
+                        : m === "confidence"
+                          ? "highest confidence first"
+                          : "most trusted sources first"
+                }
+                style={{
+                  fontFamily: font.mono,
+                  fontSize: 8,
+                  padding: "2px 6px",
+                  borderRadius: 3,
+                  cursor: "pointer",
+                  border: `1px solid ${sortMode === m ? C.blue : C.line}`,
+                  color: sortMode === m ? C.blue : C.faint,
+                }}
+              >
+                {SORT_LABELS[m]}
+              </span>
+            ))}
+            <span
+              onClick={() => setGroupByFire((v) => !v)}
+              title="group the stream by fire"
+              style={{
+                marginLeft: "auto",
+                fontFamily: font.mono,
+                fontSize: 8,
+                padding: "2px 6px",
+                borderRadius: 3,
+                cursor: "pointer",
+                border: `1px solid ${groupByFire ? C.ember : C.line}`,
+                color: groupByFire ? C.ember : C.faint,
+              }}
+            >
+              {groupByFire ? "BY FIRE" : "STREAM"}
+            </span>
+          </div>
+          {showFilters && (
+            <div style={{ width: "100%", display: "flex", flexWrap: "wrap", gap: 5, paddingTop: 5, borderTop: `1px solid ${C.line}44` }}>
+              <select
+                value={kindFilter}
+                onChange={(e) => setKindFilter(e.target.value)}
+                style={{ flex: 1, minWidth: 90, background: C.bg, border: `1px solid ${C.line}`, borderRadius: 4, color: kindFilter ? C.ember : C.dim, fontFamily: font.mono, fontSize: 9, padding: "3px 5px", outline: "none" }}
+              >
+                <option value="">all kinds</option>
+                {kinds.map((k) => (
+                  <option key={k} value={k}>
+                    {k}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={sourceFilter}
+                onChange={(e) => setSourceFilter(e.target.value)}
+                style={{ flex: 1, minWidth: 90, background: C.bg, border: `1px solid ${C.line}`, borderRadius: 4, color: sourceFilter ? C.ember : C.dim, fontFamily: font.mono, fontSize: 9, padding: "3px 5px", outline: "none" }}
+              >
+                <option value="">all sources</option>
+                {sourceNames.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+              <span
+                onClick={() => setHideStale((v) => !v)}
+                title="hide facts whose publication long predates our receipt"
+                style={{ fontFamily: font.mono, fontSize: 8, padding: "3px 6px", borderRadius: 3, cursor: "pointer", border: `1px solid ${hideStale ? C.warn : C.line}`, color: hideStale ? C.warn : C.faint }}
+              >
+                HIDE STALE
+              </span>
+              <span
+                onClick={() => setOnlyLinked((v) => !v)}
+                title="only facts that link back to a source page"
+                style={{ fontFamily: font.mono, fontSize: 8, padding: "3px 6px", borderRadius: 3, cursor: "pointer", border: `1px solid ${onlyLinked ? C.blue : C.line}`, color: onlyLinked ? C.blue : C.faint }}
+              >
+                ⧉ LINKED
+              </span>
+              {filtersOn && (
+                <span
+                  onClick={clearFilters}
+                  style={{ fontFamily: font.mono, fontSize: 8, padding: "3px 6px", borderRadius: 3, cursor: "pointer", border: `1px solid ${C.evac}66`, color: C.evac }}
+                >
+                  CLEAR
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
-          {shown.map((f, i) => (
-            <div key={f.id} className={i === 0 ? "tr-in" : undefined}>
-              <FactRow f={f} showIncident />
-            </div>
-          ))}
+          {grouped
+            ? grouped.map(([name, rows]) => (
+                <div key={name}>
+                  <div
+                    onClick={() => {
+                      const inc = incidents?.find((i) => i.canonical_name === name);
+                      if (inc) setSelected(inc.id);
+                    }}
+                    style={{
+                      position: "sticky",
+                      top: 0,
+                      zIndex: 2,
+                      background: C.panelUp,
+                      borderBottom: `1px solid ${C.line}`,
+                      padding: "4px 10px",
+                      fontFamily: font.mono,
+                      fontSize: 9,
+                      letterSpacing: 1,
+                      color: name === "UNATTRIBUTED" ? C.faint : C.ember,
+                      cursor: "pointer",
+                      display: "flex",
+                      gap: 6,
+                    }}
+                  >
+                    <span>{name}</span>
+                    <span style={{ marginLeft: "auto", color: C.faint }}>{rows.length}</span>
+                  </div>
+                  {rows.map((f) => (
+                    <FactRow key={f.id} f={f} showIncident />
+                  ))}
+                </div>
+              ))
+            : shown.map((f, i) => (
+                <div key={f.id} className={i === 0 ? "tr-in" : undefined}>
+                  <FactRow f={f} showIncident />
+                </div>
+              ))}
           {!shown.length && (
             <div style={{ padding: 16, fontFamily: font.mono, fontSize: 10, color: C.faint }}>
-              waiting for intake…
+              {filtersOn ? "nothing matches these filters" : "waiting for intake…"}
             </div>
           )}
         </div>
@@ -1261,29 +1524,23 @@ export default function Workstation() {
   const [mode, setMode] = useState("ops");
   const health = usePolling(fetchHealth);
   const [clock, setClock] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
+  const [uiKey, setUiKey] = useState(0); // bump to re-render after settings change
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const toast = useCallback((m: string) => {
     setToastMsg(m);
     setTimeout(() => setToastMsg(null), 4000);
   }, []);
   useEffect(() => {
-    const tick = () =>
-      setClock(
-        new Date()
-          .toLocaleString("en-US", {
-            weekday: "short",
-            month: "short",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
-          })
-          .toUpperCase(),
-      );
+    loadDisplayPrefs(); // cached prefs paint immediately…
+    syncDisplayPrefs().then(() => setUiKey((k) => k + 1)); // …server is the truth
+  }, []);
+  useEffect(() => {
+    const tick = () => setClock(fmtStamp(new Date().toISOString()));
     tick();
     const id = setInterval(tick, 15000);
     return () => clearInterval(id);
-  }, []);
+  }, [uiKey]);
 
   const dots: [string, boolean | null][] = [
     ["FEEDS", health ? (health.queue.dead ?? 0) < 5 : null],
@@ -1331,6 +1588,13 @@ export default function Workstation() {
         </div>
         <div style={{ flex: 1 }} />
         <AlertBell />
+        <span
+          onClick={() => setShowSettings(true)}
+          title="options — time display, local AI models"
+          style={{ cursor: "pointer", fontSize: 13, color: C.dim, userSelect: "none" }}
+        >
+          ⚙
+        </span>
         <div style={{ fontFamily: font.mono, fontSize: 10, color: C.dim }}>{clock}</div>
         {dots.map(([label, ok]) => (
           <div
@@ -1362,6 +1626,14 @@ export default function Workstation() {
       {mode === "watch" && <WatchMode toast={toast} />}
       {mode === "archive" && <ArchiveMode toast={toast} />}
       {mode === "sources" && <SourcesMode toast={toast} />}
+
+      {showSettings && (
+        <SettingsPanel
+          onClose={() => setShowSettings(false)}
+          onApplied={() => setUiKey((k) => k + 1)}
+          toast={toast}
+        />
+      )}
 
       {toastMsg && (
         <div

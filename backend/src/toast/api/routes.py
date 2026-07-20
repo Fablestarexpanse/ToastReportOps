@@ -40,7 +40,9 @@ FACT_COLS = """f.id, f.incident_id, f.source_id, f.tier, f.content, f.kind,
     (SELECT effective_confidence FROM fact_assessments a WHERE a.fact_id = f.id)
         AS effective_confidence,
     (SELECT corroborating_sources FROM fact_assessments a WHERE a.fact_id = f.id)
-        AS corroborating_sources"""
+        AS corroborating_sources,
+    (SELECT COALESCE(json_extract(e.payload, '$.url'), json_extract(e.payload, '$.link'))
+       FROM envelopes e WHERE e.id = f.envelope_id) AS source_url"""
 
 
 @router.get("/incidents")
@@ -158,6 +160,39 @@ def follow_incident(request: Request, incident_id: str, body: dict) -> dict:
     if cur.rowcount == 0:
         raise HTTPException(404, "incident not found")
     return {"ok": True, "followed": bool(followed)}
+
+
+# ---------------- operator settings ----------------
+
+
+@router.get("/settings")
+def get_settings(request: Request) -> dict:
+    """Effective runtime settings + the models the LLM endpoint actually has."""
+    from toast.core.appsettings import effective_settings
+    from toast.llm.client import LLMClient
+
+    return {
+        "settings": effective_settings(_conn(request)),
+        "models": LLMClient().list_models(),
+    }
+
+
+@router.put("/settings")
+def put_settings(request: Request, body: dict) -> dict:
+    """Update runtime settings. Only allowlisted keys; empty value reverts to
+    the .env default."""
+    from toast.core.appsettings import effective_settings, set_setting
+
+    conn = _conn(request)
+    updates = body.get("settings")
+    if not isinstance(updates, dict):
+        raise HTTPException(400, "settings object required")
+    try:
+        for key, value in updates.items():
+            set_setting(conn, key, "" if value is None else str(value))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "settings": effective_settings(conn)}
 
 
 # ---------------- analyst notes & tasks ----------------

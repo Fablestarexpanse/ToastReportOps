@@ -45,6 +45,7 @@ export type Fact = {
   stale_s: number | null;
   effective_confidence: number | null;
   corroborating_sources: number | null;
+  source_url: string | null;
 };
 
 export type Source = {
@@ -430,6 +431,38 @@ export async function toggleNote(id: string): Promise<void> {
 
 export async function deleteNote(id: string): Promise<void> {
   await fetch(`/api/notes/${id}`, { method: "DELETE" });
+}
+
+export type SettingEntry = {
+  value: string;
+  default: string;
+  overridden: boolean;
+  label: string;
+  kind: string;
+};
+
+export type SettingsPayload = {
+  settings: Record<string, SettingEntry>;
+  models: string[];
+};
+
+export async function fetchSettings(): Promise<SettingsPayload> {
+  return get<SettingsPayload>("/settings");
+}
+
+export async function saveSettings(
+  updates: Record<string, string>,
+): Promise<SettingsPayload> {
+  const res = await fetch("/api/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ settings: updates }),
+  });
+  if (!res.ok) {
+    const detail = await res.json().then((d) => d.detail).catch(() => res.status);
+    throw new Error(String(detail));
+  }
+  return res.json();
 }
 
 export type SourceSuggestion = {

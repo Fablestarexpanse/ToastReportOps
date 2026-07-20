@@ -92,7 +92,7 @@ class LDRClient:
     def _api_token(self) -> str:
         return self.http.get("/auth/csrf-token").json()["csrf_token"]
 
-    def start(self, query: str) -> str:
+    def start(self, query: str, *, model: str | None = None) -> str:
         s = Settings()
         r = self.http.post(
             "/api/start_research",
@@ -100,7 +100,7 @@ class LDRClient:
                 "query": query,
                 "search_engines": ["searxng"],
                 # pin to our local model — LDR's own default may not be pulled
-                "model": s.llm_model,
+                "model": model or s.llm_model,
                 "model_provider": "OLLAMA",
             },
             headers={"X-CSRF-Token": self._api_token()},

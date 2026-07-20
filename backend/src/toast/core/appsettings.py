@@ -1,0 +1,78 @@
+"""Runtime settings the operator can change from the UI.
+
+Environment (.env → Settings) supplies defaults; a row in app_settings
+overrides it at runtime. Only keys in ALLOWED are settable — an operator can
+switch models or display preferences, never inject arbitrary config.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+from typing import Any
+
+from toast.core.config import Settings
+from toast.core.db import utcnow
+
+# key -> (Settings attribute for the default, human label, kind)
+ALLOWED: dict[str, tuple[str | None, str, str]] = {
+    "llm_model": ("llm_model", "Writing / extraction model", "model"),
+    "embedding_model": ("embedding_model", "Embedding model", "model"),
+    "timezone_display": (None, "Time display", "choice"),  # 'utc' | 'local'
+    "timeline_order": (None, "Timeline order", "choice"),  # 'newest' | 'oldest'
+    "ui_poll_interval_s": (None, "UI refresh interval (s)", "number"),
+}
+
+UI_DEFAULTS = {
+    "timezone_display": "utc",
+    "timeline_order": "newest",
+    "ui_poll_interval_s": "10",
+}
+
+
+def get_setting(conn: sqlite3.Connection, key: str) -> str | None:
+    row = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else None
+
+
+def effective_settings(conn: sqlite3.Connection) -> dict[str, Any]:
+    """Every allowed key with its effective value and where it came from."""
+    env = Settings()
+    stored = {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM app_settings")}
+    out: dict[str, Any] = {}
+    for key, (attr, label, kind) in ALLOWED.items():
+        default = getattr(env, attr) if attr else UI_DEFAULTS.get(key, "")
+        out[key] = {
+            "value": stored.get(key, default),
+            "default": default,
+            "overridden": key in stored,
+            "label": label,
+            "kind": kind,
+        }
+    return out
+
+
+def set_setting(conn: sqlite3.Connection, key: str, value: str) -> None:
+    if key not in ALLOWED:
+        raise ValueError(f"unknown setting {key!r}")
+    value = str(value).strip()
+    if not value:  # empty = revert to the environment default
+        conn.execute("DELETE FROM app_settings WHERE key = ?", (key,))
+        return
+    if len(value) > 200:
+        raise ValueError("value too long")
+    conn.execute(
+        """INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value,
+                                          updated_at = excluded.updated_at""",
+        (key, value, utcnow()),
+    )
+
+
+def llm_overrides(conn: sqlite3.Connection) -> dict[str, str]:
+    """Model overrides for LLMClient construction (empty when unset)."""
+    out = {}
+    for key in ("llm_model", "embedding_model"):
+        val = get_setting(conn, key)
+        if val:
+            out[key] = val
+    return out

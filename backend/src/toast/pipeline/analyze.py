@@ -18,7 +18,7 @@ from toast.core.envelope import Envelope, insert_envelope
 from toast.core.fetch import fetch
 from toast.core.ids import ulid
 from toast.core.rawstore import store_raw
-from toast.llm.client import LLMClient
+from toast.llm.client import LLMClient, client_for
 from toast.llm.extract import extract_claims
 from toast.pipeline.attribution import attribute_fact
 from toast.pipeline.confidence import initial_confidence
@@ -81,6 +81,7 @@ def extract_article(
     Facts are written under the given envelope/source/tier and attributed.
     """
     now = utcnow()
+    client = client or client_for(conn)  # operator's model choice
     result = extract_claims(text, reference_time=now, source_name=url, client=client)
     summary: dict[str, Any] = {
         "url": url,

@@ -13,7 +13,7 @@ from typing import Any
 
 from toast.core.db import utcnow
 from toast.core.ids import ulid
-from toast.llm.client import LLMClient
+from toast.llm.client import LLMClient, client_for
 from toast.llm.prompts import load_prompt
 
 
@@ -115,7 +115,7 @@ def generate_draft(
         window=window_desc,
         facts=facts_text,
     )
-    client = client or LLMClient()
+    client = client or client_for(conn)
     raw = client.chat_json([{"role": "system", "content": rendered}])
 
     body_md = str(raw.get("body_md", "")).strip()

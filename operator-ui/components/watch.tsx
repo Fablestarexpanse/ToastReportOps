@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { WatchCandidate, fetchWatch, promoteCandidate, startResearch } from "@/lib/api";
 import { C, TIER, font } from "@/lib/theme";
+import { fmtStamp } from "@/lib/time";
 
-const fmtTime = (iso: string) => (iso ? iso.slice(11, 16) + "Z" : "—");
+const fmtTime = fmtStamp;
 
 export default function WatchMode({ toast }: { toast: (m: string) => void }) {
   const [candidates, setCandidates] = useState<WatchCandidate[] | null>(null);
