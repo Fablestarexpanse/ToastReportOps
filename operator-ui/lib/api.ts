@@ -318,6 +318,38 @@ export async function createSource(body: {
   return res.json();
 }
 
+export type SourceSuggestion = {
+  id: string;
+  domain: string;
+  sample_url: string;
+  contexts: string[];
+  hit_count: number;
+  first_seen_at: string;
+};
+
+export async function fetchSourceSuggestions(): Promise<SourceSuggestion[]> {
+  const d = await get<{ suggestions: SourceSuggestion[] }>("/sources/suggestions");
+  return d.suggestions;
+}
+
+export async function approveSuggestion(id: string, tier = 4): Promise<{ feed_url: string }> {
+  const res = await fetch(`/api/sources/suggestions/${id}/approve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tier }),
+  });
+  if (!res.ok) {
+    const detail = await res.json().then((d) => d.detail).catch(() => res.status);
+    throw new Error(String(detail));
+  }
+  return res.json();
+}
+
+export async function dismissSuggestion(id: string): Promise<void> {
+  const res = await fetch(`/api/sources/suggestions/${id}/dismiss`, { method: "POST" });
+  if (!res.ok) throw new Error(`dismiss failed (${res.status})`);
+}
+
 export async function startResearch(query: string, incidentId?: string): Promise<{ job_id: string }> {
   const res = await fetch("/api/research", {
     method: "POST",

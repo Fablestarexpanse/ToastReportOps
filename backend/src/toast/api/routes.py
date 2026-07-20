@@ -588,6 +588,80 @@ def create_source(request: Request, body: dict) -> dict:
     return {"ok": True, "source_id": source_id, "name": name, "adapter": adapter}
 
 
+@router.get("/sources/suggestions")
+def source_suggestions(request: Request) -> dict:
+    """Cross-reference: rescan dossiers/article links and list unknown domains
+    awaiting the operator's APPROVE/DISMISS."""
+    from toast.pipeline.source_discovery import pending_suggestions, scan_for_suggestions
+
+    conn = _conn(request)
+    scan_for_suggestions(conn)
+    return {"suggestions": pending_suggestions(conn)}
+
+
+@router.post("/sources/suggestions/{suggestion_id}/approve")
+def approve_suggestion(request: Request, suggestion_id: str, body: dict | None = None) -> dict:
+    """Approve a suggested domain: discover its feed, add it as a real source.
+    Fails (suggestion stays pending) when no feed can be found."""
+    import json as _json
+
+    from toast.core.db import utcnow
+    from toast.core.ids import ulid
+    from toast.sources.probe import discover_feed
+
+    conn = _conn(request)
+    row = conn.execute("SELECT * FROM source_suggestions WHERE id = ?", (suggestion_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "suggestion not found")
+    if row["status"] != "pending":
+        raise HTTPException(409, f"suggestion already {row['status']}")
+
+    tier = int((body or {}).get("tier", 4))
+    if not (3 <= tier <= 5):
+        raise HTTPException(400, "suggested sources start at tier 3-5")
+    feed = discover_feed(f"https://{row['domain']}/")
+    if feed is None:
+        raise HTTPException(
+            422,
+            f"no RSS/Atom feed found on {row['domain']} — "
+            "add it manually with a specific feed URL if you know one",
+        )
+
+    source_id = ulid()
+    now = utcnow()
+    conn.execute(
+        """INSERT INTO sources (id, name, type, adapter, tier, config, schedule, enabled,
+                                tos_notes, created_at, updated_at)
+           VALUES (?, ?, 'scrape', 'rss', ?, ?, '900', 1, ?, ?, ?)""",
+        (
+            source_id,
+            row["domain"],
+            tier,
+            _json.dumps({"feed_url": feed, "keywords": "fire", "max_entries": 10}),
+            "Added via cross-reference suggestion (operator-approved).",
+            now,
+            now,
+        ),
+    )
+    conn.execute(
+        "UPDATE source_suggestions SET status = 'approved', source_id = ? WHERE id = ?",
+        (source_id, suggestion_id),
+    )
+    return {"ok": True, "source_id": source_id, "feed_url": feed, "domain": row["domain"]}
+
+
+@router.post("/sources/suggestions/{suggestion_id}/dismiss")
+def dismiss_suggestion(request: Request, suggestion_id: str) -> dict:
+    conn = _conn(request)
+    cur = conn.execute(
+        "UPDATE source_suggestions SET status = 'dismissed' WHERE id = ? AND status = 'pending'",
+        (suggestion_id,),
+    )
+    if cur.rowcount == 0:
+        raise HTTPException(404, "no pending suggestion with that id")
+    return {"ok": True}
+
+
 @router.get("/sources")
 def list_sources(request: Request) -> dict:
     rows = (

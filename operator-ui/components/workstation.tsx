@@ -6,13 +6,17 @@ import {
   Fact,
   FireSearchResult,
   ProbeResult,
+  SourceSuggestion,
   analyzeUrl,
+  approveSuggestion,
   createSource,
+  dismissSuggestion,
   fetchAdjudication,
   fetchHealth,
   fetchIncidentFacts,
   fetchIncidents,
   fetchIntake,
+  fetchSourceSuggestions,
   fetchSources,
   importFire,
   probeSource,
@@ -595,6 +599,87 @@ function AddSource({ toast, onAdded }: { toast: (m: string) => void; onAdded: ()
   );
 }
 
+function SuggestedSources({ toast, onAdded }: { toast: (m: string) => void; onAdded: () => void }) {
+  const [items, setItems] = useState<SourceSuggestion[] | null>(null);
+  const [busy, setBusy] = useState<Record<string, boolean>>({});
+
+  const refresh = useCallback(async () => {
+    try {
+      setItems(await fetchSourceSuggestions());
+    } catch {}
+  }, []);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const approve = async (s: SourceSuggestion) => {
+    setBusy((b) => ({ ...b, [s.id]: true }));
+    try {
+      const r = await approveSuggestion(s.id);
+      toast(`following ${s.domain} — feed ${r.feed_url}`);
+      onAdded();
+      refresh();
+    } catch (e) {
+      toast(`${e instanceof Error ? e.message : e}`);
+    } finally {
+      setBusy((b) => ({ ...b, [s.id]: false }));
+    }
+  };
+
+  const dismiss = async (s: SourceSuggestion) => {
+    try {
+      await dismissSuggestion(s.id);
+      setItems((prev) => (prev ?? []).filter((x) => x.id !== s.id));
+    } catch (e) {
+      toast(`dismiss failed: ${e instanceof Error ? e.message : e}`);
+    }
+  };
+
+  if (!items?.length) return null;
+  return (
+    <div style={{ border: `1px solid ${C.violet}44`, borderRadius: 8, background: C.panel, padding: 12, marginBottom: 14 }}>
+      <div style={{ fontFamily: font.disp, fontSize: 13, letterSpacing: 1.5, fontWeight: 700, marginBottom: 2 }}>
+        <span style={{ color: C.violet }}>SUGGESTED</span> — outlets our research and articles cite that we don&apos;t follow
+      </div>
+      <div style={{ fontFamily: font.mono, fontSize: 9, color: C.faint, marginBottom: 8 }}>
+        approve = find its feed and start following at T4 · nothing is added without your yes ·{" "}
+        {items.length} pending
+      </div>
+      <div style={{ maxHeight: 300, overflowY: "auto" }}>
+      {items.map((s) => (
+        <div
+          key={s.id}
+          style={{ display: "flex", gap: 10, alignItems: "center", padding: "7px 4px", borderTop: `1px solid ${C.line}44`, flexWrap: "wrap" }}
+        >
+          <span style={{ fontSize: 12, fontWeight: 600, minWidth: 160 }}>
+            <a href={s.sample_url} target="_blank" rel="noreferrer" style={{ color: C.txt, textDecoration: "none", borderBottom: `1px dotted ${C.dim}` }}>
+              {s.domain}
+            </a>
+          </span>
+          <span style={{ fontFamily: font.mono, fontSize: 9, color: C.warn }}>×{s.hit_count} link{s.hit_count === 1 ? "" : "s"}</span>
+          <span style={{ fontFamily: font.mono, fontSize: 9, color: C.faint, flex: "1 1 200px" }}>
+            seen in: {s.contexts.join(" · ") || "—"}
+          </span>
+          <button
+            onClick={() => approve(s)}
+            disabled={busy[s.id]}
+            style={{ background: busy[s.id] ? C.faint : C.ok, color: C.bg, border: "none", borderRadius: 4, fontFamily: font.disp, fontWeight: 700, fontSize: 10.5, letterSpacing: 1, padding: "4px 10px", cursor: "pointer" }}
+          >
+            {busy[s.id] ? "PROBING…" : "APPROVE"}
+          </button>
+          <button
+            onClick={() => dismiss(s)}
+            style={{ background: "transparent", color: C.dim, border: `1px solid ${C.line}`, borderRadius: 4, fontFamily: font.disp, fontSize: 10.5, letterSpacing: 1, padding: "3px 10px", cursor: "pointer" }}
+          >
+            DISMISS
+          </button>
+        </div>
+      ))}
+      </div>
+    </div>
+  );
+}
+
 function SourcesMode({ toast }: { toast: (m: string) => void }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const sources = usePolling(fetchSources, [refreshKey]);
@@ -610,6 +695,7 @@ function SourcesMode({ toast }: { toast: (m: string) => void }) {
         </span>
       </div>
       <AddSource toast={toast} onAdded={() => setRefreshKey((k) => k + 1)} />
+      <SuggestedSources toast={toast} onAdded={() => setRefreshKey((k) => k + 1)} />
       <div style={{ background: C.panel, borderRadius: 8, border: `1px solid ${C.line}`, overflow: "hidden" }}>
         <div
           style={{
