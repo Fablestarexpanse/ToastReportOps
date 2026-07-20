@@ -190,6 +190,34 @@ def resolve_adjudication(request: Request, fact_id: str, body: dict) -> dict:
     return {"ok": True, "fact_id": fact_id, "incident_id": incident_id}
 
 
+# ---------------- watch board: new starts ----------------
+
+
+@router.get("/watch")
+def watch_board(request: Request) -> dict:
+    """Candidate new-start fires — unattributed named-fire signals not in the
+    active-incident list, clustered and scored by corroboration."""
+    from dataclasses import asdict
+
+    from toast.pipeline.watch import build_watchlist
+
+    return {"candidates": [asdict(c) for c in build_watchlist(_conn(request))]}
+
+
+@router.post("/watch/promote")
+def promote_candidate(request: Request, body: dict) -> dict:
+    """Promote a watch candidate to a real (candidate-status) incident."""
+    from toast.pipeline.watch import promote
+
+    key = (body.get("key") or "").strip()
+    if not key:
+        raise HTTPException(400, "key required")
+    result = promote(_conn(request), key)
+    if not result.get("promoted"):
+        raise HTTPException(404, result.get("reason", "could not promote"))
+    return result
+
+
 # ---------------- newsroom: drafts ----------------
 
 DRAFT_TRANSITIONS = {

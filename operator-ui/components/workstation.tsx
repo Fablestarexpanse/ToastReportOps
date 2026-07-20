@@ -22,6 +22,7 @@ import {
 import { C, TIER, TIER_TITLES, confColor, font } from "@/lib/theme";
 import MapPanel from "@/components/map-panel";
 import NewsroomMode from "@/components/newsroom";
+import WatchMode from "@/components/watch";
 
 const POLL_MS = 5000;
 
@@ -836,7 +837,7 @@ function ArchiveMode({ toast }: { toast: (m: string) => void }) {
 const MODES: [string, string, boolean][] = [
   ["ops", "OPS", true],
   ["news", "NEWSROOM", true],
-  ["watch", "WATCH", false],
+  ["watch", "WATCH", true],
   ["archive", "ARCHIVE", true],
   ["sources", "SOURCES", true],
 ];
@@ -942,6 +943,7 @@ export default function Workstation() {
 
       {mode === "ops" && <OpsMode toast={toast} />}
       {mode === "news" && <NewsroomMode toast={toast} />}
+      {mode === "watch" && <WatchMode toast={toast} />}
       {mode === "archive" && <ArchiveMode toast={toast} />}
       {mode === "sources" && <SourcesMode toast={toast} />}
 

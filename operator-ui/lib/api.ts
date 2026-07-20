@@ -61,6 +61,40 @@ export type Source = {
 
 export type Health = { api: boolean; queue: Record<string, number> };
 
+export type WatchCandidate = {
+  key: string;
+  name: string;
+  source_count: number;
+  fact_count: number;
+  latest_observed: string;
+  tiers: number[];
+  lat: number | null;
+  lon: number | null;
+  county: string | null;
+  score: number;
+  state: "watching" | "corroborating";
+  fact_ids: string[];
+  samples: { content: string; tier: number; observed_at: string }[];
+};
+
+export const fetchWatch = () =>
+  get<{ candidates: WatchCandidate[] }>("/watch").then((r) => r.candidates);
+
+export async function promoteCandidate(
+  key: string,
+): Promise<{ incident_id: string; name: string; facts_attributed: number }> {
+  const res = await fetch("/api/watch/promote", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key }),
+  });
+  if (!res.ok) {
+    const detail = await res.json().then((d) => d.detail).catch(() => res.status);
+    throw new Error(String(detail));
+  }
+  return res.json();
+}
+
 export type Draft = {
   id: string;
   incident_id: string | null;
