@@ -27,6 +27,18 @@ from toast.pipeline.ledger import write_fact
 MANUAL_SOURCE_NAME = "Operator: point-at-URL"
 MAX_TEXT_CHARS = 24_000
 
+# California bounding box (lat_min, lat_max, lon_min, lon_max) — a generous
+# envelope around the state. Backstop: a fact with coordinates outside this is
+# not in California, whatever the extractor decided about the article overall.
+CA_BBOX = (32.3, 42.1, -124.6, -114.0)
+
+
+def _outside_california(lat: float | None, lon: float | None) -> bool:
+    if lat is None or lon is None:
+        return False  # no coords → can't disprove; article-level gate handles it
+    lat_min, lat_max, lon_min, lon_max = CA_BBOX
+    return not (lat_min <= lat <= lat_max and lon_min <= lon <= lon_max)
+
 
 def ensure_manual_source(conn: sqlite3.Connection) -> str:
     row = conn.execute("SELECT id FROM sources WHERE adapter = 'manual_url'").fetchone()
@@ -76,7 +88,17 @@ def extract_article(
         "dropped": result.dropped,
         "facts": [],
         "prompt_version": result.prompt_version,
+        "california_relevant": result.california_relevant,
+        "primary_location": result.primary_location,
     }
+    # Article-level California gate: a non-CA article writes no facts (raw stays
+    # archived, envelope preserved, so the decision is recoverable). The CA_BBOX
+    # backstop (_outside_california) applies to facts that carry coordinates —
+    # the future geocode stage — since extracted claims are coordless.
+    if not result.california_relevant:
+        summary["skipped"] = "not_california"
+        return summary
+
     for claim in result.claims:
         confidence = initial_confidence(tier, claim.confidence)
         fact_id = write_fact(

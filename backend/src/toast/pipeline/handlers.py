@@ -112,9 +112,17 @@ def extract_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     )
     for fact in summary["facts"]:
         jobs.enqueue(conn, "embed", {"fact_id": fact["fact_id"]}, priority=7)
-    get_logger("pipeline.extract").info(
-        "extract_done", envelope_id=env_id, url=url, facts=len(summary["facts"])
-    )
+    if summary.get("skipped") == "not_california":
+        get_logger("pipeline.extract").info(
+            "extract_skipped_non_ca",
+            envelope_id=env_id,
+            url=url,
+            location=summary.get("primary_location"),
+        )
+    else:
+        get_logger("pipeline.extract").info(
+            "extract_done", envelope_id=env_id, url=url, facts=len(summary["facts"])
+        )
 
 
 @register("embed")

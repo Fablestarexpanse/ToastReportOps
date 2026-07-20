@@ -49,6 +49,8 @@ class ExtractionResult(BaseModel):
     claims: list[ExtractedClaim]
     prompt_version: str
     dropped: int = 0  # claims that failed validation
+    california_relevant: bool = True  # v2 gate; v1 has no field → treated as CA
+    primary_location: str | None = None
 
 
 def extract_claims(
@@ -56,11 +58,15 @@ def extract_claims(
     *,
     reference_time: str,
     source_name: str = "unknown",
+    version: str = "v2",
     client: LLMClient | None = None,
 ) -> ExtractionResult:
-    """Extract claims from untrusted text. reference_time anchors relative dates."""
+    """Extract claims from untrusted text. reference_time anchors relative dates.
+
+    v2 first decides California-relevance; a non-CA article returns
+    california_relevant=False and (per the prompt) an empty claims list."""
     client = client or LLMClient()
-    prompt = load_prompt("extract_claims")
+    prompt = load_prompt("extract_claims", version)
     metadata = json.dumps({"reference_time_utc": reference_time, "source_name": source_name})
     # neutralize delimiter forgery: content may not fake the END marker to
     # smuggle text outside the untrusted block
@@ -71,6 +77,12 @@ def extract_claims(
     if not isinstance(raw, dict) or not isinstance(raw.get("claims"), list):
         raise LLMError(f"extractor returned wrong shape: {str(raw)[:200]}")
 
+    # default True when the key is absent (v1 compatibility)
+    california_relevant = bool(raw.get("california_relevant", True))
+    primary_location = raw.get("primary_location")
+    if not isinstance(primary_location, str):
+        primary_location = None
+
     claims: list[ExtractedClaim] = []
     dropped = 0
     for item in raw["claims"]:
@@ -78,4 +90,10 @@ def extract_claims(
             claims.append(ExtractedClaim.model_validate(item))
         except ValidationError:
             dropped += 1
-    return ExtractionResult(claims=claims, prompt_version=prompt.prompt_version, dropped=dropped)
+    return ExtractionResult(
+        claims=claims,
+        prompt_version=prompt.prompt_version,
+        dropped=dropped,
+        california_relevant=california_relevant,
+        primary_location=primary_location,
+    )

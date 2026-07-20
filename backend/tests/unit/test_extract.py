@@ -44,7 +44,7 @@ def test_valid_claims_parse():
     result = extract_claims("...", reference_time=REF, client=fake)
     assert len(result.claims) == 1 and result.dropped == 0
     assert result.claims[0].acreage == 1240
-    assert result.prompt_version == "extract_claims.v1"
+    assert result.prompt_version == "extract_claims.v2"
 
 
 def test_invalid_claims_dropped_not_fatal():
@@ -113,8 +113,50 @@ def test_hostile_content_stays_inside_delimited_block():
     assert rendered.count("===== END UNTRUSTED SOURCE CONTENT =====") == 1
 
 
-def test_prompt_file_versioned_with_contract():
-    prompt = load_prompt("extract_claims")
-    assert prompt.prompt_version == "extract_claims.v1"
+def test_prompt_v2_is_default_with_ca_gate():
+    prompt = load_prompt("extract_claims", "v2")
+    assert prompt.prompt_version == "extract_claims.v2"
+    assert "CALIFORNIA RELEVANCE" in prompt.template
+    assert "california_relevant" in prompt.template
     assert "SECURITY CONTRACT" in prompt.template
-    assert "{content}" in prompt.template
+
+
+def test_non_california_article_flagged_not_relevant():
+    fake = FakeLLM(
+        {
+            "california_relevant": False,
+            "primary_location": "Andalusia, Spain",
+            "claims": [],
+        }
+    )
+    result = extract_claims("...", reference_time=REF, client=fake)
+    assert result.california_relevant is False
+    assert result.primary_location == "Andalusia, Spain"
+    assert result.claims == []
+
+
+def test_california_article_relevant_with_claims():
+    fake = FakeLLM(
+        {
+            "california_relevant": True,
+            "primary_location": "Butte County, California",
+            "claims": [
+                {
+                    "content": "Flume Fire at 1200 acres",
+                    "kind": "acreage",
+                    "acreage": 1200,
+                    "confidence": 0.9,
+                }
+            ],
+        }
+    )
+    result = extract_claims("...", reference_time=REF, client=fake)
+    assert result.california_relevant is True
+    assert len(result.claims) == 1
+
+
+def test_missing_relevance_field_defaults_true():
+    # v1-shaped response (no california_relevant) is treated as CA-relevant
+    fake = FakeLLM({"claims": [{"content": "a claim", "kind": "other", "confidence": 0.5}]})
+    result = extract_claims("...", reference_time=REF, client=fake)
+    assert result.california_relevant is True and len(result.claims) == 1
