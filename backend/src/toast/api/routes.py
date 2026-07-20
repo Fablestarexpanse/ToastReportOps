@@ -283,6 +283,30 @@ def export_draft(request: Request, draft_id: str, fmt: str = "markdown") -> dict
     }
 
 
+@router.get("/jobs/dead")
+def list_dead_jobs(request: Request, limit: int = Query(50, le=200)) -> dict:
+    """The dead-letter queue. It was always preserved 'for inspection'; this is
+    the inspection. A transient LLM outage silently cost 20 articles' claims."""
+    from toast.queue.jobs import dead_summary
+
+    return dead_summary(_conn(request), limit=limit)
+
+
+@router.post("/jobs/requeue")
+def requeue_dead_jobs(request: Request, body: dict) -> dict:
+    """Retry dead jobs. Publishing is never included — a dead publish job may
+    already have posted, and re-running it is the duplicate."""
+    from toast.queue.jobs import NEVER_AUTO_REQUEUE, requeue_dead
+
+    stage = body.get("stage")
+    if stage in NEVER_AUTO_REQUEUE:
+        raise HTTPException(
+            400, f"{stage} jobs are never bulk-retried: re-send deliberately from NEWSROOM"
+        )
+    n = requeue_dead(_conn(request), stage=stage, job_ids=body.get("job_ids"))
+    return {"ok": True, "requeued": n}
+
+
 @router.get("/perimeters")
 def get_map_perimeters(request: Request, refresh: bool = False) -> dict:
     """Current California fire perimeters (WFIGS/NIFC, free) as GeoJSON,

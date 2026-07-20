@@ -80,6 +80,27 @@ export type Source = {
 
 export type Health = { api: boolean; queue: Record<string, number> };
 
+export type DeadJob = {
+  id: string;
+  stage: string;
+  payload: string;
+  attempts: number;
+  last_error: string | null;
+  created_at: string;
+};
+
+export type DeadJobs = {
+  by_stage: { stage: string; n: number; latest: string; recent: number }[];
+  jobs: DeadJob[];
+  /** stages safe to bulk-retry — publish is excluded (duplicate-post risk) */
+  recoverable: string[];
+};
+
+export const fetchDeadJobs = () => get<DeadJobs>("/jobs/dead");
+
+export const requeueDeadJobs = (stage?: string) =>
+  post<{ requeued: number }>("/jobs/requeue", stage ? { stage } : {});
+
 export type WatchCandidate = {
   key: string;
   name: string;

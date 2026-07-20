@@ -31,13 +31,24 @@ def due_sources(conn) -> list:
         SELECT s.id, s.name, s.adapter, CAST(s.schedule AS INTEGER) AS interval_s
         FROM sources s
         WHERE s.enabled = 1 AND s.schedule IS NOT NULL
+          -- CAST('*/5 * * * *' AS INTEGER) is 0, which would make a cron-style
+          -- schedule due on every scan. Interval seconds only, until a cron
+          -- parser exists to earn that column's documented flexibility.
+          AND CAST(s.schedule AS INTEGER) > 0
           AND NOT EXISTS (
             SELECT 1 FROM jobs j
             WHERE j.stage = 'poll' AND j.state IN ('queued', 'running')
               AND j.payload ->> 'source_id' = s.id)
+          -- 'dead' counts as an attempt, not as "never polled". It used to be
+          -- neither done nor pending, so a source whose poll job exhausted its
+          -- retries looked permanently overdue: the scheduler re-enqueued it on
+          -- every 10-second scan, each one burning five more HTTP attempts
+          -- against a feed that was already failing, forever, with the jobs
+          -- table growing without bound. A dead poll now simply waits out the
+          -- source's own schedule like any other attempt.
           AND COALESCE((
-            SELECT MAX(unixepoch(j.claimed_at)) FROM jobs j
-            WHERE j.stage = 'poll' AND j.state = 'done'
+            SELECT MAX(unixepoch(COALESCE(j.claimed_at, j.created_at))) FROM jobs j
+            WHERE j.stage = 'poll' AND j.state IN ('done', 'dead')
               AND j.payload ->> 'source_id' = s.id), 0)
               + CAST(s.schedule AS INTEGER) <= unixepoch(?)
         """,
@@ -59,8 +70,8 @@ def stage_due(conn, stage: str, interval_s: int) -> bool:
     ).fetchone():
         return False
     row = conn.execute(
-        """SELECT COALESCE(MAX(unixepoch(claimed_at)), 0) AS last
-           FROM jobs WHERE stage = ? AND state = 'done'""",
+        """SELECT COALESCE(MAX(unixepoch(COALESCE(claimed_at, created_at))), 0) AS last
+           FROM jobs WHERE stage = ? AND state IN ('done', 'dead')""",
         (stage,),
     ).fetchone()
     now = conn.execute("SELECT unixepoch(?) AS n", (utcnow(),)).fetchone()["n"]

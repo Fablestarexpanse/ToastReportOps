@@ -21,6 +21,9 @@ import {
   dismissSuggestion,
   fetchAdjudication,
   fetchHealth,
+  fetchDeadJobs,
+  requeueDeadJobs,
+  type DeadJobs,
   fetchIncidentFacts,
   fetchIncidents,
   fetchIntake,
@@ -2455,9 +2458,117 @@ const MODES: [string, string, boolean][] = [
   ["analytics", "ANALYTICS", true],
 ];
 
+function Overlay({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: "fixed", inset: 0, background: "#000a", zIndex: 200, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: 70 }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ width: 620, maxHeight: "80vh", overflowY: "auto", background: C.panelUp, border: `1px solid ${C.line}`, borderRadius: 9, boxShadow: "0 20px 60px #000c", padding: "14px 16px" }}
+      >
+        <div style={{ display: "flex", alignItems: "baseline", marginBottom: 10 }}>
+          <span style={{ fontFamily: font.disp, fontSize: 18, fontWeight: 700, letterSpacing: 1.5 }}>{title}</span>
+          <span onClick={onClose} style={{ marginLeft: "auto", cursor: "pointer", color: C.dim, fontFamily: font.mono, fontSize: 12 }}>✕</span>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/* Dead-letter queue. These jobs exhausted their retries and stopped — usually
+   the residue of a transient outage (the LLM briefly unreachable took 20
+   articles' claims out of the ledger, including two new-fire reports, with no
+   signal at all). The raw envelopes were archived, so the work is recoverable;
+   it only ever needed somewhere to ask. */
+function DeadLetterPanel({ onClose, toast }: { onClose: () => void; toast: (m: string) => void }) {
+  const [data, setData] = useState<DeadJobs | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(() => {
+    fetchDeadJobs().then(setData).catch(() => setData(null));
+  }, []);
+  useEffect(load, [load]);
+
+  const retry = async (stage?: string) => {
+    setBusy(true);
+    try {
+      const r = await requeueDeadJobs(stage);
+      toast(`${r.requeued} job${r.requeued === 1 ? "" : "s"} requeued`);
+      load();
+    } catch (e) {
+      toast(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Overlay title="DEAD JOBS" onClose={onClose}>
+      {!data?.jobs.length && (
+        <div style={{ fontFamily: font.mono, fontSize: 10, color: C.dim }}>
+          Nothing has dead-lettered. Every job either completed or is still retrying.
+        </div>
+      )}
+      {!!data?.by_stage.length && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+          {data.by_stage.map((s) => {
+            const safe = data.recoverable.includes(s.stage);
+            return (
+              <div
+                key={s.stage}
+                style={{
+                  border: `1px solid ${C.line}`, borderRadius: 4, padding: "5px 8px",
+                  fontFamily: font.mono, fontSize: 9.5, display: "flex", gap: 8, alignItems: "center",
+                }}
+              >
+                <span style={{ color: C.txt }}>{s.stage}</span>
+                <span style={{ color: s.recent > 0 ? C.evac : C.dim }}>
+                  {s.n} dead{s.recent > 0 ? ` · ${s.recent} recent` : ""}
+                </span>
+                {safe ? (
+                  <button
+                    disabled={busy}
+                    onClick={() => retry(s.stage)}
+                    style={{
+                      background: "transparent", border: `1px solid ${C.ember}66`, color: C.ember,
+                      borderRadius: 3, fontFamily: font.mono, fontSize: 9, padding: "2px 6px",
+                      cursor: busy ? "wait" : "pointer",
+                    }}
+                  >
+                    RETRY
+                  </button>
+                ) : (
+                  /* re-running a dead publish could post the same thing twice */
+                  <span title="re-send deliberately from NEWSROOM — a retry could duplicate a public post"
+                        style={{ color: C.faint }}>manual only</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div style={{ maxHeight: 320, overflowY: "auto" }}>
+        {(data?.jobs ?? []).map((j) => (
+          <div key={j.id} style={{ borderTop: `1px solid ${C.line}`, padding: "6px 0", fontFamily: font.mono, fontSize: 9 }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              <span style={{ color: C.ember }}>{j.stage}</span>
+              <span style={{ color: C.faint }}>{fmtStamp(j.created_at)} · {age(j.created_at)} ago · {j.attempts} attempts</span>
+            </div>
+            <div style={{ color: C.dim, marginTop: 2, wordBreak: "break-all" }}>{j.last_error}</div>
+          </div>
+        ))}
+      </div>
+    </Overlay>
+  );
+}
+
 export default function Workstation() {
   const [mode, setMode] = useState("ops");
   const health = usePolling(fetchHealth);
+  const [showDead, setShowDead] = useState(false);
   const [clock, setClock] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [uiKey, setUiKey] = useState(0); // bump to re-render after settings change
@@ -2478,7 +2589,9 @@ export default function Workstation() {
   }, [uiKey]);
 
   const dots: [string, boolean | null][] = [
-    ["FEEDS", health ? (health.queue.dead ?? 0) < 5 : null],
+    // dead_recent, not dead: the lifetime total only grows, so this light used
+    // to latch red forever after the fifth failure ever recorded
+    ["FEEDS", health ? (health.queue.dead_recent ?? 0) < 5 : null],
     ["API", health ? health.api : null],
   ];
 
@@ -2548,7 +2661,11 @@ export default function Workstation() {
           </div>
         ))}
         {health && (
-          <Chip color={C.blue} title="job queue">
+          <Chip
+            color={(health.queue.dead ?? 0) > 0 ? C.warn : C.blue}
+            title="job queue — click to inspect and retry dead jobs"
+            onClick={() => setShowDead(true)}
+          >
             {Object.entries(health.queue)
               .map(([k, v]) => `${k}:${v}`)
               .join(" ") || "queue idle"}
@@ -2562,6 +2679,8 @@ export default function Workstation() {
       {mode === "archive" && <ArchiveMode toast={toast} />}
       {mode === "sources" && <SourcesMode toast={toast} />}
       {mode === "analytics" && <AnalyticsMode />}
+
+      {showDead && <DeadLetterPanel onClose={() => setShowDead(false)} toast={toast} />}
 
       {showSettings && (
         <SettingsPanel

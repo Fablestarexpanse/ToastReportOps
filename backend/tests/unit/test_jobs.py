@@ -12,7 +12,7 @@ def test_enqueue_claim_complete(db):
     job = jobs.claim(db, "w1")
     assert job["id"] == job_id and job["state"] == "running" and job["attempts"] == 1
     jobs.complete(db, job_id)
-    assert jobs.counts_by_state(db) == {"done": 1}
+    assert jobs.counts_by_state(db) == {"done": 1, "dead_recent": 0}
 
 
 def test_claim_respects_priority_then_fifo(db):
@@ -79,3 +79,49 @@ def test_requeue_stale_running_jobs(db):
     assert requeue_stale(db) == 1
     row = db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
     assert row["state"] == "queued" and row["claimed_by"] is None
+
+
+class TestDeadLetterRecovery:
+    """A dead job is preserved 'for inspection' — until this, nothing inspected
+    it. A transient LLM outage silently cost 20 articles' claims, including two
+    new-fire reports, with no signal and no way to retry."""
+
+    def _dead(self, db, stage="extract", error="ConnectError('Network is unreachable')"):
+        job_id = jobs.enqueue(db, stage, {"envelope_id": "e1"})
+        job = jobs.claim(db, "w1")
+        db.execute("UPDATE jobs SET attempts = max_attempts WHERE id = ?", (job_id,))
+        job = db.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        assert jobs.fail(db, job, error) == "dead"
+        return job_id
+
+    def test_dead_jobs_are_visible_with_their_reason(self, db):
+        self._dead(db)
+        summary = jobs.dead_summary(db)
+        assert summary["by_stage"][0]["stage"] == "extract"
+        assert summary["by_stage"][0]["n"] == 1
+        assert "unreachable" in summary["jobs"][0]["last_error"]
+
+    def test_requeue_revives_with_a_fresh_attempt_budget(self, db):
+        self._dead(db)
+        assert jobs.requeue_dead(db, stage="extract") == 1
+        revived = db.execute("SELECT state, attempts FROM jobs").fetchone()
+        assert (revived["state"], revived["attempts"]) == ("queued", 0)
+        assert jobs.claim(db, "w2") is not None  # actually runnable again
+
+    def test_publish_is_never_bulk_revived(self, db):
+        """A dead publish job may already have posted; re-running it is the
+        duplicate the publications state machine exists to prevent."""
+        self._dead(db, stage="publish")
+        assert jobs.requeue_dead(db) == 0
+        assert jobs.requeue_dead(db, stage="publish") == 0
+        assert db.execute("SELECT state FROM jobs").fetchone()["state"] == "dead"
+
+    def test_dead_recent_is_what_a_health_light_should_use(self, db):
+        """The lifetime count only ever grows, so a light driven by it goes red
+        once and stays red — an alarm that cannot clear is one you stop reading."""
+        self._dead(db)
+        counts = jobs.counts_by_state(db)
+        assert counts["dead"] == 1 and counts["dead_recent"] == 1
+        db.execute("UPDATE jobs SET created_at = '2020-01-01T00:00:00.000Z' WHERE state = 'dead'")
+        counts = jobs.counts_by_state(db)
+        assert counts["dead"] == 1 and counts["dead_recent"] == 0  # old news, light clears
