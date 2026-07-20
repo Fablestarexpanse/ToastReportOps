@@ -40,6 +40,53 @@ class TestFactsAppendOnly:
         seeded.execute("UPDATE facts SET starred=1 WHERE id='f1'")
         seeded.execute("UPDATE facts SET starred=0 WHERE id='f1'")
 
+    # The original trigger only checked id/content/observed_at/ingested_at, so
+    # any other column could ride along with a legal change. These are the
+    # statements that used to pass silently — an audit found them by running
+    # them against the real schema, not by reading it.
+    @pytest.mark.parametrize(
+        "smuggled",
+        [
+            "acreage=99999",
+            "tier=5",  # rewrites a T1 agency number as an unvetted claim
+            "confidence=0.01",
+            "evac_status='lifted'",  # tells the map an evacuation ended
+            "containment_pct=100",
+            "lat=0, lon=0",
+            "geo_method='exif'",
+            "structured='{\"injected\":true}'",
+            "kind='other'",
+            "envelope_id='e1', content='tampered'",
+        ],
+    )
+    def test_no_column_rides_along_with_adjudication(self, seeded, smuggled):
+        insert_fact(seeded, "f2", incident_id=None)
+        with pytest.raises(sqlite3.IntegrityError, match="supersession"):
+            seeded.execute(f"UPDATE facts SET incident_id='i1', {smuggled} WHERE id='f2'")
+        assert (
+            seeded.execute("SELECT incident_id FROM facts WHERE id='f2'").fetchone()["incident_id"]
+            is None
+        )
+
+    def test_no_column_rides_along_with_a_star(self, seeded):
+        insert_fact(seeded, "f1")
+        with pytest.raises(sqlite3.IntegrityError, match="supersession"):
+            seeded.execute("UPDATE facts SET starred=1, tier=5 WHERE id='f1'")
+        row = seeded.execute("SELECT tier, starred FROM facts WHERE id='f1'").fetchone()
+        assert (row["tier"], row["starred"]) == (1, 0)  # neither half landed
+
+    def test_attributed_fact_cannot_be_repointed_at_another_incident(self, seeded):
+        """Attribution is one-way. Moving a claim between fires would rewrite
+        two incidents' histories at once, with nothing recording that it moved."""
+        seeded.execute(
+            "INSERT INTO incidents (id, canonical_name, status, created_at, updated_at)"
+            " VALUES ('i2', 'OTHER FIRE', 'active', ?, ?)",
+            (NOW, NOW),
+        )
+        insert_fact(seeded, "f1")  # already attributed to i1
+        with pytest.raises(sqlite3.IntegrityError, match="supersession"):
+            seeded.execute("UPDATE facts SET incident_id='i2' WHERE id='f1'")
+
     def test_supersession_chain(self, seeded):
         insert_fact(seeded, "f1")
         insert_fact(seeded, "f2", supersedes="f1")
@@ -60,6 +107,14 @@ class TestFrozenIncidents:
         insert_fact(seeded, "f1")
         self._freeze(seeded)
         insert_fact(seeded, "f2", supersedes="f1")
+
+    def test_adjudication_cannot_attach_a_fact_to_a_frozen_incident(self, seeded):
+        """The frozen guard was BEFORE INSERT only, which left the adjudication
+        UPDATE as an unguarded way into a closed record."""
+        insert_fact(seeded, "f2", incident_id=None)
+        self._freeze(seeded)
+        with pytest.raises(sqlite3.IntegrityError, match="frozen"):
+            seeded.execute("UPDATE facts SET incident_id='i1' WHERE id='f2'")
 
 
 class TestDraftStateMachine:

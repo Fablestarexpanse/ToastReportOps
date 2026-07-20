@@ -658,8 +658,13 @@ def resolve_adjudication(request: Request, fact_id: str, body: dict) -> dict:
         raise HTTPException(404, "fact not found")
     if fact["incident_id"] is not None:
         raise HTTPException(409, "fact already attributed")
-    if conn.execute("SELECT 1 FROM incidents WHERE id = ?", (incident_id,)).fetchone() is None:
+    target = conn.execute("SELECT status FROM incidents WHERE id = ?", (incident_id,)).fetchone()
+    if target is None:
         raise HTTPException(404, "incident not found")
+    # the DB refuses this too (facts_frozen_update_guard); saying it here turns
+    # an opaque 500 into an answer the operator can act on
+    if target["status"] == "frozen":
+        raise HTTPException(409, "incident is frozen; corrections require a superseding fact")
     conn.execute("UPDATE facts SET incident_id = ? WHERE id = ?", (incident_id, fact_id))
     return {"ok": True, "fact_id": fact_id, "incident_id": incident_id}
 
