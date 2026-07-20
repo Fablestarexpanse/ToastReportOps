@@ -162,6 +162,29 @@ def follow_incident(request: Request, incident_id: str, body: dict) -> dict:
     return {"ok": True, "followed": bool(followed)}
 
 
+# ---------------- backups ----------------
+
+
+@router.get("/backups")
+def get_backups(request: Request) -> dict:
+    """Backup posture. `at_risk` is true whenever no offsite copy is
+    configured — local-only copies die with the machine."""
+    from toast.backup import backup_status, list_snapshots
+
+    return {**backup_status(), "all": list_snapshots()[:10]}
+
+
+@router.post("/backups/run")
+def run_backup_now(request: Request) -> dict:
+    """Operator-triggered verified snapshot (same path as the nightly job)."""
+    from toast.backup import run_backup
+
+    try:
+        return run_backup(_conn(request))
+    except Exception as exc:  # surfaced to the operator, never silent
+        raise HTTPException(500, f"backup failed: {exc}") from exc
+
+
 # ---------------- operator settings ----------------
 
 

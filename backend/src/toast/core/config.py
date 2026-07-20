@@ -58,6 +58,12 @@ class Settings(BaseSettings):
     fb_page_id: str = ""
     fb_page_token: str = ""
 
+    # offsite backups (Backblaze B2) — snapshots stay local-only until these
+    # are set; see docs/BACKUP-RESTORE.md
+    b2_key_id: str = ""
+    b2_application_key: str = ""
+    b2_bucket: str = ""
+
     # logging
     log_level: str = "INFO"
 

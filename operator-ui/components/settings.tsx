@@ -1,9 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { SettingEntry, fetchSettings, saveSettings } from "@/lib/api";
+import {
+  BackupStatus,
+  SettingEntry,
+  fetchBackups,
+  fetchSettings,
+  runBackup,
+  saveSettings,
+} from "@/lib/api";
 import { C, font } from "@/lib/theme";
-import { TzMode, setTzMode } from "@/lib/time";
+import { TzMode, age, fmtStamp, setTzMode } from "@/lib/time";
 
 /* OPTIONS — operator-adjustable runtime settings. Model choices live in the
    DB (they change pipeline behavior); display preferences are mirrored to
@@ -47,6 +54,80 @@ const CHOICES: Record<string, { value: string; label: string }[]> = {
     { value: "oldest", label: "OLDEST FIRST" },
   ],
 };
+
+function BackupSection({ toast }: { toast: (m: string) => void }) {
+  const [status, setStatus] = useState<BackupStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setStatus(await fetchBackups());
+    } catch {}
+  }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const run = async () => {
+    setBusy(true);
+    try {
+      const r = await runBackup();
+      toast(`snapshot verified: ${r.manifest.file}`);
+      load();
+    } catch (e) {
+      toast(`backup failed: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!status) return null;
+  const facts = status.latest?.verified?.counts?.facts;
+  return (
+    <div style={{ padding: "9px 0", borderBottom: `1px solid ${C.line}44` }}>
+      {status.at_risk && (
+        <div
+          style={{
+            border: `1px solid ${C.evac}66`,
+            background: C.evac + "14",
+            borderRadius: 5,
+            padding: "6px 9px",
+            marginBottom: 7,
+            fontFamily: font.mono,
+            fontSize: 9,
+            color: C.evac,
+          }}
+        >
+          ⚠ NO OFFSITE COPY — snapshots live on this machine only. Add B2 keys to
+          .env (docs/BACKUP-RESTORE.md); a house fire takes the archive with it.
+        </div>
+      )}
+      <div style={{ fontFamily: font.mono, fontSize: 9.5, color: C.dim, display: "flex", gap: 8, alignItems: "center" }}>
+        <span>
+          {status.snapshots} snapshot{status.snapshots === 1 ? "" : "s"}
+          {status.latest_at && (
+            <>
+              {" · last "}
+              <span style={{ color: C.txt }}>{fmtStamp(status.latest_at)}</span>
+              {` (${age(status.latest_at)} ago)`}
+            </>
+          )}
+          {facts != null && ` · ${facts.toLocaleString()} facts verified`}
+        </span>
+        <button
+          onClick={run}
+          disabled={busy}
+          style={{ marginLeft: "auto", background: busy ? C.faint : C.blue, color: C.bg, border: "none", borderRadius: 4, fontFamily: font.disp, fontWeight: 700, fontSize: 10.5, letterSpacing: 1, padding: "4px 10px", cursor: "pointer", whiteSpace: "nowrap" }}
+        >
+          {busy ? "RUNNING…" : "BACK UP NOW"}
+        </button>
+      </div>
+      <div style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint, marginTop: 4 }}>
+        nightly, automatic · every snapshot is integrity-checked and row-counted before it counts as good
+      </div>
+    </div>
+  );
+}
 
 export default function SettingsPanel({
   onClose,
@@ -230,6 +311,11 @@ export default function SettingsPanel({
                 ⚠ model list unavailable — is Ollama running? free-text entry still works.
               </div>
             )}
+
+            <div style={{ fontFamily: font.disp, fontSize: 11, letterSpacing: 2, color: C.ember, marginTop: 14 }}>
+              BACKUPS
+            </div>
+            <BackupSection toast={toast} />
 
             <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
               <button

@@ -433,6 +433,28 @@ export async function deleteNote(id: string): Promise<void> {
   await fetch(`/api/notes/${id}`, { method: "DELETE" });
 }
 
+export type BackupStatus = {
+  snapshots: number;
+  latest_at: string | null;
+  latest: { file: string; bytes: number; verified: { counts: Record<string, number> } } | null;
+  offsite_configured: boolean;
+  at_risk: boolean;
+  snapshot_dir: string;
+};
+
+export async function fetchBackups(): Promise<BackupStatus> {
+  return get<BackupStatus>("/backups");
+}
+
+export async function runBackup(): Promise<{ manifest: { file: string } }> {
+  const res = await fetch("/api/backups/run", { method: "POST" });
+  if (!res.ok) {
+    const detail = await res.json().then((d) => d.detail).catch(() => res.status);
+    throw new Error(String(detail));
+  }
+  return res.json();
+}
+
 export type SettingEntry = {
   value: string;
   default: string;

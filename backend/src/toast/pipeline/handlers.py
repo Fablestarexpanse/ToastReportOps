@@ -219,6 +219,20 @@ def build_site_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> Non
     get_logger("sitegen").info("site_built", **counts)
 
 
+@register("backup")
+def backup_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Nightly verified snapshot (+ offsite when B2 credentials exist)."""
+    from toast.backup import run_backup
+
+    result = run_backup(conn)
+    get_logger("backup").info(
+        "backup_done",
+        file=result["manifest"]["file"],
+        pruned=len(result["pruned"]),
+        offsite=bool(result["offsite"]),
+    )
+
+
 @register("publish")
 def publish_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     """Deliver an approved+published SOCIAL draft to one external channel.

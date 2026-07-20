@@ -45,9 +45,31 @@ def due_sources(conn) -> list:
     ).fetchall()
 
 
+BACKUP_INTERVAL_S = 24 * 3600
+
+
+def backup_due(conn) -> bool:
+    """True when no backup job has completed in the last 24h."""
+    row = conn.execute(
+        """SELECT COALESCE(MAX(unixepoch(claimed_at)), 0) AS last
+           FROM jobs WHERE stage = 'backup' AND state = 'done'"""
+    ).fetchone()
+    pending = conn.execute(
+        "SELECT 1 FROM jobs WHERE stage = 'backup' AND state IN ('queued','running')"
+    ).fetchone()
+    if pending:
+        return False
+    now = conn.execute("SELECT unixepoch(?) AS n", (utcnow(),)).fetchone()["n"]
+    return (row["last"] or 0) + BACKUP_INTERVAL_S <= now
+
+
 def scan_once(conn) -> int:
     log = get_logger("scheduler")
     n = 0
+    if backup_due(conn):
+        job_id = jobs.enqueue(conn, "backup", {}, priority=8)  # lowest priority
+        log.info("backup_enqueued", job_id=job_id)
+        n += 1
     for src in due_sources(conn):
         job_id = jobs.enqueue(conn, "poll", {"source_id": src["id"], "adapter": src["adapter"]})
         log.info("poll_enqueued", source=src["name"], source_id=src["id"], job_id=job_id)
