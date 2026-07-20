@@ -30,6 +30,42 @@ GPU / FEEDS / SOCIAL / BUILD dots wired to these.
 All config via environment variables — copy `.env.example` to `.env` and fill in.
 No hardcoded paths; `data/` location is configurable for the desktop→server move.
 
+## Never open toast.db read-write from the Windows host
+
+The containers own the database. Opening it read-write from a host Python/CLI
+session (anything that runs `PRAGMA journal_mode=WAL`, including
+`toast.core.db.connect`) writes `toast.db-wal` / `toast.db-shm` with Windows
+SQLite, and the Linux container's SQLite then refuses the file:
+
+```
+sqlite3.OperationalError: unable to open database file   # or: SQL logic error
+```
+
+Every service crash-loops on startup. The data is fine — this is a locking/
+sidecar-file conflict, not corruption.
+
+**Read-only from the host is always safe:**
+
+```python
+sqlite3.connect("file:data/toast.db?mode=ro", uri=True)   # do this
+```
+
+**Recovery** (verify integrity first, then drop the stale sidecars):
+
+```bash
+python -c "import sqlite3;c=sqlite3.connect('file:data/toast.db?mode=ro',uri=True);print(c.execute('PRAGMA integrity_check').fetchone())"
+docker compose --profile desktop stop api worker scheduler litestream
+rm -f data/toast.db-wal data/toast.db-shm     # only when -wal is 0 bytes
+docker compose --profile desktop up -d
+```
+
+If `-wal` is NOT empty it holds uncommitted transactions: check it out with a
+host **read-only** open (which replays the WAL), `VACUUM INTO` a fresh file,
+and swap that in rather than deleting the WAL.
+
+For ad-hoc queries against live data, prefer the API or
+`docker compose exec worker python …` so the container owns the handle.
+
 ## Backup / restore (Phase 0 local, Phase 5 drilled)
 
 - Continuous: Litestream replicates `toast.db` to B2 (`infra/litestream.yml`).

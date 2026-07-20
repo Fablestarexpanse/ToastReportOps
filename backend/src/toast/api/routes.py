@@ -62,8 +62,12 @@ def list_incidents(request: Request, status: str | None = None, include_rx: bool
         _conn(request)
         .execute(
             f"""SELECT i.*, COUNT(f.id) AS fact_count, MAX(f.observed_at) AS last_observed,
+                   MIN(f.observed_at) AS started_at,
                    {latest.format(col="acreage", kind="acreage")} AS acreage,
-                   {latest.format(col="containment_pct", kind="containment")} AS containment_pct
+                   {latest.format(col="containment_pct", kind="containment")} AS containment_pct,
+                   -- active evacuation = latest non-superseded evac fact still
+                   -- ordering/warning (not lifted). Drives the map's evac color.
+                   {latest.format(col="evac_status", kind="evac")} AS evac_status
             FROM incidents i LEFT JOIN facts f ON f.incident_id = i.id
             {where}
             GROUP BY i.id ORDER BY last_observed DESC NULLS LAST""",
@@ -420,6 +424,60 @@ def watch_board(request: Request) -> dict:
     from toast.pipeline.watch import build_watchlist
 
     return {"candidates": [asdict(c) for c in build_watchlist(_conn(request))]}
+
+
+@router.post("/watch/triage")
+def watch_triage(request: Request, body: dict) -> dict:
+    """Dispose of a watch candidate: ignored (not a real start), archived (a
+    real fire, but old), or keep. Underlying facts are never modified."""
+    from toast.pipeline.watch_triage import set_state
+
+    key = (body.get("key") or "").strip()
+    if not key:
+        raise HTTPException(400, "key required")
+    try:
+        return set_state(
+            _conn(request), key, (body.get("state") or "").strip(), note=body.get("note")
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/watch/untriage")
+def watch_untriage(request: Request, body: dict) -> dict:
+    """Put a filed candidate back on the board."""
+    from toast.pipeline.watch_triage import clear_state
+
+    key = (body.get("key") or "").strip()
+    if not key:
+        raise HTTPException(400, "key required")
+    clear_state(_conn(request), key)
+    return {"ok": True, "key": key}
+
+
+@router.get("/watch/archived")
+def watch_archived(request: Request) -> dict:
+    from toast.pipeline.watch_triage import archived_candidates
+
+    return {"archived": archived_candidates(_conn(request))}
+
+
+@router.post("/watch/classify")
+def watch_classify(request: Request, body: dict) -> dict:
+    """Age check: ask the local model whether this candidate is burning now or
+    is an old fire being referenced. Suggests only — the operator decides."""
+    from toast.llm.client import LLMError
+    from toast.pipeline.watch_triage import classify_candidate
+
+    key = (body.get("key") or "").strip()
+    if not key:
+        raise HTTPException(400, "key required")
+    try:
+        return classify_candidate(_conn(request), key)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except LLMError as exc:
+        raise HTTPException(502, f"age check failed: {exc}") from exc
 
 
 @router.post("/watch/promote")

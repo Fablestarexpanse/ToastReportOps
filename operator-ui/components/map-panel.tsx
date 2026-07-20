@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Incident } from "@/lib/api";
+import { Incident, hasActiveEvac } from "@/lib/api";
 import { CA_OUTLINE } from "@/lib/california";
 import { C, font } from "@/lib/theme";
 
@@ -51,6 +51,9 @@ function pinRadius(acreage: number | null): number {
 }
 
 function pinColor(inc: Incident): string {
+  // People-at-risk outranks fire behavior: an active evacuation is the thing
+  // the operator must see first, whatever the containment number says.
+  if (hasActiveEvac(inc)) return C.evac;
   if (inc.status === "contained" || inc.status === "frozen") return C.dim;
   const c = inc.containment_pct ?? 0;
   return c >= 60 ? C.warn : C.emberHot;
@@ -83,6 +86,7 @@ export default function MapPanel({
   }, [project]);
 
   const placed = incidents.filter((i) => i.lat != null && i.lon != null);
+  const evacCount = placed.filter(hasActiveEvac).length;
 
   if (!mounted) {
     return <div style={{ background: "#10141a", height: "100%", minWidth: 0 }} />;
@@ -110,10 +114,16 @@ export default function MapPanel({
           const r = pinRadius(inc.acreage);
           const color = pinColor(inc);
           const isSel = inc.id === selected;
+          const evac = hasActiveEvac(inc);
           return (
             <g key={inc.id} style={{ cursor: "pointer" }} onClick={() => onSelect(inc.id)}>
-              {isSel && (
+              {/* an evacuation pulses whether or not it is selected — it is the
+                  one thing that should catch the eye across the whole map */}
+              {(isSel || evac) && (
                 <circle cx={x} cy={y} r={r + 8} fill="none" stroke={color} strokeWidth={1.5} className="tr-pulse" />
+              )}
+              {evac && (
+                <circle cx={x} cy={y} r={r + 4} fill="none" stroke={C.evac} strokeWidth={1} strokeOpacity={0.75} />
               )}
               <circle cx={x} cy={y} r={r} fill={color} fillOpacity={0.85} stroke={isSel ? C.txt : color} strokeWidth={isSel ? 1.5 : 0.5} />
               {isSel && (
@@ -147,8 +157,16 @@ export default function MapPanel({
       </div>
 
       {/* count */}
-      <div style={{ position: "absolute", bottom: 8, left: 10, fontFamily: font.mono, fontSize: 9, color: C.dim }}>
-        {placed.length} active incident{placed.length === 1 ? "" : "s"} · click a pin
+      <div style={{ position: "absolute", bottom: 8, left: 10, fontFamily: font.mono, fontSize: 9, color: C.dim, display: "flex", gap: 8, alignItems: "center" }}>
+        <span>
+          {placed.length} active incident{placed.length === 1 ? "" : "s"} · click a pin
+        </span>
+        {evacCount > 0 && (
+          <span style={{ color: C.evac, display: "flex", alignItems: "center", gap: 4 }}>
+            <span style={{ width: 7, height: 7, borderRadius: 4, background: C.evac, display: "inline-block" }} />
+            {evacCount} under evacuation
+          </span>
+        )}
       </div>
     </div>
   );

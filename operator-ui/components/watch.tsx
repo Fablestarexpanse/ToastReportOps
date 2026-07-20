@@ -1,15 +1,38 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { WatchCandidate, fetchWatch, promoteCandidate, startResearch } from "@/lib/api";
+import {
+  WatchCandidate,
+  WatchState,
+  classifyWatch,
+  fetchWatch,
+  promoteCandidate,
+  startResearch,
+  triageWatch,
+} from "@/lib/api";
 import { C, TIER, font } from "@/lib/theme";
 import { fmtStamp } from "@/lib/time";
 
 const fmtTime = fmtStamp;
 
+const VERDICT_LABEL: Record<string, string> = {
+  active_new: "BURNING NOW — likely a real new start",
+  historical: "OLD FIRE — reporting refers to a past event",
+  not_a_fire: "NOT A WILDFIRE INCIDENT",
+  uncertain: "UNCERTAIN — not enough in the text to tell",
+};
+
+const VERDICT_COLOR: Record<string, string> = {
+  active_new: C.emberHot,
+  historical: C.dim,
+  not_a_fire: C.faint,
+  uncertain: C.warn,
+};
+
 export default function WatchMode({ toast }: { toast: (m: string) => void }) {
   const [candidates, setCandidates] = useState<WatchCandidate[] | null>(null);
   const [promoting, setPromoting] = useState<Record<string, boolean>>({});
+  const [busy, setBusy] = useState<Record<string, string>>({});
 
   const refresh = useCallback(async () => {
     try {
@@ -35,6 +58,31 @@ export default function WatchMode({ toast }: { toast: (m: string) => void }) {
       toast(`promote failed: ${e instanceof Error ? e.message : e}`);
     } finally {
       setPromoting((s) => ({ ...s, [c.key]: false }));
+    }
+  };
+
+  const ageCheck = async (c: WatchCandidate) => {
+    setBusy((s) => ({ ...s, [c.key]: "check" }));
+    try {
+      const v = await classifyWatch(c.key);
+      toast(`${c.name}: ${VERDICT_LABEL[v.verdict]}`);
+      refresh();
+    } catch (e) {
+      toast(`age check failed: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setBusy((s) => ({ ...s, [c.key]: "" }));
+    }
+  };
+
+  const triage = async (c: WatchCandidate, state: WatchState) => {
+    // optimistic: the card disappears immediately, the board stays responsive
+    setCandidates((prev) => (prev ?? []).filter((x) => x.key !== c.key));
+    try {
+      await triageWatch(c.key, state);
+      toast(state === "archived" ? `${c.name} filed to archive` : `${c.name} ignored`);
+    } catch (e) {
+      toast(`failed: ${e instanceof Error ? e.message : e}`);
+      refresh();
     }
   };
 
@@ -112,7 +160,97 @@ export default function WatchMode({ toast }: { toast: (m: string) => void }) {
               ))}
             </div>
 
+            {/* age check verdict */}
+            {c.verdict && (
+              <div
+                style={{
+                  marginTop: 9,
+                  border: `1px solid ${VERDICT_COLOR[c.verdict.verdict]}55`,
+                  background: VERDICT_COLOR[c.verdict.verdict] + "12",
+                  borderRadius: 5,
+                  padding: "6px 8px",
+                }}
+              >
+                <div style={{ fontFamily: font.mono, fontSize: 9, color: VERDICT_COLOR[c.verdict.verdict], letterSpacing: 1 }}>
+                  {VERDICT_LABEL[c.verdict.verdict]} · {Math.round(c.verdict.confidence * 100)}% confident
+                  {c.verdict.in_california === false && " · OUTSIDE CA"}
+                </div>
+                <div style={{ fontSize: 10, color: C.dim, marginTop: 3, lineHeight: 1.35 }}>
+                  {c.verdict.reasoning}
+                </div>
+                {c.verdict.evidence_quote && (
+                  <div style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint, marginTop: 3, fontStyle: "italic" }}>
+                    “{c.verdict.evidence_quote}”
+                  </div>
+                )}
+                {c.verdict.suggested_action !== "keep" && (
+                  <div
+                    onClick={() => triage(c, c.verdict!.suggested_action as WatchState)}
+                    style={{ marginTop: 5, fontFamily: font.mono, fontSize: 9, cursor: "pointer", color: C.ok, border: `1px solid ${C.ok}66`, borderRadius: 3, padding: "3px 7px", display: "inline-block" }}
+                  >
+                    ✓ ACCEPT — {c.verdict.suggested_action === "archived" ? "file to archive" : "ignore this"}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+              <button
+                onClick={() => ageCheck(c)}
+                disabled={busy[c.key] === "check"}
+                title="ask the local model whether this is burning now or an old fire being referenced"
+                style={{
+                  flex: 1,
+                  background: "transparent",
+                  color: C.warn,
+                  border: `1px solid ${C.warn}66`,
+                  borderRadius: 5,
+                  fontFamily: font.disp,
+                  fontWeight: 700,
+                  fontSize: 11,
+                  letterSpacing: 1,
+                  padding: "7px 0",
+                  cursor: "pointer",
+                }}
+              >
+                {busy[c.key] === "check" ? "CHECKING…" : "⏱ NEW OR OLD?"}
+              </button>
+              <button
+                onClick={() => triage(c, "archived")}
+                title="a real fire, but old — file it away"
+                style={{
+                  background: "transparent",
+                  color: C.dim,
+                  border: `1px solid ${C.line}`,
+                  borderRadius: 5,
+                  fontFamily: font.disp,
+                  fontSize: 11,
+                  letterSpacing: 1,
+                  padding: "7px 10px",
+                  cursor: "pointer",
+                }}
+              >
+                🗄 ARCHIVE
+              </button>
+              <button
+                onClick={() => triage(c, "ignored")}
+                title="not a real new start — remove from the board"
+                style={{
+                  background: "transparent",
+                  color: C.dim,
+                  border: `1px solid ${C.line}`,
+                  borderRadius: 5,
+                  fontFamily: font.disp,
+                  fontSize: 11,
+                  padding: "7px 10px",
+                  cursor: "pointer",
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
               <button
                 onClick={async () => {
                   try {

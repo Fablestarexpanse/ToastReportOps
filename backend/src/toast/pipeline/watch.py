@@ -56,6 +56,7 @@ class WatchCandidate:
     state: str  # 'watching' | 'corroborating'
     fact_ids: list[str] = field(default_factory=list)
     samples: list[dict[str, Any]] = field(default_factory=list)
+    verdict: dict[str, Any] | None = None  # LLM age check, once one has been run
 
 
 def _active_incident_names(conn: sqlite3.Connection) -> list[tuple[str, list[str]]]:
@@ -78,8 +79,18 @@ def _matches_active_incident(name: str, active: list[tuple[str, list[str]]]) -> 
     return any(name_similarity(name, canon, aliases) >= 0.85 for canon, aliases in active)
 
 
-def build_watchlist(conn: sqlite3.Connection) -> list[WatchCandidate]:
-    """Cluster unattributed named-fire signals into candidate new-starts."""
+def build_watchlist(
+    conn: sqlite3.Connection, *, include_triaged: bool = False
+) -> list[WatchCandidate]:
+    """Cluster unattributed named-fire signals into candidate new-starts.
+
+    Candidates the operator has ignored or archived stay off the board;
+    include_triaged=True is for lookups that need them anyway (e.g. re-running
+    an age check on something already filed)."""
+    from toast.pipeline.watch_triage import triage_map
+
+    triaged = triage_map(conn)
+    hidden = {k for k, v in triaged.items() if v["state"] in ("ignored", "archived")}
     active = _active_incident_names(conn)
     rows = conn.execute(
         """SELECT f.id, f.source_id, f.tier, f.content, f.observed_at, f.lat, f.lon,
@@ -102,6 +113,8 @@ def build_watchlist(conn: sqlite3.Connection) -> list[WatchCandidate]:
 
     candidates: list[WatchCandidate] = []
     for key, facts in clusters.items():
+        if not include_triaged and key in hidden:
+            continue
         display = facts[0]["inc_name"]
         # skip clusters that actually name an existing incident (those are
         # attribution/adjudication cases, not new starts)
@@ -136,6 +149,7 @@ def build_watchlist(conn: sqlite3.Connection) -> list[WatchCandidate]:
                     {"content": f["content"], "tier": f["tier"], "observed_at": f["observed_at"]}
                     for f in facts[:4]
                 ],
+                verdict=(triaged.get(key) or {}).get("verdict"),
             )
         )
     candidates.sort(

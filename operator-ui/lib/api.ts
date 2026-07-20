@@ -16,7 +16,13 @@ export type Incident = {
   acreage: number | null;
   containment_pct: number | null;
   followed: number;
+  started_at: string | null;
+  evac_status: string | null;
 };
+
+/** Fires under an active evacuation order/warning — the map's alarm color. */
+export const hasActiveEvac = (i: { evac_status: string | null }) =>
+  i.evac_status === "order" || i.evac_status === "warning" || i.evac_status === "shelter_in_place";
 
 export type Fact = {
   id: string;
@@ -86,7 +92,61 @@ export type WatchCandidate = {
   state: "watching" | "corroborating";
   fact_ids: string[];
   samples: { content: string; tier: number; observed_at: string }[];
+  verdict: WatchVerdict | null;
 };
+
+export type WatchVerdict = {
+  verdict: "active_new" | "historical" | "not_a_fire" | "uncertain";
+  confidence: number;
+  reasoning: string;
+  evidence_quote: string;
+  in_california: boolean | null;
+  suggested_action: "keep" | "archived" | "ignored";
+  checked_at: string;
+};
+
+export type WatchState = "ignored" | "archived" | "keep";
+
+export async function triageWatch(key: string, state: WatchState): Promise<void> {
+  const res = await fetch("/api/watch/triage", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key, state }),
+  });
+  if (!res.ok) throw new Error(`triage failed (${res.status})`);
+}
+
+export async function untriageWatch(key: string): Promise<void> {
+  await fetch("/api/watch/untriage", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key }),
+  });
+}
+
+export async function classifyWatch(key: string): Promise<WatchVerdict> {
+  const res = await fetch("/api/watch/classify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key }),
+  });
+  if (!res.ok) {
+    const detail = await res.json().then((d) => d.detail).catch(() => res.status);
+    throw new Error(String(detail));
+  }
+  return res.json();
+}
+
+export type ArchivedCandidate = {
+  cluster_key: string;
+  state: string;
+  verdict: WatchVerdict | null;
+  note: string | null;
+  at: string;
+};
+
+export const fetchArchivedWatch = () =>
+  get<{ archived: ArchivedCandidate[] }>("/watch/archived").then((r) => r.archived);
 
 export const fetchWatch = () =>
   get<{ candidates: WatchCandidate[] }>("/watch").then((r) => r.candidates);

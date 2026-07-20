@@ -28,6 +28,7 @@ import {
   fetchSources,
   fetchTimeline,
   followIncident,
+  hasActiveEvac,
   importFire,
   dismissTierSuggestion,
   probeSource,
@@ -1649,44 +1650,197 @@ function FireSearch({ toast }: { toast: (m: string) => void }) {
 
 /* ---------------- ARCHIVE mode ---------------- */
 
+const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+
+/* ARCHIVE — fires filed by when they burned, because that is how anyone looks
+   for one later ("the Butte County fire in July"). Year → month → incident,
+   with counts at every level so the shape of a season is visible at a glance. */
 function ArchiveMode({ toast }: { toast: (m: string) => void }) {
   const incidents = usePolling(fetchIncidents);
+  const [q, setQ] = useState("");
+  const [county, setCounty] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  const all = useMemo(() => incidents ?? [], [incidents]);
+  const counties = useMemo(
+    () => [...new Set(all.map((i) => i.county).filter(Boolean))].sort() as string[],
+    [all],
+  );
+
+  const filtered = useMemo(
+    () =>
+      all.filter((i) => {
+        if (county && i.county !== county) return false;
+        if (statusFilter && i.status !== statusFilter) return false;
+        if (q && !`${i.canonical_name} ${i.county ?? ""}`.toLowerCase().includes(q.toLowerCase()))
+          return false;
+        return true;
+      }),
+    [all, q, county, statusFilter],
+  );
+
+  // group by year → month of the fire's start (earliest observed fact),
+  // falling back to when we first recorded it
+  const tree = useMemo(() => {
+    const years = new Map<string, Map<number, Incident[]>>();
+    for (const inc of filtered) {
+      const when = new Date(inc.started_at ?? inc.created_at);
+      if (isNaN(when.getTime())) continue;
+      const y = String(when.getUTCFullYear());
+      const m = when.getUTCMonth();
+      const months = years.get(y) ?? new Map<number, Incident[]>();
+      months.set(m, [...(months.get(m) ?? []), inc]);
+      years.set(y, months);
+    }
+    return [...years.entries()]
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([year, months]) => ({
+        year,
+        count: [...months.values()].reduce((n, v) => n + v.length, 0),
+        months: [...months.entries()]
+          .sort((a, b) => b[0] - a[0])
+          .map(([m, list]) => ({
+            month: m,
+            list: [...list].sort((a, b) =>
+              (b.started_at ?? "").localeCompare(a.started_at ?? ""),
+            ),
+          })),
+      }));
+  }, [filtered]);
+
+  const acresTotal = filtered.reduce((n, i) => n + (i.acreage ?? 0), 0);
+  const inputStyle = {
+    background: C.bg,
+    border: `1px solid ${C.line}`,
+    borderRadius: 4,
+    color: C.txt,
+    fontFamily: font.mono,
+    fontSize: 10,
+    padding: "5px 8px",
+    outline: "none",
+  } as const;
+
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: 18 }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 12 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
         <span style={{ fontFamily: font.disp, fontSize: 22, fontWeight: 700, letterSpacing: 1 }}>ARCHIVE</span>
         <span style={{ fontFamily: font.mono, fontSize: 10, color: C.dim }}>
-          append-only ledger · frozen fires immutable · import older fires below
+          filed by when they burned · append-only ledger · frozen fires immutable
+        </span>
+        <span style={{ marginLeft: "auto", fontFamily: font.mono, fontSize: 9.5, color: C.faint }}>
+          {filtered.length} fire{filtered.length === 1 ? "" : "s"}
+          {acresTotal > 0 && ` · ${Math.round(acresTotal).toLocaleString()} acres`}
         </span>
       </div>
+
+      {/* browse tools */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="⌕ filter archived fires by name or county"
+          style={{ ...inputStyle, flex: "1 1 240px" }}
+        />
+        <select value={county} onChange={(e) => setCounty(e.target.value)} style={{ ...inputStyle, color: county ? C.ember : C.dim }}>
+          <option value="">all counties</option>
+          {counties.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ ...inputStyle, color: statusFilter ? C.ember : C.dim }}>
+          <option value="">any status</option>
+          {["active", "contained", "candidate", "frozen"].map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+      </div>
+
       <FireSearch toast={toast} />
-      {(incidents ?? []).map((inc) => (
-        <div
-          key={inc.id}
-          className="tr-row"
-          style={{
-            background: C.panel,
-            border: `1px solid ${C.line}`,
-            borderRadius: 7,
-            padding: "10px 13px",
-            marginBottom: 8,
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <span style={{ fontFamily: font.disp, fontSize: 16, fontWeight: 700 }}>
-              {inc.canonical_name}
+
+      {tree.map(({ year, count, months }) => (
+        <div key={year} style={{ marginBottom: 14 }}>
+          <div
+            onClick={() => setCollapsed((s) => ({ ...s, [year]: !s[year] }))}
+            style={{
+              display: "flex",
+              alignItems: "baseline",
+              gap: 9,
+              cursor: "pointer",
+              borderBottom: `1px solid ${C.ember}44`,
+              paddingBottom: 4,
+              marginBottom: 8,
+            }}
+          >
+            <span style={{ fontFamily: font.disp, fontSize: 18, fontWeight: 700, color: C.ember, letterSpacing: 2 }}>
+              {collapsed[year] ? "▸" : "▾"} {year}
             </span>
-            <span style={{ fontFamily: font.mono, fontSize: 9, color: inc.status === "frozen" ? C.dim : C.emberHot }}>
-              {inc.status.toUpperCase()}
+            <span style={{ fontFamily: font.mono, fontSize: 9.5, color: C.dim }}>
+              {count} fire{count === 1 ? "" : "s"}
             </span>
           </div>
-          <div style={{ fontFamily: font.mono, fontSize: 9.5, color: C.dim, marginTop: 3 }}>
-            {inc.county ? `${inc.county} County · ` : ""}
-            {inc.fact_count} facts · first seen {fmtDate(inc.created_at)} ·{" "}
-            {inc.calfire_id ? "CAL FIRE" : inc.irwin_id ? "IRWIN " + inc.irwin_id.slice(0, 8) + "…" : "—"}
-          </div>
+          {!collapsed[year] &&
+            months.map(({ month, list }) => (
+              <div key={month} style={{ marginBottom: 10 }}>
+                <div style={{ fontFamily: font.mono, fontSize: 9.5, letterSpacing: 1.5, color: C.dim, margin: "0 0 5px 4px" }}>
+                  {MONTHS[month]} {year} · {list.length}
+                </div>
+                {list.map((inc) => (
+                  <div
+                    key={inc.id}
+                    className="tr-row"
+                    style={{
+                      background: C.panel,
+                      border: `1px solid ${hasActiveEvac(inc) ? C.evac + "66" : C.line}`,
+                      borderRadius: 7,
+                      padding: "9px 13px",
+                      marginBottom: 6,
+                      borderLeft: `3px solid ${inc.status === "active" ? C.emberHot : inc.status === "frozen" ? C.dim : C.warn}`,
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                      <span style={{ fontFamily: font.disp, fontSize: 15, fontWeight: 700 }}>
+                        {inc.canonical_name}
+                      </span>
+                      <span style={{ display: "flex", gap: 7, alignItems: "baseline" }}>
+                        {hasActiveEvac(inc) && (
+                          <span style={{ fontFamily: font.mono, fontSize: 8, color: C.evac, border: `1px solid ${C.evac}66`, borderRadius: 3, padding: "1px 5px" }}>
+                            EVAC
+                          </span>
+                        )}
+                        <span style={{ fontFamily: font.mono, fontSize: 9, color: inc.status === "frozen" ? C.dim : C.emberHot }}>
+                          {inc.status.toUpperCase()}
+                        </span>
+                      </span>
+                    </div>
+                    <div style={{ fontFamily: font.mono, fontSize: 9.5, color: C.dim, marginTop: 3, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {inc.county && <span>{inc.county} County</span>}
+                      {inc.acreage != null && <span>{inc.acreage.toLocaleString()} ac</span>}
+                      {inc.containment_pct != null && <span>{inc.containment_pct}% cont</span>}
+                      <span>{inc.fact_count} facts</span>
+                      <span title={`started ${fmtDate(inc.started_at ?? inc.created_at)}`}>
+                        {fmtTime(inc.started_at ?? inc.created_at)}
+                      </span>
+                      <span style={{ color: C.faint }}>
+                        {inc.calfire_id ? "CAL FIRE" : inc.irwin_id ? "IRWIN" : "operator"}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))}
         </div>
       ))}
+
+      {!tree.length && (
+        <div style={{ padding: 16, fontFamily: font.mono, fontSize: 10, color: C.faint }}>
+          {all.length ? "nothing matches these filters" : "no fires archived yet"}
+        </div>
+      )}
     </div>
   );
 }
