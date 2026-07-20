@@ -115,7 +115,8 @@ def intake(
     rows = (
         _conn(request)
         .execute(
-            f"""SELECT {FACT_COLS}, i.canonical_name AS incident_name
+            f"""SELECT {FACT_COLS}, i.canonical_name AS incident_name,
+                i.county AS incident_county
             FROM facts f JOIN sources s ON s.id = f.source_id
             LEFT JOIN incidents i ON i.id = f.incident_id
             WHERE f.tier <= ?
@@ -125,6 +126,93 @@ def intake(
         .fetchall()
     )
     return {"facts": [_fact_dict(r) for r in rows]}
+
+
+@router.get("/incidents/{incident_id}/intel")
+def get_incident_intel(request: Request, incident_id: str) -> dict:
+    """Aggregated intelligence for the OPS panel: header metrics with
+    supersession deltas, source-confidence meter, situation bullets, and
+    evac/road impacts (verbatim — the UI renders them untouched)."""
+    from toast.pipeline.intel import incident_intel
+
+    conn = _conn(request)
+    if conn.execute("SELECT 1 FROM incidents WHERE id = ?", (incident_id,)).fetchone() is None:
+        raise HTTPException(404, "incident not found")
+    return incident_intel(conn, incident_id)
+
+
+@router.get("/incidents/{incident_id}/timeline")
+def get_incident_timeline(request: Request, incident_id: str) -> dict:
+    from toast.pipeline.intel import incident_timeline
+
+    return {"timeline": incident_timeline(_conn(request), incident_id)}
+
+
+@router.post("/incidents/{incident_id}/follow")
+def follow_incident(request: Request, incident_id: str, body: dict) -> dict:
+    """Toggle the operator's ★ FOLLOW flag on an incident."""
+    followed = 1 if body.get("followed") else 0
+    cur = _conn(request).execute(
+        "UPDATE incidents SET followed = ? WHERE id = ?", (followed, incident_id)
+    )
+    if cur.rowcount == 0:
+        raise HTTPException(404, "incident not found")
+    return {"ok": True, "followed": bool(followed)}
+
+
+# ---------------- analyst notes & tasks ----------------
+
+
+@router.get("/notes")
+def list_notes(request: Request, incident_id: str | None = None) -> dict:
+    """Operator notes: incident-scoped plus global ones (incident_id NULL)."""
+    conn = _conn(request)
+    if incident_id:
+        rows = conn.execute(
+            """SELECT * FROM operator_notes
+               WHERE incident_id = ? OR incident_id IS NULL
+               ORDER BY done, created_at DESC""",
+            (incident_id,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM operator_notes ORDER BY done, created_at DESC"
+        ).fetchall()
+    return {"notes": [dict(r) for r in rows]}
+
+
+@router.post("/notes")
+def create_note(request: Request, body: dict) -> dict:
+    from toast.core.db import utcnow
+    from toast.core.ids import ulid
+
+    text = (body.get("body") or "").strip()
+    if not text:
+        raise HTTPException(400, "body required")
+    note_id = ulid()
+    _conn(request).execute(
+        "INSERT INTO operator_notes (id, incident_id, body, created_at) VALUES (?, ?, ?, ?)",
+        (note_id, body.get("incident_id"), text[:2000], utcnow()),
+    )
+    return {"ok": True, "note_id": note_id}
+
+
+@router.post("/notes/{note_id}/toggle")
+def toggle_note(request: Request, note_id: str) -> dict:
+    cur = _conn(request).execute(
+        "UPDATE operator_notes SET done = 1 - done WHERE id = ?", (note_id,)
+    )
+    if cur.rowcount == 0:
+        raise HTTPException(404, "note not found")
+    return {"ok": True}
+
+
+@router.delete("/notes/{note_id}")
+def delete_note(request: Request, note_id: str) -> dict:
+    cur = _conn(request).execute("DELETE FROM operator_notes WHERE id = ?", (note_id,))
+    if cur.rowcount == 0:
+        raise HTTPException(404, "note not found")
+    return {"ok": True}
 
 
 @router.get("/adjudication")

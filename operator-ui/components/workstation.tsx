@@ -1,28 +1,37 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
   AdjudicationItem,
   Fact,
   FireSearchResult,
+  Incident,
+  Note,
   ProbeResult,
   SourceSuggestion,
+  addNote,
   analyzeUrl,
   approveSuggestion,
   createSource,
+  deleteNote,
   dismissSuggestion,
   fetchAdjudication,
   fetchHealth,
   fetchIncidentFacts,
   fetchIncidents,
   fetchIntake,
+  fetchIntel,
+  fetchNotes,
   fetchSourceSuggestions,
   fetchSources,
+  fetchTimeline,
+  followIncident,
   importFire,
   probeSource,
   resolveAdjudication,
   searchFires,
   startResearch,
+  toggleNote,
 } from "@/lib/api";
 import { C, TIER, TIER_TITLES, confColor, font } from "@/lib/theme";
 import AlertBell from "@/components/alerts";
@@ -88,22 +97,6 @@ function Chip({
   );
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        fontFamily: font.disp,
-        fontSize: 12,
-        letterSpacing: 2,
-        color: C.dim,
-        padding: "8px 12px 4px",
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
 function FactRow({ f, showIncident }: { f: Fact; showIncident?: boolean }) {
   const superseded = f.superseded_by != null;
   return (
@@ -144,8 +137,26 @@ function FactRow({ f, showIncident }: { f: Fact; showIncident?: boolean }) {
           {showIncident && f.incident_name && (
             <span style={{ color: C.ember }}>{f.incident_name}</span>
           )}
-          <span style={{ marginLeft: "auto", color: confColor(f.confidence) }}>
-            {Math.round(f.confidence * 100)}%
+          {showIncident && f.incident_county && (
+            <span style={{ color: C.faint }}>{f.incident_county}</span>
+          )}
+          <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+            {showIncident && (
+              <span
+                title={f.supersedes ? "updates a prior value via supersession" : "first report of this fact"}
+                style={{
+                  fontSize: 7.5,
+                  letterSpacing: 1,
+                  color: f.supersedes ? C.blue : C.ok,
+                  border: `1px solid ${f.supersedes ? C.blue : C.ok}55`,
+                  borderRadius: 3,
+                  padding: "0px 4px",
+                }}
+              >
+                {f.supersedes ? "UPDATE" : "NEW"}
+              </span>
+            )}
+            <span style={{ color: confColor(f.confidence) }}>{Math.round(f.confidence * 100)}%</span>
           </span>
         </div>
         <div
@@ -293,6 +304,251 @@ function AdjudicationStrip({
   );
 }
 
+/* ---------------- incident intelligence panel ---------------- */
+
+function StatTile({ label, children, sub }: { label: string; children: ReactNode; sub?: string }) {
+  return (
+    <div style={{ background: C.bg, border: `1px solid ${C.line}`, borderRadius: 6, padding: "7px 9px", minWidth: 0 }}>
+      <div style={{ fontFamily: font.mono, fontSize: 8, color: C.faint, letterSpacing: 1 }}>{label}</div>
+      <div style={{ fontFamily: font.disp, fontSize: 17, fontWeight: 700, marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        {children}
+      </div>
+      {sub && <div style={{ fontFamily: font.mono, fontSize: 8, color: C.dim, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</div>}
+    </div>
+  );
+}
+
+function Delta({ d, invert }: { d: number | null; invert?: boolean }) {
+  if (d == null || d === 0) return null;
+  const good = invert ? d > 0 : d < 0;
+  return (
+    <span style={{ fontFamily: font.mono, fontSize: 10, color: good ? C.ok : C.emberHot, marginLeft: 5 }}>
+      {d > 0 ? "+" : ""}
+      {d.toLocaleString()}
+    </span>
+  );
+}
+
+function IntelPanel({ sel, toast }: { sel: Incident; toast: (m: string) => void }) {
+  const intel = usePolling(() => fetchIntel(sel.id), [sel.id]);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [noteText, setNoteText] = useState("");
+  const [impactOpen, setImpactOpen] = useState<"evac" | "road" | null>(null);
+
+  const refreshNotes = useCallback(async () => {
+    try {
+      setNotes(await fetchNotes(sel.id));
+    } catch {}
+  }, [sel.id]);
+  useEffect(() => {
+    refreshNotes();
+  }, [refreshNotes]);
+
+  if (!intel)
+    return <div style={{ padding: 14, fontFamily: font.mono, fontSize: 10, color: C.faint }}>loading intel…</div>;
+
+  const m = intel.metrics;
+  const conf = intel.confidence;
+  const confPct = conf.avg_confidence != null ? Math.round(conf.avg_confidence * 100) : null;
+
+  const submitNote = async () => {
+    if (!noteText.trim()) return;
+    try {
+      await addNote(noteText.trim(), sel.id);
+      setNoteText("");
+      refreshNotes();
+    } catch (e) {
+      toast(`note failed: ${e instanceof Error ? e.message : e}`);
+    }
+  };
+
+  return (
+    <div style={{ padding: "10px 11px", display: "flex", flexDirection: "column", gap: 10 }}>
+      {/* overview grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+        <StatTile label="ACRES" sub={m.acreage.source_name && `${m.acreage.source_name} · ${fmtTime(m.acreage.observed_at)}`}>
+          {m.acreage.value != null ? m.acreage.value.toLocaleString() : "—"}
+          <Delta d={m.acreage.delta} />
+        </StatTile>
+        <StatTile label="CONTAINMENT" sub={m.containment.source_name && `${m.containment.source_name} · ${fmtTime(m.containment.observed_at)}`}>
+          {m.containment.value != null ? `${m.containment.value}%` : "—"}
+          <Delta d={m.containment.delta} invert />
+        </StatTile>
+        <StatTile label="STARTED" sub={m.start ? `${m.start.source_name}` : undefined}>
+          <span style={{ fontSize: 12.5 }}>{m.start ? fmtTime(m.start.observed_at) : "—"}</span>
+        </StatTile>
+        <StatTile label="CAUSE" sub={m.cause ? m.cause.source_name : undefined}>
+          <span style={{ fontSize: 12.5 }}>{m.cause ? m.cause.content.slice(0, 40) : "under investigation"}</span>
+        </StatTile>
+      </div>
+
+      {/* source confidence meter — the signature stat */}
+      <div style={{ background: C.bg, border: `1px solid ${C.line}`, borderRadius: 6, padding: "8px 10px" }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+          <span style={{ fontFamily: font.mono, fontSize: 8, color: C.faint, letterSpacing: 1 }}>SOURCE CONFIDENCE</span>
+          <span style={{ marginLeft: "auto", fontFamily: font.mono, fontSize: 10, color: confPct != null ? confColor(conf.avg_confidence!) : C.faint }}>
+            {confPct != null ? `${confPct}%` : "no assessments yet"}
+          </span>
+        </div>
+        <div style={{ height: 5, background: C.line, borderRadius: 3, marginTop: 6, overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${confPct ?? 0}%`, background: confPct != null ? confColor(conf.avg_confidence!) : C.line, borderRadius: 3 }} />
+        </div>
+        <div style={{ fontFamily: font.mono, fontSize: 8.5, color: C.dim, marginTop: 5 }}>
+          Sources: {conf.source_count} · {conf.corroborated_facts} corroborated fact{conf.corroborated_facts === 1 ? "" : "s"} · {conf.fact_count} total
+        </div>
+      </div>
+
+      {/* evac & road impacts — counts; detail is VERBATIM, never summarized */}
+      <div style={{ display: "flex", gap: 6 }}>
+        {(["evac", "road"] as const).map((k) => (
+          <div
+            key={k}
+            onClick={() => setImpactOpen(impactOpen === k ? null : k)}
+            style={{
+              flex: 1,
+              background: intel[k].length ? C.evac + "18" : C.bg,
+              border: `1px solid ${intel[k].length ? C.evac : C.line}`,
+              borderRadius: 6,
+              padding: "6px 10px",
+              cursor: intel[k].length ? "pointer" : "default",
+              textAlign: "center",
+            }}
+          >
+            <span style={{ fontFamily: font.disp, fontSize: 16, fontWeight: 700, color: intel[k].length ? C.evac : C.dim }}>
+              {intel[k].length}
+            </span>
+            <span style={{ fontFamily: font.mono, fontSize: 8.5, color: C.dim, marginLeft: 6, letterSpacing: 1 }}>
+              {k === "evac" ? "EVACUATION" : "ROAD"} {impactOpen === k ? "▾" : ""}
+            </span>
+          </div>
+        ))}
+      </div>
+      {impactOpen && intel[impactOpen].length > 0 && (
+        <div style={{ border: `1px solid ${C.evac}55`, borderRadius: 6, padding: "8px 10px", background: C.bg }}>
+          <div style={{ fontFamily: font.mono, fontSize: 8, color: C.evac, letterSpacing: 1, marginBottom: 6 }}>
+            OFFICIAL TEXT, SHOWN EXACTLY AS RECEIVED — VERIFY WITH YOUR COUNTY OFFICIALS
+          </div>
+          {intel[impactOpen].map((f) => (
+            <div key={f.id} style={{ borderTop: `1px solid ${C.line}44`, padding: "6px 0" }}>
+              <div style={{ fontSize: 11.5, whiteSpace: "pre-wrap" }}>{f.content}</div>
+              <div style={{ fontFamily: font.mono, fontSize: 8.5, color: C.dim, marginTop: 3 }}>
+                <span style={{ color: TIER[f.tier] }}>T{f.tier}</span> {f.source_name} · {fmtTime(f.observed_at)}
+                {f.evac_status && <span style={{ color: C.evac }}> · {f.evac_status.toUpperCase()}</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* current situation */}
+      <div>
+        <div style={{ fontFamily: font.mono, fontSize: 8, color: C.faint, letterSpacing: 1, marginBottom: 4 }}>CURRENT SITUATION</div>
+        {intel.situation.length ? (
+          intel.situation.map((s) => (
+            <div key={s.kind} style={{ display: "flex", gap: 7, padding: "4px 0", fontSize: 11 }}>
+              <span style={{ color: C.ember }}>▸</span>
+              <span style={{ flex: 1 }}>
+                {s.content}
+                <span style={{ fontFamily: font.mono, fontSize: 8.5, color: C.dim, marginLeft: 6 }}>
+                  <span style={{ color: TIER[s.tier] }}>T{s.tier}</span> {s.source_name} · {fmtTime(s.observed_at)}
+                </span>
+              </span>
+            </div>
+          ))
+        ) : (
+          <div style={{ fontFamily: font.mono, fontSize: 9.5, color: C.faint }}>no situation reports yet</div>
+        )}
+      </div>
+
+      {/* analyst notes & tasks */}
+      <div>
+        <div style={{ fontFamily: font.mono, fontSize: 8, color: C.faint, letterSpacing: 1, marginBottom: 4 }}>ANALYST NOTES &amp; TASKS</div>
+        <div style={{ display: "flex", gap: 5 }}>
+          <input
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submitNote()}
+            placeholder="add a note or task…"
+            style={{ flex: 1, background: C.bg, border: `1px solid ${C.line}`, borderRadius: 4, color: C.txt, fontFamily: font.mono, fontSize: 10, padding: "5px 8px", outline: "none" }}
+          />
+          <button onClick={submitNote} style={{ background: C.ember, color: C.bg, border: "none", borderRadius: 4, fontFamily: font.disp, fontWeight: 700, fontSize: 11, padding: "0 10px", cursor: "pointer" }}>
+            +
+          </button>
+        </div>
+        {notes.map((n) => (
+          <div key={n.id} style={{ display: "flex", gap: 7, alignItems: "flex-start", padding: "4px 0", fontSize: 11, opacity: n.done ? 0.5 : 1 }}>
+            <span
+              onClick={async () => {
+                await toggleNote(n.id);
+                refreshNotes();
+              }}
+              style={{ cursor: "pointer", color: n.done ? C.ok : C.dim, fontFamily: font.mono }}
+            >
+              {n.done ? "☑" : "☐"}
+            </span>
+            <span style={{ flex: 1, textDecoration: n.done ? "line-through" : "none" }}>
+              {n.body}
+              {!n.incident_id && <span style={{ fontFamily: font.mono, fontSize: 8, color: C.faint, marginLeft: 5 }}>GLOBAL</span>}
+            </span>
+            <span
+              onClick={async () => {
+                await deleteNote(n.id);
+                refreshNotes();
+              }}
+              title="delete note"
+              style={{ cursor: "pointer", color: C.faint, fontFamily: font.mono, fontSize: 10 }}
+            >
+              ✕
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TimelinePanel({ incidentId }: { incidentId: string }) {
+  const tl = usePolling(() => fetchTimeline(incidentId), [incidentId]);
+  if (!tl)
+    return <div style={{ padding: 14, fontFamily: font.mono, fontSize: 10, color: C.faint }}>loading timeline…</div>;
+  return (
+    <div style={{ padding: "8px 11px" }}>
+      {tl.map((e, i) => (
+        <div key={i} style={{ display: "flex", gap: 9, padding: "5px 0", borderBottom: `1px solid ${C.line}33`, opacity: e.superseded ? 0.5 : 1 }}>
+          <span style={{ fontFamily: font.mono, fontSize: 8.5, color: C.dim, width: 46, flexShrink: 0 }} title={e.at}>
+            {fmtTime(e.at)}
+          </span>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <span
+              style={{
+                fontFamily: font.mono,
+                fontSize: 8,
+                letterSpacing: 1,
+                color: e.type === "event" ? C.violet : e.tier != null ? TIER[e.tier] : C.dim,
+                border: `1px solid ${e.type === "event" ? C.violet + "66" : C.line}`,
+                borderRadius: 3,
+                padding: "1px 5px",
+                marginRight: 6,
+              }}
+            >
+              {e.label}
+            </span>
+            {e.type === "fact" ? (
+              <span style={{ fontSize: 10.5, textDecoration: e.superseded ? "line-through" : "none" }}>
+                {e.content}
+                <span style={{ fontFamily: font.mono, fontSize: 8, color: C.faint, marginLeft: 5 }}>{e.source_name}</span>
+              </span>
+            ) : (
+              <span style={{ fontFamily: font.mono, fontSize: 9.5, color: C.dim }}>by {e.actor}</span>
+            )}
+          </div>
+        </div>
+      ))}
+      {!tl.length && <div style={{ fontFamily: font.mono, fontSize: 9.5, color: C.faint }}>no history yet</div>}
+    </div>
+  );
+}
+
 /* ---------------- OPS mode ---------------- */
 
 function OpsMode({ toast }: { toast: (m: string) => void }) {
@@ -336,6 +592,20 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
 
   const sel = incidents?.find((i) => i.id === selected);
   const staleCount = facts?.filter((f) => f.stale).length ?? 0;
+  const [panelTab, setPanelTab] = useState<"intel" | "ledger" | "timeline">("intel");
+  const [followOverride, setFollowOverride] = useState<Record<string, boolean>>({});
+  const isFollowed = sel ? (followOverride[sel.id] ?? !!sel.followed) : false;
+  const toggleFollow = async () => {
+    if (!sel) return;
+    const next = !isFollowed;
+    setFollowOverride((s) => ({ ...s, [sel.id]: next }));
+    try {
+      await followIncident(sel.id, next);
+    } catch (e) {
+      setFollowOverride((s) => ({ ...s, [sel.id]: !next }));
+      toast(`follow failed: ${e instanceof Error ? e.message : e}`);
+    }
+  };
 
   return (
     <div style={{ flex: 1, display: "grid", gridTemplateColumns: "330px 1fr 340px", minHeight: 0 }}>
@@ -454,6 +724,15 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
             </div>
             {sel && (
               <span
+                onClick={toggleFollow}
+                title={isFollowed ? "following — unstar to stop" : "follow this incident"}
+                style={{ cursor: "pointer", fontSize: 15, color: isFollowed ? C.warn : C.faint, userSelect: "none" }}
+              >
+                {isFollowed ? "★" : "☆"}
+              </span>
+            )}
+            {sel && (
+              <span
                 onClick={async () => {
                   try {
                     await startResearch(
@@ -476,8 +755,33 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
             {sel ? `${sel.county ?? "?"} County · ${sel.status} · ${sel.fact_count} facts` : "select an incident"}
           </div>
         </div>
-        <SectionLabel>LEDGER · bi-temporal · append-only</SectionLabel>
+        <div style={{ display: "flex", borderBottom: `1px solid ${C.line}`, flexShrink: 0 }}>
+          {(["intel", "ledger", "timeline"] as const).map((t) => (
+            <span
+              key={t}
+              onClick={() => setPanelTab(t)}
+              style={{
+                flex: 1,
+                textAlign: "center",
+                padding: "6px 0",
+                fontFamily: font.disp,
+                fontSize: 11,
+                letterSpacing: 2,
+                fontWeight: 700,
+                cursor: "pointer",
+                color: panelTab === t ? C.ember : C.dim,
+                borderBottom: `2px solid ${panelTab === t ? C.ember : "transparent"}`,
+              }}
+            >
+              {t.toUpperCase()}
+            </span>
+          ))}
+        </div>
         <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+          {panelTab === "intel" && sel && <IntelPanel sel={sel} toast={toast} />}
+          {panelTab === "timeline" && sel && <TimelinePanel incidentId={sel.id} />}
+          {panelTab === "ledger" && (
+            <>
           {staleCount > 0 && (
             <div
               style={{
@@ -499,6 +803,8 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
           {(facts ?? []).map((f) => (
             <FactRow key={f.id} f={f} />
           ))}
+            </>
+          )}
         </div>
       </div>
     </div>

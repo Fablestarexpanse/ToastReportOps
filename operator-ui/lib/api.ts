@@ -15,12 +15,14 @@ export type Incident = {
   last_observed: string | null;
   acreage: number | null;
   containment_pct: number | null;
+  followed: number;
 };
 
 export type Fact = {
   id: string;
   incident_id: string | null;
   incident_name?: string | null;
+  incident_county?: string | null;
   source_id: string;
   source_name: string;
   tier: number;
@@ -316,6 +318,118 @@ export async function createSource(body: {
     throw new Error(String(detail));
   }
   return res.json();
+}
+
+export type MetricValue = {
+  value: number | null;
+  prev: number | null;
+  delta: number | null;
+  observed_at: string | null;
+  source_name?: string;
+  tier?: number;
+};
+
+export type TextMetric = {
+  content: string;
+  observed_at: string;
+  source_name: string;
+  tier: number;
+} | null;
+
+export type ImpactFact = {
+  id: string;
+  content: string;
+  evac_status: string | null;
+  observed_at: string;
+  tier: number;
+  structured: string;
+  source_name: string;
+};
+
+export type IncidentIntel = {
+  metrics: {
+    acreage: MetricValue;
+    containment: MetricValue;
+    start: TextMetric;
+    cause: TextMetric;
+  };
+  confidence: {
+    avg_confidence: number | null;
+    source_count: number;
+    corroborated_facts: number;
+    fact_count: number;
+  };
+  situation: {
+    kind: string;
+    content: string;
+    observed_at: string;
+    source_name: string;
+    tier: number;
+    confidence: number;
+  }[];
+  evac: ImpactFact[];
+  road: ImpactFact[];
+};
+
+export type TimelineEntry = {
+  at: string;
+  type: "event" | "fact";
+  label: string;
+  content?: string;
+  tier?: number;
+  source_name?: string;
+  superseded?: boolean;
+  detail?: string;
+  actor?: string;
+};
+
+export type Note = {
+  id: string;
+  incident_id: string | null;
+  body: string;
+  done: number;
+  created_at: string;
+};
+
+export async function fetchIntel(incidentId: string): Promise<IncidentIntel> {
+  return get<IncidentIntel>(`/incidents/${incidentId}/intel`);
+}
+
+export async function fetchTimeline(incidentId: string): Promise<TimelineEntry[]> {
+  const d = await get<{ timeline: TimelineEntry[] }>(`/incidents/${incidentId}/timeline`);
+  return d.timeline;
+}
+
+export async function followIncident(incidentId: string, followed: boolean): Promise<void> {
+  const res = await fetch(`/api/incidents/${incidentId}/follow`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ followed }),
+  });
+  if (!res.ok) throw new Error(`follow failed (${res.status})`);
+}
+
+export async function fetchNotes(incidentId?: string): Promise<Note[]> {
+  const q = incidentId ? `?incident_id=${incidentId}` : "";
+  const d = await get<{ notes: Note[] }>(`/notes${q}`);
+  return d.notes;
+}
+
+export async function addNote(body: string, incidentId?: string): Promise<void> {
+  const res = await fetch("/api/notes", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ body, incident_id: incidentId }),
+  });
+  if (!res.ok) throw new Error(`note failed (${res.status})`);
+}
+
+export async function toggleNote(id: string): Promise<void> {
+  await fetch(`/api/notes/${id}/toggle`, { method: "POST" });
+}
+
+export async function deleteNote(id: string): Promise<void> {
+  await fetch(`/api/notes/${id}`, { method: "DELETE" });
 }
 
 export type SourceSuggestion = {
