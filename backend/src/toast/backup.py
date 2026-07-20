@@ -62,6 +62,19 @@ def _strip_secrets(snapshot: Path) -> int:
     OPTIONS (documented in docs/BACKUP-RESTORE.md)."""
     conn = sqlite3.connect(snapshot)
     try:
+        # A credential can also be sitting in jobs.last_error: an error string
+        # may quote the URL it failed on, and some APIs put the key in that URL.
+        # The fetcher redacts at the source now; this scrubs anything already
+        # recorded, and anything a future writer forgets. Do it BEFORE the
+        # credentials rows are deleted — that table is where the values are.
+        scrubbed = 0
+        for (value,) in conn.execute("SELECT value FROM credentials").fetchall():
+            if value and len(value) >= 8:  # short strings are not keys
+                scrubbed += conn.execute(
+                    "UPDATE jobs SET last_error = replace(last_error, ?, '[REDACTED]')"
+                    " WHERE last_error LIKE '%' || ? || '%'",
+                    (value, value),
+                ).rowcount
         removed = conn.execute("DELETE FROM credentials").rowcount
         conn.commit()
         conn.execute("VACUUM")  # ensure the values are not recoverable as free pages
@@ -70,8 +83,10 @@ def _strip_secrets(snapshot: Path) -> int:
         return 0  # snapshot predates the credentials table
     finally:
         conn.close()
-    if removed:
-        get_logger("backup").info("snapshot_secrets_stripped", removed=removed)
+    if removed or scrubbed:
+        get_logger("backup").info(
+            "snapshot_secrets_stripped", removed=removed, job_errors_scrubbed=scrubbed
+        )
     return removed
 
 

@@ -35,8 +35,11 @@ class FirmsAdapter(RawCapture):
         bbox = config.get("bbox", CA_BBOX)
         days = int(config.get("days", 1))
         url = f"https://firms.modaps.eosdis.nasa.gov/api/area/csv/{map_key}/{dataset}/{bbox}/{days}"
-        # record_url=False: the FIRMS URL embeds the map key — never store it
-        body, _ctype = self.fetch_captured(url, record_url=False)
+        # The map key lives in the URL PATH, so two protections are needed:
+        # record_url=False keeps it out of raw_blobs, and secrets= keeps it out
+        # of any FetchError string — which the worker logs and jobs.fail writes
+        # into jobs.last_error, a table the nightly snapshot ships offsite.
+        body, _ctype = self.fetch_captured(url, record_url=False, secrets=(map_key,))
 
         envelopes: list[Envelope] = []
         reader = csv.DictReader(io.StringIO(body.decode("utf-8", errors="replace")))
