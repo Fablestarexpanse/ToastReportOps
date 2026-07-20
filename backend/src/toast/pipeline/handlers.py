@@ -36,6 +36,13 @@ def poll_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
 
     config = json.loads(source["config"])
     config["source_id"] = source["id"]
+    # inject an operator-entered credential so keys added in OPTIONS work
+    # without editing .env or restarting; never logged (see core/logging.py)
+    if key_env := config.get("map_key_env"):
+        from toast.core.credentials import get_credential
+
+        if value := get_credential(conn, key_env):
+            config["map_key"] = value
     envelopes, next_cursor = adapter.poll(config, source["cursor"])
 
     # preserve raw responses first; single-response polls stamp every envelope
@@ -316,8 +323,10 @@ def publish_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     # short version for length-capped channels, full post for the rest
     text = short_text if channel in ("bluesky", "x") else post_text
 
+    from toast.core.credentials import settings_with_credentials
+
     try:
-        receipt = get_publisher(channel).publish(text)
+        receipt = get_publisher(channel, settings_with_credentials(conn)).publish(text)
     except PublishError as exc:
         conn.execute(
             "UPDATE publications SET status = 'failed', receipt = ? WHERE id = ?",

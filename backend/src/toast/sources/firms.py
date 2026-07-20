@@ -23,10 +23,14 @@ DEFAULT_DATASET = "VIIRS_SNPP_NRT"
 @register("firms")
 class FirmsAdapter(RawCapture):
     def poll(self, config: dict[str, Any], cursor: str | None) -> tuple[list[Envelope], str | None]:
+        # the poll handler injects an operator-entered key from OPTIONS; the
+        # environment remains the fallback for .env-configured installs
         key_env = config.get("map_key_env", "FIRMS_MAP_KEY")
-        map_key = os.environ.get(key_env, "")
+        map_key = config.get("map_key") or os.environ.get(key_env, "")
         if not map_key:
-            raise RuntimeError(f"FIRMS map key missing: set {key_env} in .env")
+            raise RuntimeError(
+                f"FIRMS map key missing: add it in OPTIONS → API KEYS, or set {key_env} in .env"
+            )
         dataset = config.get("dataset", DEFAULT_DATASET)
         bbox = config.get("bbox", CA_BBOX)
         days = int(config.get("days", 1))

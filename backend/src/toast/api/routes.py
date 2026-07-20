@@ -175,7 +175,7 @@ def get_backups(request: Request) -> dict:
     configured — local-only copies die with the machine."""
     from toast.backup import backup_status, list_snapshots
 
-    return {**backup_status(), "all": list_snapshots()[:10]}
+    return {**backup_status(conn=_conn(request)), "all": list_snapshots()[:10]}
 
 
 @router.post("/backups/run")
@@ -187,6 +187,49 @@ def run_backup_now(request: Request) -> dict:
         return run_backup(_conn(request))
     except Exception as exc:  # surfaced to the operator, never silent
         raise HTTPException(500, f"backup failed: {exc}") from exc
+
+
+# ---------------- API credentials ----------------
+
+
+@router.get("/credentials")
+def list_credentials(request: Request) -> dict:
+    """Service registry + configuration/connection status.
+
+    Deliberately returns NO secret values — only whether each field is set, a
+    masked hint, and the last test result. There is no read-back endpoint."""
+    from toast.core.credentials import service_status
+
+    return {"services": service_status(_conn(request))}
+
+
+@router.put("/credentials")
+def put_credentials(request: Request, body: dict) -> dict:
+    """Store credentials. An empty value clears it (falling back to .env)."""
+    from toast.core.credentials import service_status, set_credential
+
+    updates = body.get("credentials")
+    if not isinstance(updates, dict):
+        raise HTTPException(400, "credentials object required")
+    conn = _conn(request)
+    try:
+        for name, value in updates.items():
+            set_credential(conn, str(name), "" if value is None else str(value))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "services": service_status(conn)}
+
+
+@router.post("/credentials/{service}/test")
+def test_credentials(request: Request, service: str) -> dict:
+    """Make the cheapest real call the provider offers and report the verdict.
+    Read-only: nothing is posted, uploaded or published while testing."""
+    from toast.core.credcheck import run_check
+
+    try:
+        return run_check(_conn(request), service)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
 
 
 # ---------------- operator settings ----------------
@@ -757,9 +800,10 @@ def transition_draft(request: Request, draft_id: str, body: dict) -> dict:
         # SOCIAL drafts additionally fan out to every credentialed channel.
         channels: list[str] = []
         if row["kind"] == "social":
+            from toast.core.credentials import settings_with_credentials
             from toast.publishers import configured_publishers
 
-            for p in configured_publishers():
+            for p in configured_publishers(settings_with_credentials(conn)):
                 pub_id = ulid()
                 conn.execute(
                     "INSERT INTO publications (id, draft_id, channel, status)"

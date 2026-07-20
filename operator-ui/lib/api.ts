@@ -556,6 +556,59 @@ export async function recomputeSourceStats(): Promise<{ computed: number; sugges
   return res.json();
 }
 
+/* Credentials. The API never returns secret values — only whether a field is
+   set, a masked hint, and the last connection test. */
+export type CredentialField = {
+  name: string;
+  label: string;
+  secret: boolean;
+  placeholder: string;
+  set: boolean;
+  masked: string;
+  source: "operator" | "env" | null;
+};
+
+export type CredentialService = {
+  id: string;
+  label: string;
+  why: string;
+  signup_url: string;
+  signup_label: string;
+  notes: string;
+  testable: boolean;
+  configured: boolean;
+  fields: CredentialField[];
+  status: "ok" | "rejected" | "error" | "unconfigured" | "unchecked";
+  message: string | null;
+  checked_at: string | null;
+};
+
+export const fetchCredentials = () =>
+  get<{ services: CredentialService[] }>("/credentials").then((r) => r.services);
+
+export async function saveCredentials(
+  credentials: Record<string, string>,
+): Promise<CredentialService[]> {
+  const res = await fetch("/api/credentials", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ credentials }),
+  });
+  if (!res.ok) {
+    const detail = await res.json().then((d) => d.detail).catch(() => res.status);
+    throw new Error(String(detail));
+  }
+  return res.json().then((d) => d.services);
+}
+
+export async function testCredentials(
+  service: string,
+): Promise<{ status: string; message: string | null }> {
+  const res = await fetch(`/api/credentials/${service}/test`, { method: "POST" });
+  if (!res.ok) throw new Error(`test failed (${res.status})`);
+  return res.json();
+}
+
 export type BackupStatus = {
   snapshots: number;
   latest_at: string | null;

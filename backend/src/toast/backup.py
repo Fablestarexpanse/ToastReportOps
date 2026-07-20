@@ -53,6 +53,28 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+def _strip_secrets(snapshot: Path) -> int:
+    """Remove API credentials from a snapshot before it can leave the machine.
+
+    Snapshots are uploaded to B2. Credentials must not ride along: a backup of
+    the ledger is not a backup of the operator's keys. A restore therefore
+    comes back with no credentials, which is intended — re-enter them in
+    OPTIONS (documented in docs/BACKUP-RESTORE.md)."""
+    conn = sqlite3.connect(snapshot)
+    try:
+        removed = conn.execute("DELETE FROM credentials").rowcount
+        conn.commit()
+        conn.execute("VACUUM")  # ensure the values are not recoverable as free pages
+        conn.commit()
+    except sqlite3.OperationalError:
+        return 0  # snapshot predates the credentials table
+    finally:
+        conn.close()
+    if removed:
+        get_logger("backup").info("snapshot_secrets_stripped", removed=removed)
+    return removed
+
+
 def verify_snapshot(path: Path) -> dict[str, Any]:
     """Open a snapshot and prove it is restorable: integrity check + counts.
 
@@ -91,6 +113,7 @@ def create_snapshot(
         raw_path.unlink()
     # sqlite needs a literal path here; the value is ours, never user input
     conn.execute("VACUUM INTO ?", (str(raw_path),))
+    _strip_secrets(raw_path)
 
     verification = verify_snapshot(raw_path)
     if not verification["ok"]:
@@ -165,8 +188,14 @@ def list_snapshots(settings: Settings | None = None) -> list[dict[str, Any]]:
     return out
 
 
-def backup_status(settings: Settings | None = None) -> dict[str, Any]:
+def backup_status(
+    settings: Settings | None = None, conn: sqlite3.Connection | None = None
+) -> dict[str, Any]:
     """What the operator needs to know: is there a recent, verified, OFFSITE copy?"""
+    if settings is None and conn is not None:
+        from toast.core.credentials import settings_with_credentials
+
+        settings = settings_with_credentials(conn)
     s = settings or Settings()
     snaps = list_snapshots(s)
     offsite = bool(s.b2_key_id and s.b2_application_key and s.b2_bucket)
@@ -184,7 +213,9 @@ def backup_status(settings: Settings | None = None) -> dict[str, Any]:
 
 def run_backup(conn: sqlite3.Connection, settings: Settings | None = None) -> dict[str, Any]:
     """Full nightly cycle: snapshot → verify → prune → offsite (when configured)."""
-    s = settings or Settings()
+    from toast.core.credentials import settings_with_credentials
+
+    s = settings or settings_with_credentials(conn)
     manifest = create_snapshot(conn, s)
     pruned = prune_snapshots(s)
     uploaded = None

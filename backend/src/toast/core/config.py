@@ -47,8 +47,15 @@ class Settings(BaseSettings):
     ldr_username: str = "toast-operator"
     ldr_password: str = "change-me-local-research"
 
-    # social publishing credentials (all optional — a channel is active only
-    # when its credentials are present; see docs/API-KEYS.md)
+    # ---- external service credentials ----
+    # All optional. A capability is active only when its credentials exist.
+    # Operator-entered values (OPTIONS → API KEYS) override these at runtime;
+    # see toast/core/credentials.py.
+    firms_map_key: str = ""
+    airnow_api_key: str = ""
+    cloudflare_api_token: str = ""
+    cf_pages_project: str = ""
+
     bluesky_handle: str = ""
     bluesky_app_password: str = ""
     x_api_key: str = ""

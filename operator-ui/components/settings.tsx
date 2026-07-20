@@ -9,6 +9,7 @@ import {
   runBackup,
   saveSettings,
 } from "@/lib/api";
+import CredentialsPanel from "@/components/credentials";
 import { C, font } from "@/lib/theme";
 import { TzMode, age, fmtStamp, setTzMode } from "@/lib/time";
 
@@ -311,6 +312,11 @@ export default function SettingsPanel({
                 ⚠ model list unavailable — is Ollama running? free-text entry still works.
               </div>
             )}
+
+            <div style={{ fontFamily: font.disp, fontSize: 11, letterSpacing: 2, color: C.ember, marginTop: 16 }}>
+              API KEYS &amp; SERVICES
+            </div>
+            <CredentialsPanel toast={toast} />
 
             <div style={{ fontFamily: font.disp, fontSize: 11, letterSpacing: 2, color: C.ember, marginTop: 14 }}>
               BACKUPS
