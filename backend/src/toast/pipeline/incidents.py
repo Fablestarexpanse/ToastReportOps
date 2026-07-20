@@ -17,6 +17,69 @@ from toast.core.ids import ulid
 ATTACH_RADIUS_KM = 15.0
 
 
+# ref columns an adapter may key an incident on — allowlisted (never user input)
+# so they are safe to interpolate into SQL.
+REF_COLUMNS = {"irwin_id", "calfire_id"}
+# a fire that has gone inactive should not be flipped back to active by a stale
+# poll; only these forward transitions are applied on update.
+STATUS_RANK = {"candidate": 0, "active": 1, "contained": 2, "frozen": 3}
+
+
+def upsert_incident(
+    conn: sqlite3.Connection,
+    *,
+    ref_col: str,
+    ref_id: str,
+    name: str,
+    lat: float | None,
+    lon: float | None,
+    county: str | None,
+    incident_type: str | None = None,
+    status: str = "active",
+    via: str = "unknown",
+) -> tuple[str, bool]:
+    """Upsert an incident keyed on an official reference column.
+
+    Returns (incident_id, created). On update, fields are refreshed and status
+    only advances (active→contained→frozen), never regresses on a stale poll.
+    """
+    if ref_col not in REF_COLUMNS:
+        raise ValueError(f"unknown ref_col {ref_col!r}")
+    now = utcnow()
+    row = conn.execute(
+        f"SELECT id, status FROM incidents WHERE {ref_col} = ?", (ref_id,)
+    ).fetchone()
+    if row is not None:
+        new_status = status if STATUS_RANK[status] > STATUS_RANK[row["status"]] else row["status"]
+        if new_status != row["status"]:
+            conn.execute(
+                """INSERT INTO incident_events (id, incident_id, event, detail, actor, at)
+                   VALUES (?, ?, 'status_change', ?, 'system', ?)""",
+                (ulid(), row["id"], f'{{"to": "{new_status}", "via": "{via}"}}', now),
+            )
+        conn.execute(
+            """UPDATE incidents SET canonical_name = ?, lat = COALESCE(?, lat),
+               lon = COALESCE(?, lon), county = COALESCE(?, county),
+               incident_type = COALESCE(?, incident_type), status = ?, updated_at = ?
+               WHERE id = ?""",
+            (name, lat, lon, county, incident_type, new_status, now, row["id"]),
+        )
+        return row["id"], False
+    incident_id = ulid()
+    conn.execute(
+        f"""INSERT INTO incidents (id, canonical_name, status, lat, lon, county, {ref_col},
+                                   incident_type, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (incident_id, name, status, lat, lon, county, ref_id, incident_type, now, now),
+    )
+    conn.execute(
+        """INSERT INTO incident_events (id, incident_id, event, detail, actor, at)
+           VALUES (?, ?, 'created', ?, 'system', ?)""",
+        (ulid(), incident_id, f'{{"via": "{via}"}}', now),
+    )
+    return incident_id, True
+
+
 def upsert_incident_by_irwin(
     conn: sqlite3.Connection,
     *,
@@ -26,32 +89,21 @@ def upsert_incident_by_irwin(
     lon: float | None,
     county: str | None,
     incident_type: str | None = None,
+    status: str = "active",
 ) -> tuple[str, bool]:
-    """Returns (incident_id, created)."""
-    row = conn.execute("SELECT id FROM incidents WHERE irwin_id = ?", (irwin_id,)).fetchone()
-    now = utcnow()
-    if row is not None:
-        conn.execute(
-            """UPDATE incidents SET canonical_name = ?, lat = COALESCE(?, lat),
-               lon = COALESCE(?, lon), county = COALESCE(?, county),
-               incident_type = COALESCE(?, incident_type), updated_at = ?
-               WHERE id = ?""",
-            (name, lat, lon, county, incident_type, now, row["id"]),
-        )
-        return row["id"], False
-    incident_id = ulid()
-    conn.execute(
-        """INSERT INTO incidents (id, canonical_name, status, lat, lon, county, irwin_id,
-                                  incident_type, created_at, updated_at)
-           VALUES (?, ?, 'active', ?, ?, ?, ?, ?, ?, ?)""",
-        (incident_id, name, lat, lon, county, irwin_id, incident_type, now, now),
+    """Back-compat wrapper for WFIGS-keyed incidents."""
+    return upsert_incident(
+        conn,
+        ref_col="irwin_id",
+        ref_id=irwin_id,
+        name=name,
+        lat=lat,
+        lon=lon,
+        county=county,
+        incident_type=incident_type,
+        status=status,
+        via="wfigs",
     )
-    conn.execute(
-        """INSERT INTO incident_events (id, incident_id, event, detail, actor, at)
-           VALUES (?, ?, 'created', '{"via": "wfigs"}', 'system', ?)""",
-        (ulid(), incident_id, now),
-    )
-    return incident_id, True
 
 
 def set_first_detection(conn: sqlite3.Connection, incident_id: str, fact_id: str) -> None:

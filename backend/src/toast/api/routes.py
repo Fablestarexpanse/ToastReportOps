@@ -205,6 +205,36 @@ def analyze(request: Request, body: dict) -> dict:
         raise HTTPException(503, f"LLM unavailable: {exc}") from exc
 
 
+@router.get("/search/fires")
+def search_fires_route(request: Request, q: str = "", year: int | None = None) -> dict:
+    """Search the external CAL FIRE catalog for historical fires (read-only)."""
+    from toast.core.fetch import FetchError
+    from toast.pipeline.fire_search import search_fires
+
+    try:
+        return {"results": search_fires(_conn(request), q, year=year)}
+    except FetchError as exc:
+        raise HTTPException(502, f"CAL FIRE catalog unavailable: {exc}") from exc
+
+
+@router.post("/import/fire")
+def import_fire_route(request: Request, body: dict) -> dict:
+    """Import one historical fire (by CAL FIRE ref_id) into the ledger."""
+    from toast.core.fetch import FetchError
+    from toast.pipeline.fire_search import import_fire
+
+    ref_id = (body.get("ref_id") or "").strip()
+    if not ref_id:
+        raise HTTPException(400, "ref_id required")
+    try:
+        result = import_fire(_conn(request), ref_id)
+    except FetchError as exc:
+        raise HTTPException(502, f"CAL FIRE catalog unavailable: {exc}") from exc
+    if not result.get("imported") and result.get("reason") == "not found in CAL FIRE catalog":
+        raise HTTPException(404, "fire not found in CAL FIRE catalog")
+    return result
+
+
 @router.get("/sources")
 def list_sources(request: Request) -> dict:
     rows = (

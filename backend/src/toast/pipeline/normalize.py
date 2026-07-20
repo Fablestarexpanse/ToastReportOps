@@ -52,18 +52,31 @@ def normalize_envelope(conn: sqlite3.Connection, envelope_id: str) -> list[str]:
 
 
 def _normalize_report(conn, payload, observed, common) -> list[str]:
-    irwin_id = payload.get("irwin_id")
     name = (payload.get("name") or "UNNAMED").strip()
-    if not irwin_id:
+    # ref_type/ref_id are the official cross-ref; fall back to legacy irwin_id.
+    ref_type = payload.get("ref_type") or ("wfigs" if payload.get("irwin_id") else None)
+    ref_id = payload.get("ref_id") or payload.get("irwin_id")
+    if not ref_id:
         return []
-    incident_id, created = inc.upsert_incident_by_irwin(
+    ref_col = "calfire_id" if ref_type == "calfire" else "irwin_id"
+    # Status from the source: CAL FIRE reports is_active; WFIGS has none (assume
+    # active). Historical imports pass is_active=false → contained.
+    if "is_active" in payload:
+        status = "active" if payload["is_active"] else "contained"
+    else:
+        status = "active"
+
+    incident_id, created = inc.upsert_incident(
         conn,
-        irwin_id=irwin_id,
+        ref_col=ref_col,
+        ref_id=ref_id,
         name=name,
         lat=payload.get("lat"),
         lon=payload.get("lon"),
         county=payload.get("county"),
         incident_type=payload.get("type"),
+        status=status,
+        via=ref_type or "wfigs",
     )
     facts: list[str] = []
     if created:
@@ -77,7 +90,7 @@ def _normalize_report(conn, payload, observed, common) -> list[str]:
             lat=payload.get("lat"),
             lon=payload.get("lon"),
             geo_method="source_fixed" if payload.get("lat") is not None else None,
-            structured={"irwin_id": irwin_id, "type": payload.get("type")},
+            structured={"ref_type": ref_type, "ref_id": ref_id, "type": payload.get("type")},
             **common,
         )
         inc.set_first_detection(conn, incident_id, fact_id)

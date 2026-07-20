@@ -37,4 +37,4 @@ def get_adapter(name: str) -> SourceAdapter | None:
 
 def load_builtin_adapters() -> None:
     """Import bundled adapter modules so their @register decorators run."""
-    from toast.sources import firms, nws_cap, wfigs  # noqa: F401
+    from toast.sources import calfire, firms, nws_cap, wfigs  # noqa: F401

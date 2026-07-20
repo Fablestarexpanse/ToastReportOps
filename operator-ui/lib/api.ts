@@ -8,6 +8,7 @@ export type Incident = {
   lon: number | null;
   county: string | null;
   irwin_id: string | null;
+  calfire_id: string | null;
   created_at: string;
   updated_at: string;
   fact_count: number;
@@ -113,6 +114,39 @@ export async function analyzeUrl(url: string): Promise<AnalyzeResult> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url }),
+  });
+  if (!res.ok) {
+    const detail = await res.json().then((d) => d.detail).catch(() => res.status);
+    throw new Error(String(detail));
+  }
+  return res.json();
+}
+
+export type FireSearchResult = {
+  ref_type: string;
+  ref_id: string;
+  name: string;
+  county: string | null;
+  acreage: number | null;
+  containment_pct: number | null;
+  year: string | null;
+  started_at: string | null;
+  is_active: boolean;
+  url: string | null;
+  already_in_ledger: boolean;
+};
+
+export const searchFires = (q: string, year?: number) => {
+  const params = new URLSearchParams({ q });
+  if (year) params.set("year", String(year));
+  return get<{ results: FireSearchResult[] }>(`/search/fires?${params}`).then((r) => r.results);
+};
+
+export async function importFire(refId: string): Promise<{ name: string; status: string; facts: number }> {
+  const res = await fetch("/api/import/fire", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ref_id: refId }),
   });
   if (!res.ok) {
     const detail = await res.json().then((d) => d.detail).catch(() => res.status);

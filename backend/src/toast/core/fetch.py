@@ -56,17 +56,18 @@ def fetch(
     accept_types: tuple[str, ...] = (),
     max_bytes: int = MAX_BYTES,
     timeout_s: float = TIMEOUT_S,
+    headers: dict[str, str] | None = None,
 ) -> tuple[bytes, str]:
     """GET url with SSRF/size/time/content-type guards.
 
     Returns (body, content_type). Redirects are followed manually so every hop
-    passes the public-host check.
+    passes the public-host check. `headers` overlays the default User-Agent
+    (some official APIs reject non-browser UAs).
     """
     body = b""
     content_type = ""
-    with httpx.Client(
-        timeout=timeout_s, follow_redirects=False, headers={"User-Agent": USER_AGENT}
-    ) as client:
+    merged_headers = {"User-Agent": USER_AGENT, **(headers or {})}
+    with httpx.Client(timeout=timeout_s, follow_redirects=False, headers=merged_headers) as client:
         current = url
         for _hop in range(5):
             _assert_public_host(current)

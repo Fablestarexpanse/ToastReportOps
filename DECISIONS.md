@@ -2,6 +2,29 @@
 
 Architectural decision log. Newest first. Each entry: context → decision → why.
 
+## 2026-07-19 — Active-only ingest + historical search
+
+- **CAL FIRE incidents API is the authoritative active-fire source**
+  (`incidents.fire.ca.gov/.../IncidentApi/List?inactive=false`) — exactly the
+  fires fire.ca.gov lists as active (~16), vs. WFIGS's whole current-year backlog
+  (~83). The `calfire` adapter is the default poller; **WFIGS is seeded disabled**
+  and kept only for the ARCHIVE search/import flow.
+- **Incident status is derived from the source, not hardcoded.** CAL FIRE's
+  `IsActive` maps active→`active`, inactive→`contained`. `upsert_incident` was
+  generalized to key on an allowlisted ref column (`calfire_id`|`irwin_id`) and to
+  **advance status only** (active→contained→frozen), so a stale poll can't flip a
+  contained fire back to active.
+- **Old fires never auto-ingest.** Historical fires enter only via operator action:
+  ARCHIVE search (`/search/fires`, read-only, flags already-in-ledger) → import
+  (`/import/fire`) which runs the fire through the normal pipeline as a
+  `contained` incident. No bespoke write path.
+- **`calfire_id` added** (migration 0005, unique partial index) since CAL FIRE
+  keys on `UniqueId`, not IrwinID; incidents can carry either/both official refs.
+- **Safe fetcher gained a `headers` override** — CAL FIRE rejects non-browser UAs.
+- Root cause of the "old fires everywhere" bug: WFIGS had no active filter and
+  [`upsert_incident_by_irwin`](backend/src/toast/pipeline/incidents.py) hardcoded
+  `status='active'`. Both fixed; dev DB reset + re-synced clean.
+
 ## 2026-07-19 — Phase 2 AI sifting
 
 - **Local LLM: Ollama + qwen3:14b** (~9GB q4) for extraction, nomic-embed-text

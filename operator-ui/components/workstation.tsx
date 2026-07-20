@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AdjudicationItem,
   Fact,
+  FireSearchResult,
   analyzeUrl,
   fetchAdjudication,
   fetchHealth,
@@ -11,7 +12,9 @@ import {
   fetchIncidents,
   fetchIntake,
   fetchSources,
+  importFire,
   resolveAdjudication,
+  searchFires,
 } from "@/lib/api";
 import { C, TIER, TIER_TITLES, confColor, font } from "@/lib/theme";
 
@@ -543,18 +546,167 @@ function SourcesMode() {
   );
 }
 
+/* ---------------- historical fire search ---------------- */
+
+function FireSearch({ toast }: { toast: (m: string) => void }) {
+  const [q, setQ] = useState("");
+  const [year, setYear] = useState("");
+  const [results, setResults] = useState<FireSearchResult[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [importing, setImporting] = useState<Record<string, boolean>>({});
+  const [imported, setImported] = useState<Record<string, boolean>>({});
+
+  const run = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      setResults(await searchFires(q.trim(), year ? Number(year) : undefined));
+    } catch (e) {
+      toast(`search failed: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doImport = async (r: FireSearchResult) => {
+    setImporting((s) => ({ ...s, [r.ref_id]: true }));
+    try {
+      const res = await importFire(r.ref_id);
+      setImported((s) => ({ ...s, [r.ref_id]: true }));
+      toast(`imported ${res.name} (${res.status}, ${res.facts} facts)`);
+    } catch (e) {
+      toast(`import failed: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setImporting((s) => ({ ...s, [r.ref_id]: false }));
+    }
+  };
+
+  return (
+    <div style={{ border: `1px solid ${C.line}`, borderRadius: 8, background: C.panel, marginBottom: 14 }}>
+      <div style={{ display: "flex", gap: 6, padding: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <span style={{ fontFamily: font.disp, fontSize: 13, letterSpacing: 1.5, fontWeight: 700, color: C.ember }}>
+          SEARCH HISTORICAL FIRES
+        </span>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && run()}
+          placeholder="fire name or county (CAL FIRE closed incidents)…"
+          style={{
+            flex: 1,
+            minWidth: 180,
+            background: C.bg,
+            border: `1px solid ${C.line}`,
+            borderRadius: 5,
+            color: C.txt,
+            fontFamily: font.mono,
+            fontSize: 10.5,
+            padding: "6px 8px",
+            outline: "none",
+          }}
+        />
+        <input
+          value={year}
+          onChange={(e) => setYear(e.target.value.replace(/\D/g, "").slice(0, 4))}
+          placeholder="year"
+          style={{
+            width: 56,
+            background: C.bg,
+            border: `1px solid ${C.line}`,
+            borderRadius: 5,
+            color: C.txt,
+            fontFamily: font.mono,
+            fontSize: 10.5,
+            padding: "6px 8px",
+            outline: "none",
+          }}
+        />
+        <button
+          onClick={run}
+          style={{
+            background: busy ? C.faint : C.ember,
+            color: C.bg,
+            border: "none",
+            borderRadius: 5,
+            fontFamily: font.disp,
+            fontWeight: 700,
+            fontSize: 12,
+            letterSpacing: 1,
+            padding: "0 14px",
+            cursor: "pointer",
+          }}
+        >
+          {busy ? "…" : "SEARCH"}
+        </button>
+      </div>
+      {results !== null && (
+        <div style={{ borderTop: `1px solid ${C.line}`, maxHeight: 260, overflowY: "auto" }}>
+          {!results.length && (
+            <div style={{ padding: 12, fontFamily: font.mono, fontSize: 10, color: C.faint }}>
+              no matching historical fires
+            </div>
+          )}
+          {results.map((r) => {
+            const done = r.already_in_ledger || imported[r.ref_id];
+            return (
+              <div
+                key={r.ref_id}
+                className="tr-row"
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 11px", borderBottom: `1px solid ${C.line}44` }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600 }}>
+                    {r.name}
+                    {r.is_active && (
+                      <span style={{ color: C.emberHot, fontFamily: font.mono, fontSize: 8.5, marginLeft: 6 }}>ACTIVE</span>
+                    )}
+                  </div>
+                  <div style={{ fontFamily: font.mono, fontSize: 9, color: C.dim }}>
+                    {r.county ? `${r.county} County · ` : ""}
+                    {r.year ?? "—"} · {r.acreage != null ? `${r.acreage.toLocaleString()} ac` : "size ?"} ·{" "}
+                    {r.containment_pct != null ? `${r.containment_pct}% cont` : ""}
+                  </div>
+                </div>
+                <button
+                  onClick={() => !done && doImport(r)}
+                  disabled={done || importing[r.ref_id]}
+                  style={{
+                    background: done ? "transparent" : C.ok,
+                    color: done ? C.faint : C.bg,
+                    border: done ? `1px solid ${C.line}` : "none",
+                    borderRadius: 5,
+                    fontFamily: font.disp,
+                    fontWeight: 700,
+                    fontSize: 11,
+                    letterSpacing: 1,
+                    padding: "5px 12px",
+                    cursor: done ? "default" : "pointer",
+                  }}
+                >
+                  {done ? "IN LEDGER" : importing[r.ref_id] ? "…" : "IMPORT"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---------------- ARCHIVE mode ---------------- */
 
-function ArchiveMode() {
+function ArchiveMode({ toast }: { toast: (m: string) => void }) {
   const incidents = usePolling(fetchIncidents);
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: 18 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 12 }}>
         <span style={{ fontFamily: font.disp, fontSize: 22, fontWeight: 700, letterSpacing: 1 }}>ARCHIVE</span>
         <span style={{ fontFamily: font.mono, fontSize: 10, color: C.dim }}>
-          append-only ledger · frozen fires immutable · semantic search lands in Phase 2
+          append-only ledger · frozen fires immutable · import older fires below
         </span>
       </div>
+      <FireSearch toast={toast} />
       {(incidents ?? []).map((inc) => (
         <div
           key={inc.id}
@@ -577,8 +729,8 @@ function ArchiveMode() {
           </div>
           <div style={{ fontFamily: font.mono, fontSize: 9.5, color: C.dim, marginTop: 3 }}>
             {inc.county ? `${inc.county} County · ` : ""}
-            {inc.fact_count} facts · first seen {fmtDate(inc.created_at)} · IRWIN{" "}
-            {inc.irwin_id ? inc.irwin_id.slice(0, 8) + "…" : "—"}
+            {inc.fact_count} facts · first seen {fmtDate(inc.created_at)} ·{" "}
+            {inc.calfire_id ? "CAL FIRE" : inc.irwin_id ? "IRWIN " + inc.irwin_id.slice(0, 8) + "…" : "—"}
           </div>
         </div>
       ))}
@@ -696,7 +848,7 @@ export default function Workstation() {
       </div>
 
       {mode === "ops" && <OpsMode toast={toast} />}
-      {mode === "archive" && <ArchiveMode />}
+      {mode === "archive" && <ArchiveMode toast={toast} />}
       {mode === "sources" && <SourcesMode />}
 
       {toastMsg && (

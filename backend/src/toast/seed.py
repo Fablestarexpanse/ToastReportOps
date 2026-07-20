@@ -18,14 +18,29 @@ from toast.core.ids import ulid
 
 SEEDS: list[dict[str, Any]] = [
     {
+        "name": "CAL FIRE active incidents",
+        "type": "api",
+        "adapter": "calfire",
+        "tier": 1,
+        "config": {"inactive": False},
+        "schedule": "120",  # seconds
+        "enabled": 1,
+        "tos_notes": "incidents.fire.ca.gov public API; authoritative CA active list. "
+        "Reviewed 2026-07-19.",
+    },
+    {
+        # Historical/federal catalog. Disabled as a poller — it lists the entire
+        # current-year backlog with no reliable active flag. Kept available for
+        # the ARCHIVE search/import flow.
         "name": "WFIGS / IRWIN incidents",
         "type": "api",
         "adapter": "wfigs",
         "tier": 1,
         "config": {"state": "US-CA"},
         "schedule": "120",  # seconds
-        "enabled": 1,
-        "tos_notes": "Public NIFC open-data service; attribution preserved. Reviewed 2026-07-19.",
+        "enabled": 0,
+        "tos_notes": "Public NIFC open-data service; attribution preserved. Search/import only. "
+        "Reviewed 2026-07-19.",
     },
     {
         "name": "NWS CAP alerts (CA)",
