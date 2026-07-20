@@ -1,6 +1,7 @@
 "use client";
 
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   AdjudicationItem,
   Fact,
@@ -55,7 +56,17 @@ import AlertBell from "@/components/alerts";
 import AnalyticsMode from "@/components/analytics";
 import SettingsPanel, { loadDisplayPrefs, syncDisplayPrefs } from "@/components/settings";
 import { age, ageColor, fmtFull, fmtStamp, getTzMode, lag, leadTime } from "@/lib/time";
-import MapPanel from "@/components/map-panel";
+// Leaflet reads `window` at import time, so it must never be evaluated during
+// SSR — a cold server render crashed with "window is not defined" and the whole
+// page 500'd. A map cannot render server-side anyway, so load it client-only.
+const MapPanel = dynamic(() => import("@/components/map-panel"), {
+  ssr: false,
+  loading: () => (
+    <div style={{ height: "100%", background: "#10141a", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: font.mono, fontSize: 10, color: C.faint }}>
+      loading map…
+    </div>
+  ),
+});
 import NewsroomMode from "@/components/newsroom";
 import WatchMode from "@/components/watch";
 
