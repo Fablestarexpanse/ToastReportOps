@@ -1,0 +1,1478 @@
+{
+ "note": "Gold set: facts whose text names exactly one known incident, so the correct attribution is certain from the text alone. Captured from the live ledger.",
+ "captured_at": "2026-07-20",
+ "incidents": [
+  {
+   "canonical_name": "3-1 Pit Fire",
+   "county": "Lassen",
+   "lat": 40.94913,
+   "lon": -121.26181,
+   "status": "active",
+   "updated_at": "2026-07-20T03:18:04.056Z"
+  },
+  {
+   "canonical_name": "Loomis Fire",
+   "county": "Lassen",
+   "lat": 40.965833,
+   "lon": -121.154667,
+   "status": "active",
+   "updated_at": "2026-07-20T15:28:24.593Z"
+  },
+  {
+   "canonical_name": "Twain Fire",
+   "county": "Plumas",
+   "lat": 40.023958,
+   "lon": -121.064952,
+   "status": "active",
+   "updated_at": "2026-07-20T03:18:04.101Z"
+  },
+  {
+   "canonical_name": "Elephant Fire",
+   "county": "Sierra",
+   "lat": 39.707167,
+   "lon": -120.221283,
+   "status": "active",
+   "updated_at": "2026-07-20T03:18:04.123Z"
+  },
+  {
+   "canonical_name": "Wagon Fire",
+   "county": "Lassen",
+   "lat": 40.929274,
+   "lon": -121.0478,
+   "status": "active",
+   "updated_at": "2026-07-20T15:28:24.599Z"
+  },
+  {
+   "canonical_name": "Pine Fire",
+   "county": "San Bernardino",
+   "lat": 33.947715,
+   "lon": -117.675354,
+   "status": "active",
+   "updated_at": "2026-07-20T03:18:04.181Z"
+  },
+  {
+   "canonical_name": "Lynwood Fire",
+   "county": "San Bernardino",
+   "lat": 34.162375,
+   "lon": -117.242919,
+   "status": "active",
+   "updated_at": "2026-07-20T03:18:04.209Z"
+  },
+  {
+   "canonical_name": "Morgan Fire",
+   "county": "Contra Costa",
+   "lat": 37.901478,
+   "lon": -121.878855,
+   "status": "active",
+   "updated_at": "2026-07-20T03:18:04.238Z"
+  },
+  {
+   "canonical_name": "Garden Fire",
+   "county": "Sacramento",
+   "lat": 38.729288,
+   "lon": -121.600406,
+   "status": "active",
+   "updated_at": "2026-07-20T03:18:04.267Z"
+  },
+  {
+   "canonical_name": "Biscar Fire",
+   "county": "Lassen",
+   "lat": 40.61966,
+   "lon": -120.303227,
+   "status": "active",
+   "updated_at": "2026-07-20T03:18:04.290Z"
+  },
+  {
+   "canonical_name": "Brook Fire",
+   "county": "Shasta",
+   "lat": 40.696243,
+   "lon": -122.194307,
+   "status": "active",
+   "updated_at": "2026-07-20T16:01:48.467Z"
+  },
+  {
+   "canonical_name": "Sapphire Fire",
+   "county": "San Bernardino",
+   "lat": 34.403578,
+   "lon": -116.996084,
+   "status": "active",
+   "updated_at": "2026-07-20T03:18:04.340Z"
+  },
+  {
+   "canonical_name": "Miners Fire",
+   "county": "El Dorado",
+   "lat": 38.783822,
+   "lon": -121.015569,
+   "status": "active",
+   "updated_at": "2026-07-20T15:30:34.829Z"
+  },
+  {
+   "canonical_name": "Burr Fire",
+   "county": "Humboldt",
+   "lat": 40.4171,
+   "lon": -123.6188,
+   "status": "active",
+   "updated_at": "2026-07-20T03:18:04.389Z"
+  },
+  {
+   "canonical_name": "Alturas Fire",
+   "county": "Shasta",
+   "lat": 40.628595,
+   "lon": -122.254203,
+   "status": "active",
+   "updated_at": "2026-07-20T16:46:41.659Z"
+  },
+  {
+   "canonical_name": "Williams Fire",
+   "county": "Monterey",
+   "lat": 35.990011,
+   "lon": -121.022233,
+   "status": "active",
+   "updated_at": "2026-07-20T18:57:30.896Z"
+  },
+  {
+   "canonical_name": "Camp Roberts Range L5 Bob Fire",
+   "county": "San Luis Obispo",
+   "lat": 35.812177,
+   "lon": -120.7647,
+   "status": "contained",
+   "updated_at": "2026-07-20T03:19:05.494Z"
+  },
+  {
+   "canonical_name": "Chute Fire",
+   "county": "Yuba",
+   "lat": 39.350013,
+   "lon": -121.15087,
+   "status": "active",
+   "updated_at": "2026-07-20T18:22:08.805Z"
+  },
+  {
+   "canonical_name": "Mann Fire",
+   "county": "Tuolumne",
+   "lat": 37.848787,
+   "lon": -120.59758,
+   "status": "active",
+   "updated_at": "2026-07-20T17:59:16.587Z"
+  },
+  {
+   "canonical_name": "Day Fire",
+   "county": "Mariposa",
+   "lat": 37.397352,
+   "lon": -120.140486,
+   "status": "active",
+   "updated_at": "2026-07-20T18:49:10.756Z"
+  }
+ ],
+ "facts": [
+  {
+   "content": "3-1 Pit Fire reported by official source in Lassen County",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": 40.94913,
+   "lon": -121.26181,
+   "observed_at": "2026-07-07T20:35:02Z",
+   "tier": 1,
+   "truth_incident": "3-1 Pit Fire"
+  },
+  {
+   "content": "3-1 Pit Fire mapped at 1,055 acres",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T00:46:27Z",
+   "tier": 1,
+   "truth_incident": "3-1 Pit Fire"
+  },
+  {
+   "content": "3-1 Pit Fire 95% contained",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T00:46:27Z",
+   "tier": 1,
+   "truth_incident": "3-1 Pit Fire"
+  },
+  {
+   "content": "Loomis Fire reported by official source in Lassen County",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": 40.965833,
+   "lon": -121.154667,
+   "observed_at": "2026-07-10T22:47:57Z",
+   "tier": 1,
+   "truth_incident": "Loomis Fire"
+  },
+  {
+   "content": "Loomis Fire mapped at 656 acres",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T00:46:25Z",
+   "tier": 1,
+   "truth_incident": "Loomis Fire"
+  },
+  {
+   "content": "Loomis Fire 75% contained",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T00:46:25Z",
+   "tier": 1,
+   "truth_incident": "Loomis Fire"
+  },
+  {
+   "content": "Twain Fire reported by official source in Plumas County",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": 40.023958,
+   "lon": -121.064952,
+   "observed_at": "2026-07-11T18:48:27Z",
+   "tier": 1,
+   "truth_incident": "Twain Fire"
+  },
+  {
+   "content": "Twain Fire mapped at 276 acres",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T01:15:20Z",
+   "tier": 1,
+   "truth_incident": "Twain Fire"
+  },
+  {
+   "content": "Twain Fire 95% contained",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T01:15:20Z",
+   "tier": 1,
+   "truth_incident": "Twain Fire"
+  },
+  {
+   "content": "Elephant Fire reported by official source in Sierra County",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": 39.707167,
+   "lon": -120.221283,
+   "observed_at": "2026-07-11T07:58:25Z",
+   "tier": 1,
+   "truth_incident": "Elephant Fire"
+  },
+  {
+   "content": "Elephant Fire mapped at 13,926 acres",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T00:41:59Z",
+   "tier": 1,
+   "truth_incident": "Elephant Fire"
+  },
+  {
+   "content": "Elephant Fire 92% contained",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T00:41:59Z",
+   "tier": 1,
+   "truth_incident": "Elephant Fire"
+  },
+  {
+   "content": "Wagon Fire reported by official source in Lassen County",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": 40.929274,
+   "lon": -121.0478,
+   "observed_at": "2026-07-16T02:05:24Z",
+   "tier": 1,
+   "truth_incident": "Wagon Fire"
+  },
+  {
+   "content": "Wagon Fire mapped at 205 acres",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T02:02:02Z",
+   "tier": 1,
+   "truth_incident": "Wagon Fire"
+  },
+  {
+   "content": "Wagon Fire 30% contained",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T02:02:02Z",
+   "tier": 1,
+   "truth_incident": "Wagon Fire"
+  },
+  {
+   "content": "Pine Fire reported by official source in San Bernardino County",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": 33.947715,
+   "lon": -117.675354,
+   "observed_at": "2026-07-16T13:25:57Z",
+   "tier": 1,
+   "truth_incident": "Pine Fire"
+  },
+  {
+   "content": "Pine Fire mapped at 20 acres",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-19T15:02:36Z",
+   "tier": 1,
+   "truth_incident": "Pine Fire"
+  },
+  {
+   "content": "Pine Fire 94% contained",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-19T15:02:36Z",
+   "tier": 1,
+   "truth_incident": "Pine Fire"
+  },
+  {
+   "content": "Lynwood Fire reported by official source in San Bernardino County",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": 34.162375,
+   "lon": -117.242919,
+   "observed_at": "2026-07-16T18:06:39Z",
+   "tier": 1,
+   "truth_incident": "Lynwood Fire"
+  },
+  {
+   "content": "Lynwood Fire mapped at 26 acres",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T01:52:12Z",
+   "tier": 1,
+   "truth_incident": "Lynwood Fire"
+  },
+  {
+   "content": "Lynwood Fire 100% contained",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T01:52:12Z",
+   "tier": 1,
+   "truth_incident": "Lynwood Fire"
+  },
+  {
+   "content": "Morgan Fire reported by official source in Contra Costa County",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": 37.901478,
+   "lon": -121.878855,
+   "observed_at": "2026-07-17T08:14:21Z",
+   "tier": 1,
+   "truth_incident": "Morgan Fire"
+  },
+  {
+   "content": "Morgan Fire mapped at 51 acres",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T02:04:18Z",
+   "tier": 1,
+   "truth_incident": "Morgan Fire"
+  },
+  {
+   "content": "Morgan Fire 90% contained",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T02:04:18Z",
+   "tier": 1,
+   "truth_incident": "Morgan Fire"
+  },
+  {
+   "content": "Garden Fire reported by official source in Sacramento County",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": 38.729288,
+   "lon": -121.600406,
+   "observed_at": "2026-07-17T03:16:14Z",
+   "tier": 1,
+   "truth_incident": "Garden Fire"
+  },
+  {
+   "content": "Garden Fire mapped at 167 acres",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T02:30:48Z",
+   "tier": 1,
+   "truth_incident": "Garden Fire"
+  },
+  {
+   "content": "Garden Fire 100% contained",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T02:30:48Z",
+   "tier": 1,
+   "truth_incident": "Garden Fire"
+  },
+  {
+   "content": "Biscar Fire reported by official source in Lassen County",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": 40.61966,
+   "lon": -120.303227,
+   "observed_at": "2026-07-17T07:06:09Z",
+   "tier": 1,
+   "truth_incident": "Biscar Fire"
+  },
+  {
+   "content": "Biscar Fire mapped at 29,752 acres",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T02:56:49Z",
+   "tier": 1,
+   "truth_incident": "Biscar Fire"
+  },
+  {
+   "content": "Biscar Fire 5% contained",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T02:56:49Z",
+   "tier": 1,
+   "truth_incident": "Biscar Fire"
+  },
+  {
+   "content": "Brook Fire reported by official source in Shasta County",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": 40.696243,
+   "lon": -122.194307,
+   "observed_at": "2026-07-16T22:11:17Z",
+   "tier": 1,
+   "truth_incident": "Brook Fire"
+  },
+  {
+   "content": "Brook Fire mapped at 502 acres",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T01:50:25Z",
+   "tier": 1,
+   "truth_incident": "Brook Fire"
+  },
+  {
+   "content": "Brook Fire 20% contained",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T01:50:25Z",
+   "tier": 1,
+   "truth_incident": "Brook Fire"
+  },
+  {
+   "content": "Sapphire Fire reported by official source in San Bernardino County",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": 34.403578,
+   "lon": -116.996084,
+   "observed_at": "2026-07-18T10:59:34Z",
+   "tier": 1,
+   "truth_incident": "Sapphire Fire"
+  },
+  {
+   "content": "Sapphire Fire mapped at 19 acres",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T01:38:57Z",
+   "tier": 1,
+   "truth_incident": "Sapphire Fire"
+  },
+  {
+   "content": "Sapphire Fire 98% contained",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T01:38:57Z",
+   "tier": 1,
+   "truth_incident": "Sapphire Fire"
+  },
+  {
+   "content": "Miners Fire reported by official source in El Dorado County",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": 38.783822,
+   "lon": -121.015569,
+   "observed_at": "2026-07-18T23:47:32Z",
+   "tier": 1,
+   "truth_incident": "Miners Fire"
+  },
+  {
+   "content": "Miners Fire mapped at 96 acres",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T02:30:52Z",
+   "tier": 1,
+   "truth_incident": "Miners Fire"
+  },
+  {
+   "content": "Miners Fire 50% contained",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T02:30:52Z",
+   "tier": 1,
+   "truth_incident": "Miners Fire"
+  },
+  {
+   "content": "Burr Fire reported by official source in Humboldt County",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": 40.4171,
+   "lon": -123.6188,
+   "observed_at": "2026-07-19T11:45:21Z",
+   "tier": 1,
+   "truth_incident": "Burr Fire"
+  },
+  {
+   "content": "Burr Fire mapped at 30 acres",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T01:23:49Z",
+   "tier": 1,
+   "truth_incident": "Burr Fire"
+  },
+  {
+   "content": "Burr Fire 100% contained",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T01:23:49Z",
+   "tier": 1,
+   "truth_incident": "Burr Fire"
+  },
+  {
+   "content": "Alturas Fire reported by official source in Shasta County",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": 40.628595,
+   "lon": -122.254203,
+   "observed_at": "2026-07-19T13:43:44Z",
+   "tier": 1,
+   "truth_incident": "Alturas Fire"
+  },
+  {
+   "content": "Alturas Fire mapped at 31 acres",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T03:16:32Z",
+   "tier": 1,
+   "truth_incident": "Alturas Fire"
+  },
+  {
+   "content": "Alturas Fire 75% contained",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T03:16:32Z",
+   "tier": 1,
+   "truth_incident": "Alturas Fire"
+  },
+  {
+   "content": "Williams Fire reported by official source in Monterey County",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": 35.990011,
+   "lon": -121.022233,
+   "observed_at": "2026-07-19T08:26:00Z",
+   "tier": 1,
+   "truth_incident": "Williams Fire"
+  },
+  {
+   "content": "Williams Fire mapped at 121 acres",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T03:17:25Z",
+   "tier": 1,
+   "truth_incident": "Williams Fire"
+  },
+  {
+   "content": "Williams Fire 15% contained",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T03:17:25Z",
+   "tier": 1,
+   "truth_incident": "Williams Fire"
+  },
+  {
+   "content": "Camp Roberts Range L5 Bob Fire reported by official source in San Luis Obispo County",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": 35.812177,
+   "lon": -120.7647,
+   "observed_at": "2026-07-19T10:18:58Z",
+   "tier": 1,
+   "truth_incident": "Camp Roberts Range L5 Bob Fire"
+  },
+  {
+   "content": "Camp Roberts Range L5 Bob Fire mapped at 10 acres",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-19T21:17:37Z",
+   "tier": 1,
+   "truth_incident": "Camp Roberts Range L5 Bob Fire"
+  },
+  {
+   "content": "Camp Roberts Range L5 Bob Fire 100% contained",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-19T21:17:37Z",
+   "tier": 1,
+   "truth_incident": "Camp Roberts Range L5 Bob Fire"
+  },
+  {
+   "content": "The Elephant Fire was first reported on July 11 at approximately 1:27 p.m. near Loyalton, California.",
+   "extracted_name": "Elephant Fire",
+   "location_text": "2 Miles Northeast Loyalton, California",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-11T13:27:00.000Z",
+   "tier": 2,
+   "truth_incident": "Elephant Fire"
+  },
+  {
+   "content": "The Elephant Fire has burned 13,926 acres.",
+   "extracted_name": "Elephant Fire",
+   "location_text": "2 Miles NE of Loyalton, CA",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-19T23:02:00.000Z",
+   "tier": 2,
+   "truth_incident": "Elephant Fire"
+  },
+  {
+   "content": "92% of the perimeter of the Elephant Fire is contained.",
+   "extracted_name": "Elephant Fire",
+   "location_text": "2 Miles NE of Loyalton, CA",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-19T23:02:00.000Z",
+   "tier": 2,
+   "truth_incident": "Elephant Fire"
+  },
+  {
+   "content": "The estimated containment date for the Elephant Fire is July 22, 2026.",
+   "extracted_name": "Elephant Fire",
+   "location_text": "2 Miles NE of Loyalton, CA",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-19T23:02:00.000Z",
+   "tier": 2,
+   "truth_incident": "Elephant Fire"
+  },
+  {
+   "content": "The cause of the Elephant Fire is undetermined.",
+   "extracted_name": "Elephant Fire",
+   "location_text": "2 Miles NE of Loyalton, CA",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-19T23:02:00.000Z",
+   "tier": 2,
+   "truth_incident": "Elephant Fire"
+  },
+  {
+   "content": "The Elephant Fire is burning in grass and sagebrush, with some areas having timber litter and timber understory with snags and heavy dead fuel loading.",
+   "extracted_name": "Elephant Fire",
+   "location_text": "2 Miles NE of Loyalton, CA",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-19T23:02:00.000Z",
+   "tier": 2,
+   "truth_incident": "Elephant Fire"
+  },
+  {
+   "content": "There is potential for afternoon and evening fire spread within the interior island of the Elephant Fire.",
+   "extracted_name": "Elephant Fire",
+   "location_text": "2 Miles NE of Loyalton, CA",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-19T23:02:00.000Z",
+   "tier": 2,
+   "truth_incident": "Elephant Fire"
+  },
+  {
+   "content": "A specialist in hydrology has been brought in to assess the riparian areas impacted by the Elephant Fire.",
+   "extracted_name": "Elephant Fire",
+   "location_text": "2 Miles NE of Loyalton, CA",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-19T19:59:00.000Z",
+   "tier": 2,
+   "truth_incident": "Elephant Fire"
+  },
+  {
+   "content": "Crews and engines continue to secure and mop up the uncontained portions of the Elephant Fire.",
+   "extracted_name": "Elephant Fire",
+   "location_text": "2 Miles NE of Loyalton, CA",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-19T19:59:00.000Z",
+   "tier": 2,
+   "truth_incident": "Elephant Fire"
+  },
+  {
+   "content": "There are 355 total personnel working on the Elephant Fire.",
+   "extracted_name": "Elephant Fire",
+   "location_text": "2 Miles NE of Loyalton, CA",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-19T23:02:00.000Z",
+   "tier": 2,
+   "truth_incident": "Elephant Fire"
+  },
+  {
+   "content": "The Biscar Fire in Lassen County has reached 5% containment.",
+   "extracted_name": "Biscar Fire",
+   "location_text": "Lassen County, California",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T04:14:49.502Z",
+   "tier": 4,
+   "truth_incident": "Biscar Fire"
+  },
+  {
+   "content": "The Brook Fire has grown to 502 acres in Shasta County.",
+   "extracted_name": "Brook Fire",
+   "location_text": "Shasta County",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T04:14:53.465Z",
+   "tier": 4,
+   "truth_incident": "Brook Fire"
+  },
+  {
+   "content": "The Brook Fire is now at 20% containment.",
+   "extracted_name": "Brook Fire",
+   "location_text": "Shasta County",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T04:14:53.465Z",
+   "tier": 4,
+   "truth_incident": "Brook Fire"
+  },
+  {
+   "content": "The Wagon Fire in Lassen County has reached 30% containment.",
+   "extracted_name": "Wagon Fire",
+   "location_text": "Lassen County, California",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T04:15:07.827Z",
+   "tier": 4,
+   "truth_incident": "Wagon Fire"
+  },
+  {
+   "content": "The Lynwood Fire in San Bernardino County has reached 100% containment.",
+   "extracted_name": "Lynwood Fire",
+   "location_text": "San Bernardino County",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T04:15:15.107Z",
+   "tier": 4,
+   "truth_incident": "Lynwood Fire"
+  },
+  {
+   "content": "Crews fighting the Brook Fire near Redding suffered injuries.",
+   "extracted_name": "Brook Fire",
+   "location_text": "near Redding",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T04:15:21.919Z",
+   "tier": 4,
+   "truth_incident": "Brook Fire"
+  },
+  {
+   "content": "Evacuations have been ordered due to the Miners Fire in El Dorado County.",
+   "extracted_name": "Miners Fire",
+   "location_text": "El Dorado County, California",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T04:15:23.814Z",
+   "tier": 4,
+   "truth_incident": "Miners Fire"
+  },
+  {
+   "content": "Forward progress of the Miners Fire has been stopped.",
+   "extracted_name": "Miners Fire",
+   "location_text": "El Dorado County, California",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T04:15:23.814Z",
+   "tier": 4,
+   "truth_incident": "Miners Fire"
+  },
+  {
+   "content": "The Biscar Fire has grown to more than 12,000 acres.",
+   "extracted_name": "Biscar Fire",
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T04:15:29.673Z",
+   "tier": 4,
+   "truth_incident": "Biscar Fire"
+  },
+  {
+   "content": "The Biscar Fire is five percent contained.",
+   "extracted_name": "Biscar Fire",
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T04:15:29.673Z",
+   "tier": 4,
+   "truth_incident": "Biscar Fire"
+  },
+  {
+   "content": "The Biscar Fire has grown to more than 12,000 acres.",
+   "extracted_name": "Biscar Fire",
+   "location_text": "Lassen County",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T04:15:33.451Z",
+   "tier": 4,
+   "truth_incident": "Biscar Fire"
+  },
+  {
+   "content": "An evacuation zone has been expanded due to the Biscar Fire.",
+   "extracted_name": "Biscar Fire",
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T04:15:33.451Z",
+   "tier": 4,
+   "truth_incident": "Biscar Fire"
+  },
+  {
+   "content": "Fire crews are battling the Miners Fire in El Dorado County.",
+   "extracted_name": "Miners Fire",
+   "location_text": "El Dorado County",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T04:15:36.649Z",
+   "tier": 4,
+   "truth_incident": "Miners Fire"
+  },
+  {
+   "content": "The Brook Fire is heading north in Shasta County.",
+   "extracted_name": "Brook Fire",
+   "location_text": "Shasta County",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T04:15:42.599Z",
+   "tier": 4,
+   "truth_incident": "Brook Fire"
+  },
+  {
+   "content": "Over 40 acres have been damaged by the Brook Fire.",
+   "extracted_name": "Brook Fire",
+   "location_text": "Shasta County",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T04:15:42.599Z",
+   "tier": 4,
+   "truth_incident": "Brook Fire"
+  },
+  {
+   "content": "Evacuation warnings for the approximately 51-acre blaze, known as the Morgan Fire, near Mount Diablo have been lifted.",
+   "extracted_name": "Morgan Fire",
+   "location_text": "near Mount Diablo",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-18T12:07:00Z",
+   "tier": 4,
+   "truth_incident": "Morgan Fire"
+  },
+  {
+   "content": "Containment is at 30% for the Morgan Fire.",
+   "extracted_name": "Morgan Fire",
+   "location_text": "near Mount Diablo",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-18T12:07:00Z",
+   "tier": 4,
+   "truth_incident": "Morgan Fire"
+  },
+  {
+   "content": "The Miners Fire has burned 40 acres near Miners Valley Road.",
+   "extracted_name": "Miners Fire",
+   "location_text": "near Miners Valley Road",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T04:17:22.653Z",
+   "tier": 4,
+   "truth_incident": "Miners Fire"
+  },
+  {
+   "content": "The Loomis Fire in Lassen County remains at 75% containment as of Sunday evening.",
+   "extracted_name": "Loomis Fire",
+   "location_text": "Lassen County, California",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-18T19:00:00Z",
+   "tier": 4,
+   "truth_incident": "Loomis Fire"
+  },
+  {
+   "content": "The Biscar Fire has burned nearly 30,000 acres.",
+   "extracted_name": "Biscar Fire",
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T04:43:05.556Z",
+   "tier": 4,
+   "truth_incident": "Biscar Fire"
+  },
+  {
+   "content": "The Biscar Fire is five percent contained.",
+   "extracted_name": "Biscar Fire",
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T04:43:05.556Z",
+   "tier": 4,
+   "truth_incident": "Biscar Fire"
+  },
+  {
+   "content": "The Biscar Fire has spread to 29,752.2 acres and remains 5% contained.",
+   "extracted_name": "Biscar Fire",
+   "location_text": "Lassen County",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T05:01:33.466Z",
+   "tier": 4,
+   "truth_incident": "Biscar Fire"
+  },
+  {
+   "content": "The Biscar Fire has spread to 29,752.2 acres and remains 5% contained.",
+   "extracted_name": "Biscar Fire",
+   "location_text": "Lassen County",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T05:13:43.059Z",
+   "tier": 4,
+   "truth_incident": "Biscar Fire"
+  },
+  {
+   "content": "Evacuations for the Miners Fire in El Dorado County have been lifted.",
+   "extracted_name": "Miners Fire",
+   "location_text": "El Dorado County, California",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T05:28:13.947Z",
+   "tier": 4,
+   "truth_incident": "Miners Fire"
+  },
+  {
+   "content": "Forward progress of the Miners Fire has stopped.",
+   "extracted_name": "Miners Fire",
+   "location_text": "El Dorado County, California",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T05:28:13.947Z",
+   "tier": 4,
+   "truth_incident": "Miners Fire"
+  },
+  {
+   "content": "The Biscar Fire has grown to more than 29,000 acres.",
+   "extracted_name": "Biscar Fire",
+   "location_text": "Lassen County",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T05:28:25.673Z",
+   "tier": 4,
+   "truth_incident": "Biscar Fire"
+  },
+  {
+   "content": "An evacuation zone has been expanded due to the Biscar Fire.",
+   "extracted_name": "Biscar Fire",
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T05:28:25.673Z",
+   "tier": 4,
+   "truth_incident": "Biscar Fire"
+  },
+  {
+   "content": "The Williams Fire in Monterey County has reached 15% containment.",
+   "extracted_name": "Williams Fire",
+   "location_text": "Monterey County",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T05:44:15.548Z",
+   "tier": 4,
+   "truth_incident": "Williams Fire"
+  },
+  {
+   "content": "Williams Fire 100% contained",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T11:22:51Z",
+   "tier": 1,
+   "truth_incident": "Williams Fire"
+  },
+  {
+   "content": "The Williams Fire in Monterey County is now fully contained.",
+   "extracted_name": "Williams Fire",
+   "location_text": "Monterey County",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T12:13:19.184Z",
+   "tier": 4,
+   "truth_incident": "Williams Fire"
+  },
+  {
+   "content": "Williams Fire 20% contained",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T13:43:52Z",
+   "tier": 1,
+   "truth_incident": "Williams Fire"
+  },
+  {
+   "content": "Wagon Fire 35% contained",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T13:56:42Z",
+   "tier": 1,
+   "truth_incident": "Wagon Fire"
+  },
+  {
+   "content": "Brook Fire 30% contained",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T13:59:40Z",
+   "tier": 1,
+   "truth_incident": "Brook Fire"
+  },
+  {
+   "content": "Miners Fire mapped at 96 acres",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T14:01:09Z",
+   "tier": 1,
+   "truth_incident": "Miners Fire"
+  },
+  {
+   "content": "Miners Fire 75% contained",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T14:01:09Z",
+   "tier": 1,
+   "truth_incident": "Miners Fire"
+  },
+  {
+   "content": "The Wagon Fire in Lassen County has reached 35% containment.",
+   "extracted_name": "Wagon Fire",
+   "location_text": "Lassen County, California",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T14:58:42.134Z",
+   "tier": 4,
+   "truth_incident": "Wagon Fire"
+  },
+  {
+   "content": "The Miners Fire in El Dorado County has reached 75% containment.",
+   "extracted_name": "Miners Fire",
+   "location_text": "El Dorado County, California",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T14:58:44.287Z",
+   "tier": 4,
+   "truth_incident": "Miners Fire"
+  },
+  {
+   "content": "The Brook Fire in Shasta County is at 30% containment.",
+   "extracted_name": "Brook Fire",
+   "location_text": "Shasta County",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T15:35:22.709Z",
+   "tier": 4,
+   "truth_incident": "Brook Fire"
+  },
+  {
+   "content": "The Biscar Fire has burned nearly 30,000 acres.",
+   "extracted_name": "Biscar Fire",
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T16:05:29.093Z",
+   "tier": 4,
+   "truth_incident": "Biscar Fire"
+  },
+  {
+   "content": "The Biscar Fire is 5% contained.",
+   "extracted_name": "Biscar Fire",
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T16:05:29.093Z",
+   "tier": 4,
+   "truth_incident": "Biscar Fire"
+  },
+  {
+   "content": "The Loomis Fire in Lassen County is at 75% containment as of Monday morning.",
+   "extracted_name": "Loomis Fire",
+   "location_text": "Lassen County, California",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-19T00:00:00Z",
+   "tier": 4,
+   "truth_incident": "Loomis Fire"
+  },
+  {
+   "content": "The Williams Fire in Monterey County is at 20% containment.",
+   "extracted_name": "Williams Fire",
+   "location_text": "Monterey County",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T16:35:47.921Z",
+   "tier": 4,
+   "truth_incident": "Williams Fire"
+  },
+  {
+   "content": "Alturas Fire 90% contained",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T16:46:31Z",
+   "tier": 1,
+   "truth_incident": "Alturas Fire"
+  },
+  {
+   "content": "Chute Fire reported by official source in Yuba County",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": 39.350013,
+   "lon": -121.15087,
+   "observed_at": "2026-07-13T15:20:13Z",
+   "tier": 1,
+   "truth_incident": "Chute Fire"
+  },
+  {
+   "content": "Chute Fire mapped at 17 acres",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T16:55:38Z",
+   "tier": 1,
+   "truth_incident": "Chute Fire"
+  },
+  {
+   "content": "Chute Fire 20% contained",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T16:55:38Z",
+   "tier": 1,
+   "truth_incident": "Chute Fire"
+  },
+  {
+   "content": "Chute Fire mapped at 20 acres",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T17:00:41Z",
+   "tier": 1,
+   "truth_incident": "Chute Fire"
+  },
+  {
+   "content": "Chute Fire 0% contained",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T17:00:41Z",
+   "tier": 1,
+   "truth_incident": "Chute Fire"
+  },
+  {
+   "content": "The Biscar Fire has become California\u2019s largest fire this season.",
+   "extracted_name": "Biscar Fire",
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T17:05:58.995Z",
+   "tier": 4,
+   "truth_incident": "Biscar Fire"
+  },
+  {
+   "content": "Mann Fire reported by official source in Tuolumne County",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": 37.848787,
+   "lon": -120.59758,
+   "observed_at": "2026-07-20T09:50:19Z",
+   "tier": 1,
+   "truth_incident": "Mann Fire"
+  },
+  {
+   "content": "Mann Fire mapped at 10 acres",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T17:16:22Z",
+   "tier": 1,
+   "truth_incident": "Mann Fire"
+  },
+  {
+   "content": "Mann Fire mapped at 20 acres",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T17:19:27Z",
+   "tier": 1,
+   "truth_incident": "Mann Fire"
+  },
+  {
+   "content": "Evacuations have been ordered for the Chute Fire in Yuba County.",
+   "extracted_name": "Chute Fire",
+   "location_text": "Yuba County",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T17:21:21.064Z",
+   "tier": 4,
+   "truth_incident": "Chute Fire"
+  },
+  {
+   "content": "The Mann Fire was reported in Tuolumne County on July 20.",
+   "extracted_name": "Mann Fire",
+   "location_text": "Tuolumne County",
+   "lat": 37.9607582,
+   "lon": -120.2374109,
+   "observed_at": "2026-07-20T00:00:00Z",
+   "tier": 4,
+   "truth_incident": "Mann Fire"
+  },
+  {
+   "content": "The Williams Fire in Monterey County is at 20% containment.",
+   "extracted_name": "Williams Fire",
+   "location_text": "Monterey County",
+   "lat": 36.6002378,
+   "lon": -121.8946761,
+   "observed_at": "2026-07-20T18:06:16.848Z",
+   "tier": 4,
+   "truth_incident": "Williams Fire"
+  },
+  {
+   "content": "An evacuation order has been issued in Yuba County, California, due to a flare-up of the Chute Fire south of Bullards Bar.",
+   "extracted_name": "Chute Fire",
+   "location_text": "south of Bullards Bar",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T18:06:18.972Z",
+   "tier": 4,
+   "truth_incident": "Chute Fire"
+  },
+  {
+   "content": "513 total personnel assigned to the Brook Fire",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T18:06:26.597Z",
+   "tier": 1,
+   "truth_incident": "Brook Fire"
+  },
+  {
+   "content": "The Chute Fire in Yuba County is causing evacuations and updates are being provided.",
+   "extracted_name": "Chute Fire",
+   "location_text": "Yuba County, California",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T18:21:10.120Z",
+   "tier": 4,
+   "truth_incident": "Chute Fire"
+  },
+  {
+   "content": "The Chute Fire in Yuba County is causing evacuations and updates are being provided.",
+   "extracted_name": "Chute Fire",
+   "location_text": "Yuba County, California",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T18:21:11.559Z",
+   "tier": 4,
+   "truth_incident": "Chute Fire"
+  },
+  {
+   "content": "Evacuations have been prompted by the Brook Fire in Shasta County.",
+   "extracted_name": "Brook Fire",
+   "location_text": "Shasta County",
+   "lat": 40.5993165,
+   "lon": -122.4919571,
+   "observed_at": "2026-07-20T18:21:12.987Z",
+   "tier": 4,
+   "truth_incident": "Brook Fire"
+  },
+  {
+   "content": "Firefighters have been injured during efforts to combat the Brook Fire.",
+   "extracted_name": "Brook Fire",
+   "location_text": "Shasta County",
+   "lat": 40.5993165,
+   "lon": -122.4919571,
+   "observed_at": "2026-07-20T18:21:12.987Z",
+   "tier": 4,
+   "truth_incident": "Brook Fire"
+  },
+  {
+   "content": "Day Fire reported by official source in Mariposa County",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": 37.397352,
+   "lon": -120.140486,
+   "observed_at": "2026-07-20T11:14:46Z",
+   "tier": 1,
+   "truth_incident": "Day Fire"
+  },
+  {
+   "content": "Day Fire mapped at 20 acres",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T18:29:43Z",
+   "tier": 1,
+   "truth_incident": "Day Fire"
+  },
+  {
+   "content": "Day Fire mapped at 30 acres",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T18:45:01Z",
+   "tier": 1,
+   "truth_incident": "Day Fire"
+  },
+  {
+   "content": "The Chute Fire is burning in Yuba County, California.",
+   "extracted_name": "Chute Fire",
+   "location_text": "Yuba County, California",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T18:50:52.495Z",
+   "tier": 4,
+   "truth_incident": "Chute Fire"
+  },
+  {
+   "content": "The Chute Fire has burned 20 acres.",
+   "extracted_name": "Chute Fire",
+   "location_text": "Yuba County, California",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T18:50:52.495Z",
+   "tier": 4,
+   "truth_incident": "Chute Fire"
+  },
+  {
+   "content": "Evacuations have been ordered due to the Chute Fire.",
+   "extracted_name": "Chute Fire",
+   "location_text": "Yuba County, California",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T18:50:52.495Z",
+   "tier": 4,
+   "truth_incident": "Chute Fire"
+  },
+  {
+   "content": "The Chute Fire in Yuba County is causing evacuations and updates are being provided.",
+   "extracted_name": "Chute Fire",
+   "location_text": "Yuba County, California",
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T18:51:12.359Z",
+   "tier": 4,
+   "truth_incident": "Chute Fire"
+  },
+  {
+   "content": "355 total personnel assigned to the Elephant Fire",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T18:57:04.850Z",
+   "tier": 1,
+   "truth_incident": "Elephant Fire"
+  },
+  {
+   "content": "Williams Fire mapped at 135 acres",
+   "extracted_name": null,
+   "location_text": null,
+   "lat": null,
+   "lon": null,
+   "observed_at": "2026-07-20T18:55:53Z",
+   "tier": 1,
+   "truth_incident": "Williams Fire"
+  }
+ ]
+}

@@ -235,6 +235,34 @@ def gnis_load_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None
     load_gnis(conn)
 
 
+@register("reattribute")
+def reattribute_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Retry attribution on facts that never found their fire.
+
+    Attribution runs once, when a fact is written. Media routinely names a fire
+    before CAL FIRE lists it, so a fact can arrive with no incident to match
+    and then be orphaned permanently even after the incident appears. This
+    sweep gives every unattributed fact another look against the CURRENT
+    incident list. It only ever fills in NULL -> value, which is the one
+    update the append-only trigger allows."""
+    from toast.pipeline.attribution import attribute_fact
+
+    rows = conn.execute(
+        """SELECT id FROM facts
+           WHERE incident_id IS NULL AND kind != 'weather'
+             AND id NOT IN (SELECT fact_id FROM fact_triage)
+           ORDER BY ingested_at DESC LIMIT ?""",
+        (int(payload.get("limit", 500)),),
+    ).fetchall()
+    outcomes = {"attributed": 0, "review": 0, "none": 0}
+    for row in rows:
+        outcome, _ = attribute_fact(conn, row["id"])
+        outcomes[outcome] = outcomes.get(outcome, 0) + 1
+    get_logger("pipeline.reattribute").info(
+        "reattributed", examined=len(rows), **{f"n_{k}": v for k, v in outcomes.items()}
+    )
+
+
 @register("reassess")
 def reassess_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     """Re-run corroboration over already-embedded facts.

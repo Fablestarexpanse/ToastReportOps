@@ -46,8 +46,10 @@ def due_sources(conn) -> list:
 
 
 DAILY_S = 24 * 3600
-# stage -> how often it should run
-DAILY_STAGES = {"backup": DAILY_S, "trust": DAILY_S}
+# stage -> how often it should run. Re-attribution is frequent on purpose:
+# incidents get listed through the day, and each new one can adopt facts that
+# arrived before it existed.
+DAILY_STAGES = {"backup": DAILY_S, "trust": DAILY_S, "reattribute": 30 * 60}
 
 
 def stage_due(conn, stage: str, interval_s: int) -> bool:

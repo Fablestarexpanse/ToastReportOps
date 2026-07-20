@@ -561,6 +561,15 @@ def adjudication_queue(request: Request, limit: int = Query(50, le=200)) -> dict
     return {"queue": items}
 
 
+@router.post("/adjudication/reattribute")
+def reattribute_now(request: Request) -> dict:
+    """Retry attribution on orphaned facts against the current incident list.
+    Runs automatically every 30 minutes; this is the manual nudge."""
+    from toast.queue import jobs
+
+    return {"ok": True, "job_id": jobs.enqueue(_conn(request), "reattribute", {}, priority=6)}
+
+
 @router.post("/adjudication/{fact_id}/triage")
 def triage_fact(request: Request, fact_id: str, body: dict) -> dict:
     """Dispose of a fact that belongs to no tracked incident.

@@ -107,3 +107,53 @@ def test_matching_name_is_not_flagged_unknown(seeded):
     item = _queue(req)[0]
     assert item["unknown_fire"] is False
     assert item["candidates"][0]["incident_name"] == "FLUME FIRE"
+
+
+def test_reattribution_adopts_facts_whose_fire_appeared_later(seeded):
+    """Media names a fire before CAL FIRE lists it. The fact arrives with no
+    incident to match, and before this sweep it stayed orphaned forever."""
+    from toast.pipeline.handlers import reattribute_handler
+
+    fid = _unattributed(
+        seeded,
+        content="The Sawmill Fire has burned 400 acres in Butte County.",
+        structured='{"incident_name": "Sawmill Fire"}',
+    )
+    assert (
+        seeded.execute("SELECT incident_id FROM facts WHERE id = ?", (fid,)).fetchone()[
+            "incident_id"
+        ]
+        is None
+    )
+
+    # the incident is listed an hour later
+    seeded.execute(
+        "INSERT INTO incidents (id, canonical_name, status, county, created_at, updated_at)"
+        " VALUES ('i-saw', 'Sawmill Fire', 'active', 'Butte', ?, ?)",
+        (NOW, NOW),
+    )
+    reattribute_handler(seeded, {})
+
+    assert (
+        seeded.execute("SELECT incident_id FROM facts WHERE id = ?", (fid,)).fetchone()[
+            "incident_id"
+        ]
+        == "i-saw"
+    )
+
+
+def test_reattribution_skips_triaged_facts(seeded):
+    """A fact the operator dismissed must not come back through the sweep."""
+    from toast.pipeline.handlers import reattribute_handler
+
+    fid = _unattributed(seeded, content="A structure fire damaged a wreck yard.")
+    seeded.execute(
+        "INSERT INTO fact_triage (fact_id, state, at) VALUES (?, 'not_incident', ?)", (fid, NOW)
+    )
+    reattribute_handler(seeded, {})
+    assert (
+        seeded.execute("SELECT incident_id FROM facts WHERE id = ?", (fid,)).fetchone()[
+            "incident_id"
+        ]
+        is None
+    )
