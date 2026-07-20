@@ -21,6 +21,8 @@ import {
   deleteNote,
   dismissSuggestion,
   fetchAdjudication,
+  connectionState,
+  onConnectionChange,
   fetchHealth,
   fetchDeadJobs,
   requeueDeadJobs,
@@ -2649,6 +2651,16 @@ export default function Workstation() {
   const [mode, setMode] = useState("ops");
   const health = usePolling(fetchHealth);
   const [showDead, setShowDead] = useState(false);
+  // usePolling deliberately swallows fetch errors and keeps the last value, so
+  // during an outage every panel would keep showing old numbers and the API dot
+  // would stay green. The connection state comes straight from the fetch layer
+  // instead, so "the backend is gone" is stated rather than implied.
+  const [link, setLink] = useState(() => connectionState());
+  useEffect(() => {
+    const sync = () => setLink(connectionState());
+    sync();
+    return onConnectionChange(sync);
+  }, []);
   const [clock, setClock] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [uiKey, setUiKey] = useState(0); // bump to re-render after settings change
@@ -2669,6 +2681,7 @@ export default function Workstation() {
   }, [uiKey]);
 
   const dots: [string, boolean | null][] = [
+    ["LINK", link.connected],
     // dead_recent, not dead: the lifetime total only grows, so this light used
     // to latch red forever after the fifth failure ever recorded
     ["FEEDS", health ? (health.queue.dead_recent ?? 0) < 5 : null],
@@ -2756,6 +2769,28 @@ export default function Workstation() {
           the mode subtree so basemap / timeline order / poll interval are re-read.
           Without the key these were useState initialisers that never re-ran, so
           the toast said "settings saved" and the map stayed dark. */}
+      {!link.connected && (
+        <div
+          style={{
+            background: C.evac + "22",
+            borderBottom: `1px solid ${C.evac}`,
+            color: C.evac,
+            fontFamily: font.mono,
+            fontSize: 10,
+            padding: "5px 12px",
+            display: "flex",
+            gap: 10,
+          }}
+        >
+          <span>⚠ BACKEND UNREACHABLE — everything below is the last data received, not current</span>
+          {link.lastOkAt && (
+            <span style={{ marginLeft: "auto", color: C.warn }}>
+              last contact {fmtStamp(link.lastOkAt)} · {age(link.lastOkAt)} ago
+            </span>
+          )}
+        </div>
+      )}
+
       {mode === "ops" && <OpsMode key={uiKey} toast={toast} />}
       {mode === "news" && <NewsroomMode toast={toast} />}
       {mode === "watch" && <WatchMode toast={toast} />}

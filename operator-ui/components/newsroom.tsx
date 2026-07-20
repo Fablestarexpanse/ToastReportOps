@@ -50,7 +50,16 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
   const [titleEdit, setTitleEdit] = useState("");
 
   const refresh = useCallback(async () => {
-    const [d, inc] = await Promise.all([fetchDrafts(), fetchIncidents()]);
+    // A failed poll must never take the screen away. Before this, one network
+    // blip threw out of the effect and Next replaced the whole workstation with
+    // an error page — on a tool whose operating condition is PSPS outages and
+    // flaky links. Keep whatever we last had; the top bar says it is stale.
+    let d, inc;
+    try {
+      [d, inc] = await Promise.all([fetchDrafts(), fetchIncidents()]);
+    } catch {
+      return;
+    }
     // defensively dedupe by id — a transient duplicate from overlapping
     // fetches must never produce duplicate React keys
     const seen = new Set<string>();

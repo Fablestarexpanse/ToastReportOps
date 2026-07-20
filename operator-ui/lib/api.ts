@@ -229,11 +229,18 @@ export const fetchDrafts = () =>
 export const fetchDraft = (id: string) => get<DraftDetail>(`/drafts/${id}`);
 
 async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`/api${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`/api${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    markConnection(false);
+    throw e;
+  }
+  markConnection(true);
   if (!res.ok) {
     const detail = await res.json().then((d) => d.detail).catch(() => res.status);
     throw new Error(String(detail));
@@ -322,9 +329,61 @@ export type AnalyzeResult = {
   }[];
 };
 
+/* Backend reachability, tracked centrally.
+ *
+ * Every call in this file goes through get()/post(), so this is the one place
+ * that knows whether the backend is answering. It matters more here than in a
+ * normal app: PSPS outages and flaky links are this tool's stated operating
+ * condition, so the workstation must degrade to stale-but-visible and SAY it is
+ * stale — never silently show old numbers as if they were current, and never
+ * replace the operator's screen with an error page because one poll failed. */
+let connected = true;
+let lastOkAt: string | null = null;
+const listeners = new Set<() => void>();
+
+export function connectionState() {
+  return { connected, lastOkAt };
+}
+
+export function onConnectionChange(fn: () => void): () => void {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
+function markConnection(ok: boolean) {
+  if (ok) lastOkAt = new Date().toISOString();
+  if (ok === connected) return;
+  connected = ok;
+  for (const fn of listeners) fn();
+}
+
+/** Does this response mean "the backend is not there", as opposed to "the
+ *  backend answered and said no"?
+ *
+ *  A dead upstream behind the dev proxy surfaces as a 500, which is
+ *  indistinguishable from a genuine API error on an arbitrary endpoint. So
+ *  liveness is judged on /healthz — whose only job is to answer 200 — plus the
+ *  gateway codes, which always mean the hop failed. Guessing from any 5xx would
+ *  cry wolf on a single bad query; that is how an outage banner becomes noise. */
+function meansUnreachable(path: string, status: number): boolean {
+  if (path.startsWith("/healthz")) return true;
+  return status === 502 || status === 503 || status === 504;
+}
+
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`/api${path}`, { cache: "no-store" });
-  if (!res.ok) throw new Error(`${path}: ${res.status}`);
+  let res: Response;
+  try {
+    res = await fetch(`/api${path}`, { cache: "no-store" });
+  } catch (e) {
+    // network-level failure: the backend is down or unreachable
+    markConnection(false);
+    throw e;
+  }
+  if (!res.ok) {
+    if (meansUnreachable(path, res.status)) markConnection(false);
+    throw new Error(`${path}: ${res.status}`);
+  }
+  markConnection(true);
   return res.json();
 }
 
