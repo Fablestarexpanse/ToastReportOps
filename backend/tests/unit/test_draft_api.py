@@ -42,7 +42,9 @@ def test_illegal_transition_rejected(seeded):
     assert exc.value.status_code == 409
 
 
-def test_publish_to_site_records_publication_and_build(seeded):
+def test_releasing_a_report_pushes_nowhere(seeded):
+    """Publishing to the web is the operator's own manual act. Marking a report
+    released must not send it anywhere or build anything on its own."""
     _draft(seeded, status="approved")
     seeded.execute(
         "UPDATE drafts SET approved_by='operator', approved_at=? WHERE id='d1'", (utcnow(),)
@@ -50,12 +52,28 @@ def test_publish_to_site_records_publication_and_build(seeded):
     req = Req(seeded)
     result = routes.transition_draft(req, "d1", {"status": "published"})
     assert result["status"] == "published"
-    # a site publication was recorded and a rebuild enqueued
-    pub = seeded.execute("SELECT channel, status FROM publications WHERE draft_id='d1'").fetchone()
-    assert pub["channel"] == "site" and pub["status"] == "sent"
+
+    assert seeded.execute("SELECT COUNT(*) c FROM publications").fetchone()["c"] == 0
+    assert seeded.execute("SELECT COUNT(*) c FROM jobs").fetchone()["c"] == 0
+
+
+def test_site_build_only_runs_when_asked(seeded):
+    req = Req(seeded)
+    routes.build_site_now(req)
     assert (
         seeded.execute("SELECT COUNT(*) c FROM jobs WHERE stage='build_site'").fetchone()["c"] == 1
     )
+
+
+def test_export_returns_pasteable_text(seeded):
+    _draft(seeded, status="approved")
+    req = Req(seeded)
+    md = routes.export_draft(req, "d1", fmt="markdown")
+    assert md["content"].startswith("# t") and "body" in md["content"]
+    html = routes.export_draft(req, "d1", fmt="html")
+    assert "<article>" in html["content"] and "<h1>t</h1>" in html["content"]
+    with pytest.raises(HTTPException):
+        routes.export_draft(req, "d1", fmt="pdf")
 
 
 def test_edit_blocked_after_publish(seeded):

@@ -53,8 +53,6 @@ class Settings(BaseSettings):
     # see toast/core/credentials.py.
     firms_map_key: str = ""
     airnow_api_key: str = ""
-    cloudflare_api_token: str = ""
-    cf_pages_project: str = ""
 
     bluesky_handle: str = ""
     bluesky_app_password: str = ""

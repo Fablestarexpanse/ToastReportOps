@@ -10,7 +10,11 @@ value-per-minute-of-signup.
 |---|---|---|---|
 | **NASA FIRMS map key** | https://firms.modaps.eosdis.nasa.gov/api/ (instant email key) | `FIRMS_MAP_KEY` | Satellite hotspot detection (VIIRS) — often the earliest automated signal of a new start; feeds the watch board. After adding: `docker compose exec worker python -m toast.seed` re-run enables the source, or flip it ON in SOURCES. |
 | **Bluesky app password** | bsky.app → Settings → Privacy & Security → App Passwords | `BLUESKY_HANDLE`, `BLUESKY_APP_PASSWORD` | Easiest social auto-posting (atproto API, no review process). Publisher adapter posts approved SOCIAL drafts. |
-| **Cloudflare Pages token** | dash.cloudflare.com → My Profile → API Tokens → Create (Pages:Edit) + create a Pages project | `CLOUDFLARE_API_TOKEN`, `CF_PAGES_PROJECT` | Deploys the public static site for real (currently local-preview only). Also makes PSPS degraded mode meaningful. |
+
+> **Web hosting is not on this list.** The newsroom does not push to any
+> website — you publish to your own site by hand (NEWSROOM → ⧉ COPY, or
+> `/drafts/<id>/export`). Nothing to register until you decide to wire a host
+> in.
 
 ## Social publishing (more setup)
 

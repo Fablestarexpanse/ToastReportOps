@@ -189,6 +189,53 @@ def run_backup_now(request: Request) -> dict:
         raise HTTPException(500, f"backup failed: {exc}") from exc
 
 
+@router.get("/drafts/{draft_id}/export")
+def export_draft(request: Request, draft_id: str, fmt: str = "markdown") -> dict:
+    """Draft text for manual posting to the operator's own website.
+
+    Publishing is a human act here: nothing is pushed anywhere automatically,
+    so this hands back exactly what to paste, with the source attribution
+    intact."""
+    conn = _conn(request)
+    row = conn.execute("SELECT * FROM drafts WHERE id = ?", (draft_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "draft not found")
+    if fmt not in ("markdown", "html", "text"):
+        raise HTTPException(400, "fmt must be markdown, html or text")
+
+    body = row["body_md"] or ""
+    title = row["title"] or "Untitled"
+    if fmt == "html":
+        import html as _html
+
+        import markdown as _md
+
+        rendered = _md.markdown(body, extensions=["extra"])
+        content = f"<article>\n<h1>{_html.escape(title)}</h1>\n{rendered}\n</article>"
+    elif fmt == "text":
+        content = f"{title}\n\n{body}"
+    else:
+        content = f"# {title}\n\n{body}"
+    return {
+        "draft_id": draft_id,
+        "title": title,
+        "format": fmt,
+        "content": content,
+        "status": row["status"],
+    }
+
+
+@router.post("/site/build")
+def build_site_now(request: Request) -> dict:
+    """Build the LOCAL static site on demand (preview at /site).
+
+    Never triggered by publishing — the operator runs it when they want to see
+    or hand-copy the rendered output."""
+    from toast.queue import jobs
+
+    return {"ok": True, "job_id": jobs.enqueue(_conn(request), "build_site", {}, priority=4)}
+
+
 # ---------------- GNIS gazetteer ----------------
 
 
@@ -829,14 +876,12 @@ def transition_draft(request: Request, draft_id: str, body: dict) -> dict:
         from toast.core.ids import ulid
         from toast.queue import jobs
 
-        conn.execute(
-            "INSERT INTO publications (id, draft_id, channel, status, sent_at)"
-            " VALUES (?, ?, 'site', 'sent', ?)",
-            (ulid(), draft_id, now),
-        )
-        jobs.enqueue(conn, "build_site", {}, priority=2)
+        # NOTE: publishing does NOT push to any website. The operator publishes
+        # to their own site by hand (NEWSROOM → ⧉ COPY / EXPORT); 'published'
+        # here means "cleared for release", and the local static site is built
+        # on demand from ARCHIVE, never automatically.
 
-        # SOCIAL drafts additionally fan out to every credentialed channel.
+        # SOCIAL drafts fan out to every credentialed channel.
         channels: list[str] = []
         if row["kind"] == "social":
             from toast.core.credentials import settings_with_credentials

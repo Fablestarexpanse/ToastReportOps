@@ -86,9 +86,9 @@ For ad-hoc queries against live data, prefer the API or
 
 When the desktop loses power, a free-tier cloud VM runs the same codebase with
 `docker compose --profile degraded up`: official-API polling + static site updates
-only. Cutover: DNS unchanged (site is on Cloudflare Pages); start sentinel, confirm
-site updates flow; on power restore, stop sentinel, Litestream-restore any delta,
-resume desktop profile.
+only. On power restore, stop the sentinel, Litestream-restore any delta, and
+resume the desktop profile. (Public-site cutover is out of scope while
+publishing is manual — revisit when a host is wired up.)
 
 ## Active fires vs. historical (source of truth)
 
@@ -131,22 +131,27 @@ source URLs through point-at-URL to ledger-ize facts).
 - Research runs poll at low priority — live ingest preempts them. LDR's login
   rate-limiter is aggressive; jobs park for 10 min when limited.
 
-## Publishing (public static site)
+## Publishing
 
-Approved reports publish to a static site with zero server attack surface. The
-`published` transition records a `publications` row (channel `site`) and enqueues
-a `build_site` job; the generator writes `data/site/` (index + per-report pages,
-each with sources, a burned-in timestamp, and a "verify with officials" notice).
+**The newsroom does not push to any website.** Publishing to the web is a
+manual act by the operator, by decision — `published` means "cleared for
+release", not "sent somewhere".
 
-- Preview locally: `http://127.0.0.1:8400/site/index.html` (the API serves
-  `data/site/` for preview; production is Cloudflare Pages).
-- **Deploy to Cloudflare Pages (deferred — needs a token):** set
-  `CLOUDFLARE_API_TOKEN` + `CF_PAGES_PROJECT` in `.env`, then
-  `npx wrangler pages deploy data/site --project-name=$CF_PAGES_PROJECT`. Wire
-  this into a publisher step once the token is provided.
-- **External channels** (X, Facebook, RSS, email, webhook) are separate
-  publisher adapters, still deferred until their credentials/app-review are set
-  up. They are NOT triggered by the site publish.
+- **Take the text:** NEWSROOM → **⧉ COPY**, or
+  `GET /drafts/<id>/export?fmt=markdown|html|text` for a clean copy with the
+  source attribution intact. Paste it into your own site.
+- **Preview the rendered version:** `POST /site/build` builds the local static
+  site on demand; read it at `http://127.0.0.1:8400/site/index.html`. This job
+  only ever runs when you ask for it.
+- **Social channels** (Bluesky, X, Facebook) DO fire automatically on
+  publishing a `kind='social'` draft — but only for channels whose credentials
+  exist in OPTIONS → API KEYS. With none set, publishing sends nothing
+  anywhere.
+
+When you are ready to wire the public site into your own hosting, the generator
+in `toast/sitegen/` already produces a self-contained `data/site/` directory
+(index + per-report pages, each with sources, a burned-in timestamp, and a
+"verify with officials" notice) — point your deploy at that.
 
 ## Incident freeze / archive (Phase 5)
 

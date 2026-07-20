@@ -91,19 +91,6 @@ def check_backblaze(conn: sqlite3.Connection, client: httpx.Client) -> dict[str,
     return _result("ok", f"bucket {bucket!r} reachable — offsite backup ready")
 
 
-def check_cloudflare(conn: sqlite3.Connection, client: httpx.Client) -> dict[str, str]:
-    token = get_credential(conn, "CLOUDFLARE_API_TOKEN")
-    if not token:
-        return _result("unconfigured", "API token required")
-    r = client.get(
-        "https://api.cloudflare.com/client/v4/user/tokens/verify",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    if r.status_code == 200 and r.json().get("success"):
-        return _result("ok", "token valid and active")
-    return _http_verdict(r.status_code, "", r.text)
-
-
 def check_x(conn: sqlite3.Connection, client: httpx.Client) -> dict[str, str]:
     from toast.publishers.x import oauth1_header
 
@@ -158,7 +145,6 @@ CHECKS = {
     "firms": check_firms,
     "bluesky": check_bluesky,
     "backblaze": check_backblaze,
-    "cloudflare": check_cloudflare,
     "x": check_x,
     "facebook": check_facebook,
     "airnow": check_airnow,

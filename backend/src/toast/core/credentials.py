@@ -78,17 +78,9 @@ SERVICES: list[Service] = [
         ],
         notes="Scope the application key to just this bucket, read+write.",
     ),
-    Service(
-        id="cloudflare",
-        label="Cloudflare Pages — public site",
-        why="Deploys the public site for real (currently local preview only).",
-        signup_url="https://dash.cloudflare.com/profile/api-tokens",
-        signup_label="Create an API token (Pages:Edit)",
-        fields=[
-            Field("CLOUDFLARE_API_TOKEN", "API token"),
-            Field("CF_PAGES_PROJECT", "Pages project", secret=False, placeholder="toast-report"),
-        ],
-    ),
+    # No web-host service here on purpose: the newsroom does not push to any
+    # website. The operator publishes to their own site by hand until they
+    # choose to wire one up.
     Service(
         id="x",
         label="X / Twitter — social posting",

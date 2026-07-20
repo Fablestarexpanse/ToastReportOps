@@ -148,7 +148,7 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
       : d.status === "needs_review"
         ? [["approved", "APPROVE ✓", C.ok], ["draft", "SEND BACK", C.dim]]
         : d.status === "approved"
-          ? [["published", "PUBLISH →", C.ok]]
+          ? [["published", "MARK RELEASED ✓", C.ok]]
           : []
     : [];
 
@@ -380,9 +380,14 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
           DISTRIBUTION
         </div>
         <div style={{ padding: "8px 13px 14px", fontFamily: font.mono, fontSize: 9.5, color: C.faint, lineHeight: 1.6 }}>
-          <span style={{ color: C.ok }}>✓ Static site</span> — PUBLISH writes the report to the
-          public site (preview at /site). Cloudflare Pages deploy + external channels (X · Facebook ·
-          RSS · webhook) are wired once their credentials are provided.
+          <span style={{ color: C.txt }}>Website — manual.</span> Nothing is pushed to any site.
+          Use <span style={{ color: C.blue }}>⧉ COPY</span> and paste into your own site;
+          “MARK RELEASED” only records that you cleared it.
+          <div style={{ marginTop: 6 }}>
+            <span style={{ color: C.violet }}>Social</span> — a SOCIAL draft posts automatically on
+            release, but only to channels whose keys are set in OPTIONS → API KEYS. With none set,
+            nothing leaves this machine.
+          </div>
         </div>
       </div>
     </div>
