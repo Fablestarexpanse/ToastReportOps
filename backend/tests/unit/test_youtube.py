@@ -96,8 +96,8 @@ def test_extract_stage_does_not_fetch_a_text_only_video(seeded, monkeypatch):
     """The guard that keeps us off the video page — asserted, not assumed."""
     import json
 
-    from toast.pipeline import handlers
     from toast.core.ids import ulid
+    from toast.pipeline import handlers
 
     def explode(*a, **kw):  # pragma: no cover - must never run
         raise AssertionError("text_only sources must not fetch the page")

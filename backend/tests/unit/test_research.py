@@ -30,7 +30,6 @@ def test_report_lands_as_analysis_draft(seeded):
 
 
 def test_active_research_surfaces_in_drafts_listing(seeded):
-
     from toast.api.routes import _active_research
     from toast.queue import jobs
 
