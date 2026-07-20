@@ -216,3 +216,91 @@ def build_site_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> Non
 
     counts = build_site(conn, Settings().site_dir)
     get_logger("sitegen").info("site_built", **counts)
+
+
+def _requeue_rate_limited(conn: sqlite3.Connection, stage: str, payload: dict[str, Any]) -> None:
+    """LDR's login limiter punishes fast retries — retrying through the normal
+    backoff makes it WORSE (each attempt is another login). Park the job for
+    10 minutes instead."""
+    from datetime import UTC, datetime, timedelta
+
+    hops = int(payload.get("rl_hops", 0)) + 1
+    if hops > 6:  # give up after ~an hour of limiter
+        raise RuntimeError("LDR rate limiter persisted > 1h")
+    run_after = (datetime.now(UTC) + timedelta(seconds=600)).strftime("%Y-%m-%dT%H:%M:%S.%f")[
+        :-3
+    ] + "Z"
+    jobs.enqueue(conn, stage, {**payload, "rl_hops": hops}, priority=8, run_after=run_after)
+    get_logger("research").info("research_parked_rate_limited", stage=stage, hop=hops)
+
+
+@register("deep_research")
+def deep_research_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Kick off an LDR research run, then hand off to the poll stage.
+
+    Split start/poll so a multi-minute research run never blocks the single
+    worker — between polls the worker keeps processing live extraction."""
+    from toast.pipeline.research import ResearchError, get_client
+
+    client = get_client()
+    try:
+        client.login_or_register()
+    except ResearchError as exc:
+        if "rate-limited" in str(exc):
+            _requeue_rate_limited(conn, "deep_research", payload)
+            return
+        raise
+    research_id = client.start(payload["query"])
+    jobs.enqueue(
+        conn,
+        "deep_research_poll",
+        {
+            "research_id": research_id,
+            "query": payload["query"],
+            "incident_id": payload.get("incident_id"),
+        },
+        priority=8,  # low: live pipeline preempts research polling
+        max_attempts=40,  # polls ~every 30s via backoffless requeue below
+    )
+    get_logger("research").info("research_started", research_id=research_id, query=payload["query"])
+
+
+@register("deep_research_poll")
+def deep_research_poll_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Poll one research run; requeue while in progress, land a draft when done."""
+    from datetime import UTC, datetime, timedelta
+
+    from toast.pipeline.research import get_client, land_analysis_draft
+
+    client = get_client()
+    client.login_or_register()
+    status = client.status(payload["research_id"])
+    state = str(status.get("status", "")).lower()
+    log = get_logger("research")
+    if state in ("completed", "success", "done"):
+        report = client.report(payload["research_id"])
+        draft_id = land_analysis_draft(
+            conn,
+            query=payload["query"],
+            report=report,
+            incident_id=payload.get("incident_id"),
+        )
+        log.info("research_landed", research_id=payload["research_id"], draft_id=draft_id)
+        return
+    if state in ("failed", "error", "cancelled"):
+        raise RuntimeError(f"research failed: {status.get('error', state)}")
+    # still running — requeue in ~30s. Hop cap so a hung run can't poll forever.
+    hops = int(payload.get("hops", 0)) + 1
+    if hops > 60:  # ~30 min ceiling
+        raise RuntimeError(f"research timed out after {hops} polls")
+    run_after = (datetime.now(UTC) + timedelta(seconds=30)).strftime("%Y-%m-%dT%H:%M:%S.%f")[
+        :-3
+    ] + "Z"
+    jobs.enqueue(
+        conn, "deep_research_poll", {**payload, "hops": hops}, priority=8, run_after=run_after
+    )
+    log.info(
+        "research_in_progress",
+        research_id=payload["research_id"],
+        progress=status.get("progress"),
+    )

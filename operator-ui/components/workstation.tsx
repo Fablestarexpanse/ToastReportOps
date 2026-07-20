@@ -18,6 +18,7 @@ import {
   probeSource,
   resolveAdjudication,
   searchFires,
+  startResearch,
 } from "@/lib/api";
 import { C, TIER, TIER_TITLES, confColor, font } from "@/lib/theme";
 import MapPanel from "@/components/map-panel";
@@ -442,8 +443,29 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
       {/* ledger panel */}
       <div style={{ borderLeft: `1px solid ${C.line}`, background: C.panel, display: "flex", flexDirection: "column", minHeight: 0 }}>
         <div style={{ padding: "10px 13px", borderBottom: `1px solid ${C.line}`, flexShrink: 0 }}>
-          <div style={{ fontFamily: font.disp, fontSize: 20, fontWeight: 700 }}>
-            {sel?.canonical_name ?? "—"}
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+            <div style={{ fontFamily: font.disp, fontSize: 20, fontWeight: 700, flex: 1, minWidth: 0 }}>
+              {sel?.canonical_name ?? "—"}
+            </div>
+            {sel && (
+              <span
+                onClick={async () => {
+                  try {
+                    await startResearch(
+                      `California wildfire "${sel.canonical_name}"${sel.county ? ` in ${sel.county} County` : ""} — latest status, size, containment, evacuations, road closures, resources. Only this specific fire.`,
+                      sel.id,
+                    );
+                    toast(`deep research queued for ${sel.canonical_name} — result lands in NEWSROOM`);
+                  } catch (e) {
+                    toast(`research failed: ${e instanceof Error ? e.message : e}`);
+                  }
+                }}
+                title="agentic web research — cited dossier lands as an analysis draft in NEWSROOM"
+                style={{ fontFamily: font.mono, fontSize: 9, color: C.blue, border: `1px solid ${C.blue}66`, borderRadius: 3, padding: "2px 7px", cursor: "pointer", whiteSpace: "nowrap" }}
+              >
+                ⌕ RESEARCH
+              </span>
+            )}
           </div>
           <div style={{ fontFamily: font.mono, fontSize: 10, color: C.dim, marginTop: 2 }}>
             {sel ? `${sel.county ?? "?"} County · ${sel.status} · ${sel.fact_count} facts` : "select an incident"}

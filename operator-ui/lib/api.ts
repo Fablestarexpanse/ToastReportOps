@@ -300,6 +300,19 @@ export async function createSource(body: {
   return res.json();
 }
 
+export async function startResearch(query: string, incidentId?: string): Promise<{ job_id: string }> {
+  const res = await fetch("/api/research", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query, incident_id: incidentId }),
+  });
+  if (!res.ok) {
+    const detail = await res.json().then((d) => d.detail).catch(() => res.status);
+    throw new Error(String(detail));
+  }
+  return res.json();
+}
+
 export async function fetchHealth(): Promise<Health> {
   try {
     const [h, q] = await Promise.all([

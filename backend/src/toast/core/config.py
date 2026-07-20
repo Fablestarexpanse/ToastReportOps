@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     worker_poll_interval_s: float = 1.0
     job_backoff_base_s: float = 5.0
 
+    # active research layer (Local Deep Research)
+    ldr_url: str = "http://ldr:5000"
+    ldr_username: str = "toast-operator"
+    ldr_password: str = "change-me-local-research"
+
     # logging
     log_level: str = "INFO"
 

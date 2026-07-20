@@ -218,6 +218,31 @@ def promote_candidate(request: Request, body: dict) -> dict:
     return result
 
 
+# ---------------- active research (Local Deep Research) ----------------
+
+
+@router.post("/research")
+def start_research(request: Request, body: dict) -> dict:
+    """Queue a deep-research run. The result lands as a kind='analysis' draft
+    in the NEWSROOM for review — never directly in the ledger."""
+    from toast.queue import jobs
+
+    query = (body.get("query") or "").strip()
+    if not query or len(query) < 8:
+        raise HTTPException(400, "query required (be specific)")
+    incident_id = body.get("incident_id")
+    conn = _conn(request)
+    if (
+        incident_id
+        and not conn.execute("SELECT 1 FROM incidents WHERE id = ?", (incident_id,)).fetchone()
+    ):
+        raise HTTPException(404, "incident not found")
+    job_id = jobs.enqueue(
+        conn, "deep_research", {"query": query, "incident_id": incident_id}, priority=8
+    )
+    return {"queued": True, "job_id": job_id}
+
+
 # ---------------- newsroom: drafts ----------------
 
 DRAFT_TRANSITIONS = {

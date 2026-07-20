@@ -109,12 +109,18 @@ def _index_html(reports: list[sqlite3.Row], incidents: list[sqlite3.Row]) -> str
         )
     reports_block = "\n".join(items) or '<p class="meta">No published updates yet.</p>'
 
+    def _inc_meta(i: sqlite3.Row) -> str:
+        parts = [html.escape(i["status"])]
+        if i["acreage"]:
+            parts.append(f"{i['acreage']:,.0f} ac")
+        if i["containment_pct"] is not None:
+            parts.append(f"{int(i['containment_pct'])}% contained")
+        return " · ".join(parts)
+
     inc_rows = "\n".join(
         f"""<div class="inc"><span>{html.escape(i["canonical_name"])}
         {(" · " + html.escape(i["county"]) + " County") if i["county"] else ""}</span>
-        <span class="meta">{html.escape(i["status"])}
-        {(" · " + format(i["acreage"], ",.0f") + " ac") if i["acreage"] else ""}
-        {(" · " + str(int(i["containment_pct"])) + "% contained") if i["containment_pct"] is not None else ""}</span></div>"""
+        <span class="meta">{_inc_meta(i)}</span></div>"""
         for i in incidents
     )
     incidents_block = (

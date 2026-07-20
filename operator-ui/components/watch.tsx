@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { WatchCandidate, fetchWatch, promoteCandidate } from "@/lib/api";
+import { WatchCandidate, fetchWatch, promoteCandidate, startResearch } from "@/lib/api";
 import { C, TIER, font } from "@/lib/theme";
 
 const fmtTime = (iso: string) => (iso ? iso.slice(11, 16) + "Z" : "—");
@@ -111,26 +111,54 @@ export default function WatchMode({ toast }: { toast: (m: string) => void }) {
               ))}
             </div>
 
-            <button
-              onClick={() => promote(c)}
-              disabled={promoting[c.key]}
-              style={{
-                width: "100%",
-                marginTop: 10,
-                background: color,
-                color: C.bg,
-                border: "none",
-                borderRadius: 5,
-                fontFamily: font.disp,
-                fontWeight: 700,
-                fontSize: 12,
-                letterSpacing: 1,
-                padding: "7px 0",
-                cursor: "pointer",
-              }}
-            >
-              {promoting[c.key] ? "…" : "▲ PROMOTE TO INCIDENT"}
-            </button>
+            <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+              <button
+                onClick={async () => {
+                  try {
+                    const q = `California wildfire "${c.name}"${c.county ? ` ${c.county}` : ""} — current status, location, size, containment, evacuations. Only report on this specific fire.`;
+                    await startResearch(q);
+                    toast(`deep research queued for ${c.name} — result lands in NEWSROOM`);
+                  } catch (e) {
+                    toast(`research failed: ${e instanceof Error ? e.message : e}`);
+                  }
+                }}
+                style={{
+                  flex: 1,
+                  background: "transparent",
+                  color: C.blue,
+                  border: `1px solid ${C.blue}66`,
+                  borderRadius: 5,
+                  fontFamily: font.disp,
+                  fontWeight: 700,
+                  fontSize: 11,
+                  letterSpacing: 1,
+                  padding: "7px 0",
+                  cursor: "pointer",
+                }}
+                title="agentic web research via Local Deep Research — cited dossier lands as an analysis draft"
+              >
+                ⌕ DEEP RESEARCH
+              </button>
+              <button
+                onClick={() => promote(c)}
+                disabled={promoting[c.key]}
+                style={{
+                  flex: 1,
+                  background: color,
+                  color: C.bg,
+                  border: "none",
+                  borderRadius: 5,
+                  fontFamily: font.disp,
+                  fontWeight: 700,
+                  fontSize: 11,
+                  letterSpacing: 1,
+                  padding: "7px 0",
+                  cursor: "pointer",
+                }}
+              >
+                {promoting[c.key] ? "…" : "▲ PROMOTE"}
+              </button>
+            </div>
           </div>
         );
       })}

@@ -2,6 +2,23 @@
 
 Architectural decision log. Newest first. Each entry: context → decision → why.
 
+## 2026-07-20 — Active research layer (Local Deep Research + SearXNG)
+
+- **LDR (MIT) + self-hosted SearXNG = active hunting** to complement our
+  passive feeds: agentic multi-engine web research on our own Ollama, no paid
+  APIs. Triggered from WATCH candidates and the OPS incident panel.
+- **Ledger boundary (non-negotiable)**: LDR reports land as `kind='analysis'`
+  drafts for operator review — never as ledger facts. Facts enter only via
+  point-at-URL over LDR's cited sources (validated, raw-preserved, CA-gated).
+- **Non-blocking job design**: `deep_research` starts a run; `deep_research_poll`
+  re-enqueues itself every ~30 s (hop-capped ~30 min) so a multi-minute research
+  run never blocks the single worker's live extraction. Low priority (8).
+- **LDR quirks learned**: model must be pinned in the start payload (its
+  settings default is unset); the registration form is browser-only (one-time
+  manual step, documented in OPERATIONS); the login rate-limiter punishes fast
+  retries, so rate-limited jobs park for 10 min instead of burning attempts;
+  SearXNG needs `formats: [html, json]` for LDR's API queries.
+
 ## 2026-07-20 — Public static site + publish wiring
 
 - **The site is the no-credential publish channel.** `approved → published` now

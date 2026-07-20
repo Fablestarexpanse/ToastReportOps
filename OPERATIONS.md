@@ -80,6 +80,21 @@ docker compose exec worker python -m toast.seed
 curl -s http://127.0.0.1:8400/incidents | python -c "import sys,json;print(len(json.load(sys.stdin)['incidents']),'active')"
 ```
 
+## Deep research (Local Deep Research + SearXNG)
+
+On-demand agentic web research: DEEP RESEARCH buttons on WATCH candidates and
+the OPS incident panel queue a background run; the cited dossier lands as a
+`kind='analysis'` **draft in NEWSROOM** (never directly in the ledger — feed its
+source URLs through point-at-URL to ledger-ize facts).
+
+- Services: `searxng` + `ldr` (desktop profile). LDR web UI: http://localhost:5000
+- **One-time setup**: register the service account in the LDR web UI using
+  `LDR_USERNAME`/`LDR_PASSWORD` from `.env` (its registration form is
+  browser-only; done 2026-07-20 for this machine). Fresh installs: open
+  http://localhost:5000/auth/register once.
+- Research runs poll at low priority — live ingest preempts them. LDR's login
+  rate-limiter is aggressive; jobs park for 10 min when limited.
+
 ## Publishing (public static site)
 
 Approved reports publish to a static site with zero server attack surface. The

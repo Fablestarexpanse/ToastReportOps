@@ -1,0 +1,13 @@
+# SearXNG settings for the Local Deep Research integration.
+# json format must be enabled — LDR queries the search API programmatically.
+use_default_settings: true
+
+server:
+  # local-only metasearch for the research layer; not exposed off-host
+  secret_key: "toast-report-searxng-local-only-not-secret"
+  limiter: false
+
+search:
+  formats:
+    - html
+    - json
