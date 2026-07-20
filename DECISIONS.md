@@ -2,6 +2,29 @@
 
 Architectural decision log. Newest first. Each entry: context → decision → why.
 
+## 2026-07-19 — Phase 3 (news): RSS ingestion + add-source probe
+
+- **Automated news ingestion via RSS** (feedparser). An `rss` adapter turns feed
+  entries into `article` envelopes; `max_entries` config caps how many a single
+  poll ingests (a busy feed shouldn't dump 86 articles at once).
+- **LLM work stays in its own stage.** The normalize handler routes `article`
+  envelopes to a dedicated `extract` job rather than doing model work inline —
+  keeps extraction retryable/rate-limited and off the fast normalize path.
+  `extract_article` is shared by the RSS stage and the operator point-at-URL flow.
+- **robots.txt honored by default.** The `extract` stage checks robots before
+  fetching an article and *skips* (marks done, no retry — a disallow is
+  permanent) unless the source sets `robots_override`. Proven live: Google News
+  disallows its `/rss/articles/` redirect URLs, so those were correctly skipped.
+- **Add-source-by-URL probe.** `POST /sources/probe` sniffs a URL → RSS (content
+  type / XML sniff), YouTube (host), or article; returns a proposed adapter +
+  config + suggested tier. `POST /sources` creates it (adapter allowlisted).
+  YouTube/plain-article are detected but saved disabled (adapters not built yet).
+  Deterministic now; an LLM classifier can slot behind the same interface later.
+- **Fetcher gained `robots_allows()`** (fails open on unreachable robots — never
+  block ingest on a flaky robots fetch, only on an explicit Disallow).
+- Scanner audio / ADS-B / cameras deferred pending operator TOS decisions
+  (flagged in ROADMAP §5).
+
 ## 2026-07-19 — Active-only ingest + historical search
 
 - **CAL FIRE incidents API is the authoritative active-fire source**

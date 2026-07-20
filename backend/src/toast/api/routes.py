@@ -235,6 +235,71 @@ def import_fire_route(request: Request, body: dict) -> dict:
     return result
 
 
+@router.post("/sources/probe")
+def probe_source(request: Request, body: dict) -> dict:
+    """Detect what a URL is and propose an adapter + config (add-source flow)."""
+    from dataclasses import asdict
+
+    from toast.core.fetch import BlockedURLError, FetchError
+    from toast.sources.probe import probe_url
+
+    url = (body.get("url") or "").strip()
+    if not url:
+        raise HTTPException(400, "url required")
+    try:
+        return asdict(probe_url(url))
+    except BlockedURLError as exc:
+        raise HTTPException(400, f"URL blocked: {exc}") from exc
+    except FetchError as exc:
+        raise HTTPException(502, f"could not fetch URL: {exc}") from exc
+
+
+@router.post("/sources")
+def create_source(request: Request, body: dict) -> dict:
+    """Create a source from a probe result. Only known adapters are accepted."""
+    import json as _json
+
+    from toast.core.db import utcnow
+    from toast.core.ids import ulid
+    from toast.sources import get_adapter
+
+    adapter = (body.get("adapter") or "").strip()
+    name = (body.get("name") or "").strip()
+    config = body.get("config") or {}
+    tier = int(body.get("tier", 5))
+    enabled = 1 if body.get("enabled", True) else 0
+    schedule = body.get("schedule", "600")
+    if not adapter or get_adapter(adapter) is None:
+        raise HTTPException(400, f"unknown adapter {adapter!r}")
+    if not name:
+        raise HTTPException(400, "name required")
+    if not (1 <= tier <= 5):
+        raise HTTPException(400, "tier must be 1-5")
+
+    conn = _conn(request)
+    source_id = ulid()
+    now = utcnow()
+    conn.execute(
+        """INSERT INTO sources (id, name, type, adapter, tier, config, schedule, enabled,
+                                tos_notes, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            source_id,
+            name,
+            body.get("type", "scrape"),
+            adapter,
+            tier,
+            _json.dumps(config),
+            schedule,
+            enabled,
+            body.get("tos_notes", "Operator-added via URL probe."),
+            now,
+            now,
+        ),
+    )
+    return {"ok": True, "source_id": source_id, "name": name, "adapter": adapter}
+
+
 @router.get("/sources")
 def list_sources(request: Request) -> dict:
     rows = (

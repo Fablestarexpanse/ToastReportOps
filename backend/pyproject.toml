@@ -13,6 +13,7 @@ dependencies = [
     "apscheduler>=3.10,<4",
     "sqlite-vec>=0.1.9",
     "beautifulsoup4>=4.15.0",
+    "feedparser>=6.0.12",
 ]
 
 [dependency-groups]
@@ -46,7 +47,7 @@ mypy_path = "src"
 packages = ["toast"]
 
 [[tool.mypy.overrides]]
-module = ["sqlite_vec", "bs4"]
+module = ["sqlite_vec", "bs4", "feedparser"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

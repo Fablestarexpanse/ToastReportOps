@@ -64,11 +64,56 @@ def poll_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
 def normalize_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     from toast.pipeline.normalize import normalize_envelope
 
-    facts = normalize_envelope(conn, payload["envelope_id"])
+    env_id = payload["envelope_id"]
+    kind = conn.execute("SELECT kind FROM envelopes WHERE id = ?", (env_id,)).fetchone()["kind"]
+    # Articles need the LLM extractor — route to its own retryable stage instead
+    # of doing model work on the normalize path.
+    if kind == "article":
+        jobs.enqueue(conn, "extract", {"envelope_id": env_id}, priority=6)
+        return
+    facts = normalize_envelope(conn, env_id)
     for fact_id in facts:
         jobs.enqueue(conn, "embed", {"fact_id": fact_id}, priority=7)
-    get_logger("pipeline.normalize").info(
-        "normalize_done", envelope_id=payload["envelope_id"], facts=len(facts)
+    get_logger("pipeline.normalize").info("normalize_done", envelope_id=env_id, facts=len(facts))
+
+
+@register("extract")
+def extract_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Fetch an article envelope's page and extract claims into facts (LLM)."""
+    import json as _json
+
+    from toast.core.fetch import robots_allows
+    from toast.pipeline.analyze import extract_article, fetch_article_text
+
+    env_id = payload["envelope_id"]
+    env = conn.execute("SELECT * FROM envelopes WHERE id = ?", (env_id,)).fetchone()
+    if env is None:
+        return
+    src = conn.execute(
+        "SELECT tier, robots_override FROM sources WHERE id = ?", (env["source_id"],)
+    ).fetchone()
+    url = _json.loads(env["payload"]).get("url")
+    if not url:
+        return
+    # robots disallow is permanent — skip (done), don't retry/dead-letter.
+    if not src["robots_override"] and not robots_allows(url):
+        get_logger("pipeline.extract").info("extract_skipped_robots", envelope_id=env_id, url=url)
+        return
+
+    raw_ref, text = fetch_article_text(conn, url)
+    summary = extract_article(
+        conn,
+        url=url,
+        source_id=env["source_id"],
+        tier=src["tier"],
+        envelope_id=env_id,
+        raw_ref=raw_ref,
+        text=text,
+    )
+    for fact in summary["facts"]:
+        jobs.enqueue(conn, "embed", {"fact_id": fact["fact_id"]}, priority=7)
+    get_logger("pipeline.extract").info(
+        "extract_done", envelope_id=env_id, url=url, facts=len(summary["facts"])
     )
 
 

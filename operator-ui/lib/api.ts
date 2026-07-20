@@ -155,6 +155,51 @@ export async function importFire(refId: string): Promise<{ name: string; status:
   return res.json();
 }
 
+export type ProbeResult = {
+  url: string;
+  detected: string;
+  adapter: string;
+  config: Record<string, unknown>;
+  suggested_tier: number;
+  title: string | null;
+  note: string;
+  supported: boolean;
+  warnings: string[];
+};
+
+export async function probeSource(url: string): Promise<ProbeResult> {
+  const res = await fetch("/api/sources/probe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  if (!res.ok) {
+    const detail = await res.json().then((d) => d.detail).catch(() => res.status);
+    throw new Error(String(detail));
+  }
+  return res.json();
+}
+
+export async function createSource(body: {
+  name: string;
+  adapter: string;
+  config: Record<string, unknown>;
+  tier: number;
+  type?: string;
+  enabled?: boolean;
+}): Promise<{ source_id: string }> {
+  const res = await fetch("/api/sources", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const detail = await res.json().then((d) => d.detail).catch(() => res.status);
+    throw new Error(String(detail));
+  }
+  return res.json();
+}
+
 export async function fetchHealth(): Promise<Health> {
   try {
     const [h, q] = await Promise.all([

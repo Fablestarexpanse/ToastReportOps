@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import ipaddress
 import socket
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
+from urllib.robotparser import RobotFileParser
 
 import httpx
 
@@ -24,6 +25,29 @@ class FetchError(Exception):
 
 class BlockedURLError(FetchError):
     pass
+
+
+class RobotsDisallowedError(FetchError):
+    pass
+
+
+def robots_allows(url: str, *, user_agent: str = USER_AGENT) -> bool:
+    """Check the target's robots.txt. Fails open (allow) if robots is
+    unreachable — we never block ingest on a flaky robots fetch, only on an
+    explicit Disallow. Callers honor this unless the source sets robots_override."""
+    parsed = urlparse(url)
+    robots_url = urljoin(f"{parsed.scheme}://{parsed.netloc}", "/robots.txt")
+    try:
+        _assert_public_host(robots_url)
+        with httpx.Client(timeout=10.0, headers={"User-Agent": user_agent}) as client:
+            resp = client.get(robots_url)
+        if resp.status_code >= 400:
+            return True  # no robots or error → allowed
+        rp = RobotFileParser()
+        rp.parse(resp.text.splitlines())
+        return rp.can_fetch(user_agent, url)
+    except Exception:
+        return True
 
 
 def _assert_public_host(url: str) -> None:

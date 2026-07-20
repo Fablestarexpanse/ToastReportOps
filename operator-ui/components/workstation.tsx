@@ -5,7 +5,9 @@ import {
   AdjudicationItem,
   Fact,
   FireSearchResult,
+  ProbeResult,
   analyzeUrl,
+  createSource,
   fetchAdjudication,
   fetchHealth,
   fetchIncidentFacts,
@@ -13,6 +15,7 @@ import {
   fetchIntake,
   fetchSources,
   importFire,
+  probeSource,
   resolveAdjudication,
   searchFires,
 } from "@/lib/api";
@@ -480,8 +483,101 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
 
 /* ---------------- SOURCES mode ---------------- */
 
-function SourcesMode() {
-  const sources = usePolling(fetchSources);
+function AddSource({ toast, onAdded }: { toast: (m: string) => void; onAdded: () => void }) {
+  const [url, setUrl] = useState("");
+  const [tier, setTier] = useState(4);
+  const [probe, setProbe] = useState<ProbeResult | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const runProbe = async () => {
+    if (!url.trim() || busy) return;
+    setBusy(true);
+    setProbe(null);
+    try {
+      const r = await probeSource(url.trim());
+      setProbe(r);
+      setTier(r.suggested_tier);
+    } catch (e) {
+      toast(`probe failed: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const add = async () => {
+    if (!probe) return;
+    try {
+      await createSource({
+        name: probe.title || probe.url,
+        adapter: probe.adapter,
+        config: probe.config,
+        tier,
+        type: probe.detected === "rss" ? "scrape" : probe.detected,
+        enabled: probe.supported,
+      });
+      toast(`source added${probe.supported ? "" : " (disabled — unsupported)"}`);
+      setUrl("");
+      setProbe(null);
+      onAdded();
+    } catch (e) {
+      toast(`add failed: ${e instanceof Error ? e.message : e}`);
+    }
+  };
+
+  return (
+    <div style={{ border: `1px solid ${C.ember}44`, borderRadius: 8, background: C.panel, padding: 12, marginBottom: 14 }}>
+      <div style={{ fontFamily: font.disp, fontSize: 13, letterSpacing: 1.5, fontWeight: 700, marginBottom: 8 }}>
+        ADD SOURCE — paste a feed / page / channel URL, AI probes what it is
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <input
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && runProbe()}
+          placeholder="https://…  (RSS/Atom feed, news page, YouTube channel)"
+          style={{ flex: "1 1 300px", background: C.bg, border: `1px solid ${C.line}`, borderRadius: 5, color: C.txt, fontFamily: font.mono, fontSize: 11, padding: "8px 10px", outline: "none" }}
+        />
+        <button onClick={runProbe} style={{ background: busy ? C.faint : C.ember, color: C.bg, border: "none", borderRadius: 5, fontFamily: font.disp, fontWeight: 700, fontSize: 12, letterSpacing: 1, padding: "0 14px", cursor: "pointer" }}>
+          {busy ? "…" : "PROBE"}
+        </button>
+      </div>
+      {probe && (
+        <div style={{ marginTop: 10, borderTop: `1px solid ${C.line}`, paddingTop: 10 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontFamily: font.mono, fontSize: 9, color: probe.supported ? C.ok : C.warn, border: `1px solid ${probe.supported ? C.ok : C.warn}`, borderRadius: 3, padding: "2px 7px" }}>
+              {probe.detected.toUpperCase()}
+            </span>
+            <span style={{ fontSize: 12, fontWeight: 600 }}>{probe.title || probe.url}</span>
+          </div>
+          <div style={{ fontFamily: font.mono, fontSize: 9.5, color: C.dim, marginTop: 5 }}>{probe.note}</div>
+          {probe.warnings.map((w) => (
+            <div key={w} style={{ fontFamily: font.mono, fontSize: 9, color: C.warn, marginTop: 3 }}>⚠ {w}</div>
+          ))}
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 9 }}>
+            <span style={{ fontFamily: font.mono, fontSize: 9, color: C.faint }}>start at tier</span>
+            {[3, 4, 5].map((t) => (
+              <span key={t} onClick={() => setTier(t)} style={{ fontFamily: font.mono, fontSize: 9, padding: "2px 8px", borderRadius: 3, cursor: "pointer", border: `1px solid ${tier === t ? TIER[t] : C.line}`, color: tier === t ? TIER[t] : C.dim }}>
+                T{t}
+              </span>
+            ))}
+            <button
+              onClick={add}
+              disabled={!probe.supported}
+              title={probe.supported ? "" : "adapter not available yet"}
+              style={{ marginLeft: "auto", background: probe.supported ? C.ok : C.faint, color: C.bg, border: "none", borderRadius: 5, fontFamily: font.disp, fontWeight: 700, fontSize: 12, letterSpacing: 1, padding: "6px 14px", cursor: probe.supported ? "pointer" : "not-allowed" }}
+            >
+              ADD SOURCE
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SourcesMode({ toast }: { toast: (m: string) => void }) {
+  const [refreshKey, setRefreshKey] = useState(0);
+  const sources = usePolling(fetchSources, [refreshKey]);
   const cols = "2.2fr .7fr .5fr .8fr .8fr 1.1fr .7fr";
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: 18 }}>
@@ -490,9 +586,10 @@ function SourcesMode() {
           SOURCE MANAGER
         </span>
         <span style={{ fontFamily: font.mono, fontSize: 10, color: C.dim }}>
-          trust is earned — performance stats land in Phase 2, AI probe in Phase 3
+          trust is earned — add feeds below; performance-based promotions land in Phase 5
         </span>
       </div>
+      <AddSource toast={toast} onAdded={() => setRefreshKey((k) => k + 1)} />
       <div style={{ background: C.panel, borderRadius: 8, border: `1px solid ${C.line}`, overflow: "hidden" }}>
         <div
           style={{
@@ -849,7 +946,7 @@ export default function Workstation() {
 
       {mode === "ops" && <OpsMode toast={toast} />}
       {mode === "archive" && <ArchiveMode toast={toast} />}
-      {mode === "sources" && <SourcesMode />}
+      {mode === "sources" && <SourcesMode toast={toast} />}
 
       {toastMsg && (
         <div

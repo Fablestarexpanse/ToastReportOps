@@ -21,8 +21,14 @@ ACTIVE = {
     "ExtinguishedDate": "",
     "Url": "https://www.fire.ca.gov/incidents/2026/7/19/flume-fire/",
 }
-CLOSED = {**ACTIVE, "Name": "Old Fire", "UniqueId": "cf-old-1", "IsActive": False,
-          "PercentContained": 100.0, "ExtinguishedDate": "2026-06-01T00:00:00Z"}
+CLOSED = {
+    **ACTIVE,
+    "Name": "Old Fire",
+    "UniqueId": "cf-old-1",
+    "IsActive": False,
+    "PercentContained": 100.0,
+    "ExtinguishedDate": "2026-06-01T00:00:00Z",
+}
 
 
 def test_incident_to_payload_maps_fields():
@@ -62,13 +68,17 @@ def test_inactive_fire_creates_contained_incident(seeded):
 def test_status_advances_but_never_regresses(seeded):
     _ingest(seeded, ACTIVE)
     # fire becomes contained -> advances
-    _ingest(seeded, {**ACTIVE, "IsActive": False, "PercentContained": 100.0,
-                     "Updated": "2026-07-20T00:00:00Z"})
+    _ingest(
+        seeded,
+        {**ACTIVE, "IsActive": False, "PercentContained": 100.0, "Updated": "2026-07-20T00:00:00Z"},
+    )
     inc = seeded.execute("SELECT status FROM incidents WHERE calfire_id='cf-flume-1'").fetchone()
     assert inc["status"] == "contained"
     # a stale poll still calling it active must NOT flip it back
-    _ingest(seeded, {**ACTIVE, "IsActive": True, "Updated": "2026-07-20T01:00:00Z",
-                     "PercentContained": 50.0})
+    _ingest(
+        seeded,
+        {**ACTIVE, "IsActive": True, "Updated": "2026-07-20T01:00:00Z", "PercentContained": 50.0},
+    )
     inc = seeded.execute("SELECT status FROM incidents WHERE calfire_id='cf-flume-1'").fetchone()
     assert inc["status"] == "contained"
 

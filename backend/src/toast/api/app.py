@@ -24,6 +24,10 @@ async def lifespan(app: FastAPI):
     configure_logging(settings.log_level, service="api")
     conn = connect(settings.toast_db_path, check_same_thread=False)
     apply_migrations(conn)
+    # populate the source-adapter registry so /sources (create) can validate
+    from toast.sources import load_builtin_adapters
+
+    load_builtin_adapters()
     app.state.conn = conn
     app.state.settings = settings
     get_logger("api").info("api_started", db=str(settings.toast_db_path))

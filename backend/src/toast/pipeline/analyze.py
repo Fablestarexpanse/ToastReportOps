@@ -52,39 +52,24 @@ def html_to_text(body: bytes) -> str:
     return text[:MAX_TEXT_CHARS]
 
 
-def analyze_url(
-    conn: sqlite3.Connection, url: str, *, client: LLMClient | None = None
+def extract_article(
+    conn: sqlite3.Connection,
+    *,
+    url: str,
+    source_id: str,
+    tier: int,
+    envelope_id: str,
+    raw_ref: str | None,
+    text: str,
+    client: LLMClient | None = None,
 ) -> dict[str, Any]:
-    """Full analysis of one URL. Returns a summary for the operator."""
-    settings = Settings()
-    source_id = ensure_manual_source(conn)
+    """Run the LLM extractor over already-fetched article text and write facts.
 
-    body, ctype = fetch(url, accept_types=("text/html", "application/xhtml+xml", "text/plain"))
-    raw_ref = store_raw(conn, settings.toast_data_dir, body, ctype, url)
-    text = (
-        html_to_text(body) if "html" in ctype else body.decode("utf-8", "replace")[:MAX_TEXT_CHARS]
-    )
-
+    Shared by the operator point-at-URL flow and the RSS article-extract stage.
+    Facts are written under the given envelope/source/tier and attributed.
+    """
     now = utcnow()
     result = extract_claims(text, reference_time=now, source_name=url, client=client)
-
-    env_id = insert_envelope(
-        conn,
-        Envelope(
-            source_id=source_id,
-            external_id=url,
-            kind="article",
-            payload={"url": url, "chars": len(text), "claims": len(result.claims)},
-            raw_ref=raw_ref,
-            url=url,
-        ),
-    )
-    if env_id is None:  # identical article content re-analyzed — still report
-        env_id = conn.execute(
-            "SELECT id FROM envelopes WHERE source_id=? AND external_id=? ORDER BY fetched_at DESC",
-            (source_id, url),
-        ).fetchone()["id"]
-
     summary: dict[str, Any] = {
         "url": url,
         "claims": len(result.claims),
@@ -93,13 +78,13 @@ def analyze_url(
         "prompt_version": result.prompt_version,
     }
     for claim in result.claims:
-        confidence = initial_confidence(4, claim.confidence)
+        confidence = initial_confidence(tier, claim.confidence)
         fact_id = write_fact(
             conn,
             incident_id=None,
-            envelope_id=env_id,
+            envelope_id=envelope_id,
             source_id=source_id,
-            tier=4,
+            tier=tier,
             content=claim.content,
             kind=claim.kind,
             observed_at=claim.observed_at or now,
@@ -135,3 +120,48 @@ def analyze_url(
             }
         )
     return summary
+
+
+def fetch_article_text(conn: sqlite3.Connection, url: str) -> tuple[str, str]:
+    """Safe-fetch a page and return (raw_ref, text). SSRF/size-guarded."""
+    settings = Settings()
+    body, ctype = fetch(url, accept_types=("text/html", "application/xhtml+xml", "text/plain"))
+    raw_ref = store_raw(conn, settings.toast_data_dir, body, ctype, url)
+    text = (
+        html_to_text(body) if "html" in ctype else body.decode("utf-8", "replace")[:MAX_TEXT_CHARS]
+    )
+    return raw_ref, text
+
+
+def analyze_url(
+    conn: sqlite3.Connection, url: str, *, client: LLMClient | None = None
+) -> dict[str, Any]:
+    """Operator point-at-URL: fetch, extract, write T4 facts, attribute."""
+    source_id = ensure_manual_source(conn)
+    raw_ref, text = fetch_article_text(conn, url)
+    env_id = insert_envelope(
+        conn,
+        Envelope(
+            source_id=source_id,
+            external_id=url,
+            kind="article",
+            payload={"url": url, "chars": len(text)},
+            raw_ref=raw_ref,
+            url=url,
+        ),
+    )
+    if env_id is None:  # identical content re-analyzed — reuse the prior envelope
+        env_id = conn.execute(
+            "SELECT id FROM envelopes WHERE source_id=? AND external_id=? ORDER BY fetched_at DESC",
+            (source_id, url),
+        ).fetchone()["id"]
+    return extract_article(
+        conn,
+        url=url,
+        source_id=source_id,
+        tier=4,
+        envelope_id=env_id,
+        raw_ref=raw_ref,
+        text=text,
+        client=client,
+    )
