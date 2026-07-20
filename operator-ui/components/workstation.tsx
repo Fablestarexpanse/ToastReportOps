@@ -10,6 +10,7 @@ import {
   ProbeResult,
   Source,
   SourceSuggestion,
+  TriageState,
   addNote,
   analyzeUrl,
   approveSuggestion,
@@ -36,6 +37,8 @@ import {
   setSourceTier,
   startResearch,
   toggleNote,
+  triageBulk,
+  triageFact,
 } from "@/lib/api";
 import { C, TIER, TIER_TITLES, confColor, font } from "@/lib/theme";
 import AlertBell from "@/components/alerts";
@@ -291,24 +294,50 @@ function AnalyzeBox({ toast }: { toast: (m: string) => void }) {
 function AdjudicationStrip({
   items,
   onResolve,
+  onTriage,
+  onTriageAllUnmatched,
 }: {
   items: AdjudicationItem[];
   onResolve: (factId: string, incidentId: string, name: string) => void;
+  onTriage: (factId: string, state: TriageState) => void;
+  onTriageAllUnmatched: (factIds: string[]) => void;
 }) {
   if (!items.length) return null;
+  // nothing named, nothing scored — these can never be attributed by hand
+  const unmatched = items.filter((i) => !i.candidates.length && !i.claimed_name);
   return (
     <div style={{ margin: "0 10px 10px", border: `1px solid ${C.violet}44`, borderRadius: 7, background: C.panel }}>
-      <div style={{ fontFamily: font.disp, fontSize: 12, letterSpacing: 2, color: C.violet, padding: "7px 11px 3px" }}>
-        ADJUDICATION QUEUE · {items.length} awaiting attribution
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 11px 3px" }}>
+        <span style={{ fontFamily: font.disp, fontSize: 12, letterSpacing: 2, color: C.violet }}>
+          ADJUDICATION QUEUE · {items.length} awaiting attribution
+        </span>
+        {unmatched.length > 1 && (
+          <span
+            onClick={() => onTriageAllUnmatched(unmatched.map((i) => i.fact.id))}
+            title="clear every item that names no fire and matches none — they aren't about a tracked incident"
+            style={{ marginLeft: "auto", fontFamily: font.mono, fontSize: 8.5, cursor: "pointer", color: C.dim, border: `1px solid ${C.line}`, borderRadius: 3, padding: "2px 7px" }}
+          >
+            CLEAR {unmatched.length} UNMATCHED
+          </span>
+        )}
       </div>
       <div style={{ maxHeight: 180, overflowY: "auto" }}>
-        {items.map(({ fact, candidates }) => (
+        {items.map(({ fact, candidates, claimed_name, unknown_fire }) => (
           <div key={fact.id} style={{ padding: "6px 11px", borderTop: `1px solid ${C.line}44` }}>
             <div style={{ fontSize: 11.5 }}>{fact.content}</div>
             <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap", alignItems: "center" }}>
               <span style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint }}>
-                T{fact.tier} · {fact.source_name} · attach to:
+                T{fact.tier} · {fact.source_name} ·{" "}
+                {candidates.length ? "attach to:" : unknown_fire ? "" : "no match:"}
               </span>
+              {unknown_fire && (
+                <span
+                  title="this names a fire we don't track — likely a new start; the WATCH board clusters these"
+                  style={{ fontFamily: font.mono, fontSize: 9, padding: "2px 8px", borderRadius: 3, border: `1px solid ${C.warn}`, color: C.warn }}
+                >
+                  ⚑ {claimed_name} — not a tracked fire
+                </span>
+              )}
               {candidates.slice(0, 3).map((c) => (
                 <span
                   key={c.incident_id}
@@ -327,11 +356,24 @@ function AdjudicationStrip({
                   {c.incident_name} · {Math.round(c.score * 100)}%
                 </span>
               ))}
-              {!candidates.length && (
-                <span style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint }}>
-                  no candidates scored — leave for Phase 5 watch board
+              <span style={{ marginLeft: "auto", display: "flex", gap: 5 }}>
+                {unknown_fire && (
+                  <span
+                    onClick={() => onTriage(fact.id, "watch")}
+                    title="track as a possible new start on the WATCH board"
+                    style={{ fontFamily: font.mono, fontSize: 8.5, cursor: "pointer", color: C.warn, border: `1px solid ${C.warn}66`, borderRadius: 3, padding: "2px 7px" }}
+                  >
+                    → WATCH
+                  </span>
+                )}
+                <span
+                  onClick={() => onTriage(fact.id, "not_incident")}
+                  title="not about a tracked wildfire — clears the queue; the fact itself is never altered"
+                  style={{ fontFamily: font.mono, fontSize: 8.5, cursor: "pointer", color: C.dim, border: `1px solid ${C.line}`, borderRadius: 3, padding: "2px 7px" }}
+                >
+                  NOT A FIRE
                 </span>
-              )}
+              </span>
             </div>
           </div>
         ))}
@@ -644,6 +686,24 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
       toast(`resolve failed: ${e instanceof Error ? e.message : e}`);
     }
   };
+  const onTriage = async (factId: string, state: TriageState) => {
+    try {
+      await triageFact(factId, state);
+      setResolved((s) => ({ ...s, [factId]: true }));
+      toast(state === "watch" ? "sent to watch board" : "cleared — not a tracked fire");
+    } catch (e) {
+      toast(`triage failed: ${e instanceof Error ? e.message : e}`);
+    }
+  };
+  const onTriageAllUnmatched = async (factIds: string[]) => {
+    try {
+      const r = await triageBulk(factIds, "not_incident");
+      setResolved((s) => ({ ...s, ...Object.fromEntries(factIds.map((id) => [id, true])) }));
+      toast(`cleared ${r.triaged} unmatched fact${r.triaged === 1 ? "" : "s"}`);
+    } catch (e) {
+      toast(`bulk triage failed: ${e instanceof Error ? e.message : e}`);
+    }
+  };
   const [selected, setSelected] = useState<string | null>(null);
   const [tiers, setTiers] = useState<Record<number, boolean>>({ 1: true, 2: true, 3: true, 4: true, 5: true });
   const [kw, setKw] = useState("");
@@ -942,6 +1002,8 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
         <AdjudicationStrip
           items={(adjudication ?? []).filter((it) => !resolved[it.fact.id])}
           onResolve={onResolve}
+          onTriage={onTriage}
+          onTriageAllUnmatched={onTriageAllUnmatched}
         />
         <div style={{ flex: 1, minHeight: 0 }}>
           <MapPanel incidents={incidents ?? []} selected={selected} onSelect={setSelected} />

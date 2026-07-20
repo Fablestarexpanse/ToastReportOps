@@ -197,7 +197,39 @@ export type AdjudicationCandidate = {
   time_score: number;
 };
 
-export type AdjudicationItem = { fact: Fact; candidates: AdjudicationCandidate[] };
+export type AdjudicationItem = {
+  fact: Fact;
+  candidates: AdjudicationCandidate[];
+  claimed_name: string | null;
+  unknown_fire: boolean;
+};
+
+export type TriageState = "not_incident" | "watch" | "deferred";
+
+export async function triageFact(factId: string, state: TriageState): Promise<void> {
+  const res = await fetch(`/api/adjudication/${factId}/triage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ state }),
+  });
+  if (!res.ok) {
+    const detail = await res.json().then((d) => d.detail).catch(() => res.status);
+    throw new Error(String(detail));
+  }
+}
+
+export async function triageBulk(
+  factIds: string[],
+  state: TriageState,
+): Promise<{ triaged: number }> {
+  const res = await fetch("/api/adjudication/triage", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fact_ids: factIds, state }),
+  });
+  if (!res.ok) throw new Error(`bulk triage failed (${res.status})`);
+  return res.json();
+}
 
 export type AnalyzeResult = {
   url: string;

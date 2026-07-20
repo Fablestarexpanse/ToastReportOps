@@ -283,6 +283,7 @@ def adjudication_queue(request: Request, limit: int = Query(50, le=200)) -> dict
     rows = conn.execute(
         f"""SELECT {FACT_COLS} FROM facts f JOIN sources s ON s.id = f.source_id
             WHERE f.incident_id IS NULL AND f.kind NOT IN ('weather')
+              AND f.id NOT IN (SELECT fact_id FROM fact_triage)
             ORDER BY f.ingested_at DESC LIMIT ?""",
         (limit,),
     ).fetchall()
@@ -290,31 +291,102 @@ def adjudication_queue(request: Request, limit: int = Query(50, le=200)) -> dict
     for row in rows:
         fact = _fact_dict(row)
         structured = fact["structured"]
+        claimed_name = structured.get("incident_name")
         candidates = score_candidates(
             conn,
             observed_at=row["observed_at"],
-            incident_name=structured.get("incident_name"),
+            incident_name=claimed_name,
             lat=row["lat"],
             lon=row["lon"],
         )
+        # A candidate carried only by the time signal is noise, not a match:
+        # every open incident is "recent", so it would rank identically for
+        # every fact. Requiring name or geo evidence keeps the queue honest.
+        scored: list[dict[str, Any]] = [
+            {
+                "incident_id": c.incident_id,
+                "incident_name": c.incident_name,
+                "score": round(c.score, 3),
+                "name_score": round(c.name_score, 2),
+                "geo_score": round(c.geo_score, 2),
+                "time_score": round(c.time_score, 2),
+            }
+            for c in candidates
+            if c.score >= REVIEW_THRESHOLD * 0.5 and (c.name_score > 0.15 or c.geo_score > 0)
+        ]
         items.append(
             {
                 "fact": fact,
-                "candidates": [
-                    {
-                        "incident_id": c.incident_id,
-                        "incident_name": c.incident_name,
-                        "score": round(c.score, 3),
-                        "name_score": round(c.name_score, 2),
-                        "geo_score": round(c.geo_score, 2),
-                        "time_score": round(c.time_score, 2),
-                    }
-                    for c in candidates
-                    if c.score >= REVIEW_THRESHOLD * 0.5
-                ],
+                "candidates": scored,
+                "claimed_name": claimed_name,
+                # names a fire we don't track — belongs on the WATCH board as a
+                # possible new start, not attributed to an existing incident
+                "unknown_fire": bool(claimed_name)
+                and not any(float(c["name_score"]) >= 0.6 for c in scored),
             }
         )
     return {"queue": items}
+
+
+@router.post("/adjudication/{fact_id}/triage")
+def triage_fact(request: Request, fact_id: str, body: dict) -> dict:
+    """Dispose of a fact that belongs to no tracked incident.
+
+    The fact is never modified — triage is recorded in a derived table, so the
+    claim stays exactly as observed while leaving the operator's queue."""
+    from toast.core.db import utcnow
+
+    state = (body.get("state") or "").strip()
+    if state not in ("not_incident", "watch", "deferred"):
+        raise HTTPException(400, "state must be not_incident, watch or deferred")
+    conn = _conn(request)
+    row = conn.execute("SELECT incident_id FROM facts WHERE id = ?", (fact_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "fact not found")
+    if row["incident_id"] is not None:
+        raise HTTPException(409, "fact is already attributed")
+    conn.execute(
+        """INSERT INTO fact_triage (fact_id, state, note, at) VALUES (?, ?, ?, ?)
+           ON CONFLICT(fact_id) DO UPDATE SET state = excluded.state,
+                                              note = excluded.note, at = excluded.at""",
+        (fact_id, state, (body.get("note") or "")[:500] or None, utcnow()),
+    )
+    return {"ok": True, "fact_id": fact_id, "state": state}
+
+
+@router.post("/adjudication/triage")
+def triage_bulk(request: Request, body: dict) -> dict:
+    """Triage many facts at once — clearing a backlog one row at a time is how
+    backlogs stay."""
+    from toast.core.db import utcnow
+
+    state = (body.get("state") or "").strip()
+    fact_ids = body.get("fact_ids") or []
+    if state not in ("not_incident", "watch", "deferred"):
+        raise HTTPException(400, "state must be not_incident, watch or deferred")
+    if not isinstance(fact_ids, list) or not fact_ids:
+        raise HTTPException(400, "fact_ids required")
+    conn = _conn(request)
+    now = utcnow()
+    done = 0
+    for fact_id in fact_ids[:500]:
+        row = conn.execute("SELECT incident_id FROM facts WHERE id = ?", (str(fact_id),)).fetchone()
+        if row is None or row["incident_id"] is not None:
+            continue
+        conn.execute(
+            """INSERT INTO fact_triage (fact_id, state, at) VALUES (?, ?, ?)
+               ON CONFLICT(fact_id) DO UPDATE SET state = excluded.state, at = excluded.at""",
+            (str(fact_id), state, now),
+        )
+        done += 1
+    return {"ok": True, "triaged": done, "state": state}
+
+
+@router.post("/adjudication/{fact_id}/untriage")
+def untriage_fact(request: Request, fact_id: str) -> dict:
+    """Put a triaged fact back in the queue (nothing is ever destroyed)."""
+    _conn(request).execute("DELETE FROM fact_triage WHERE fact_id = ?", (fact_id,))
+    return {"ok": True}
 
 
 @router.post("/adjudication/{fact_id}")
