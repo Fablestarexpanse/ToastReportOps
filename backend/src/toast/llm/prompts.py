@@ -68,6 +68,11 @@ EDITABLE_PROMPTS: dict[str, dict[str, str]] = {
         "purpose": "How a watch candidate is judged new vs. old.",
         "version": "v1",
     },
+    "autotriage": {
+        "label": "Adjudication triage",
+        "purpose": "How the AI proposes dispositions for unattributed claims.",
+        "version": "v1",
+    },
 }
 
 

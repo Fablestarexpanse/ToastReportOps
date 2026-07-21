@@ -922,10 +922,14 @@ def adjudication_queue(request: Request, limit: int = Query(50, le=200)) -> dict
             for c in candidates
             if c.score >= REVIEW_THRESHOLD * 0.5 and (c.name_score > 0.15 or c.geo_score > 0)
         ]
+        proposal = conn.execute(
+            "SELECT * FROM triage_proposals WHERE fact_id = ?", (row["id"],)
+        ).fetchone()
         items.append(
             {
                 "fact": fact,
                 "candidates": scored,
+                "proposal": dict(proposal) if proposal else None,
                 "claimed_name": claimed_name,
                 # names a fire we don't track — belongs on the WATCH board as a
                 # possible new start, not attributed to an existing incident
@@ -934,6 +938,15 @@ def adjudication_queue(request: Request, limit: int = Query(50, le=200)) -> dict
             }
         )
     return {"queue": items}
+
+
+@router.post("/adjudication/autotriage")
+def autotriage_now(request: Request) -> dict:
+    """Queue an AI triage pass over unproposed adjudication items. Proposals
+    are advice; nothing is applied until the operator accepts."""
+    from toast.queue import jobs
+
+    return {"ok": True, "job_id": jobs.enqueue(_conn(request), "autotriage", {}, priority=5)}
 
 
 @router.post("/adjudication/reattribute")

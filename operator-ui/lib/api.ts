@@ -297,12 +297,27 @@ export type AdjudicationCandidate = {
   time_score: number;
 };
 
+export type TriageProposal = {
+  fact_id: string;
+  action: "attach" | "watch" | "not_incident" | "unsure";
+  incident_id: string | null;
+  incident_name: string | null;
+  confidence: number | null;
+  reasoning: string | null;
+  prompt_version: string;
+  proposed_at: string;
+};
+
 export type AdjudicationItem = {
   fact: Fact;
   candidates: AdjudicationCandidate[];
   claimed_name: string | null;
   unknown_fire: boolean;
+  proposal?: TriageProposal | null;
 };
+
+export const autotriageNow = () =>
+  post<{ job_id: string }>("/adjudication/autotriage", {});
 
 export type TriageState = "not_incident" | "watch" | "deferred";
 

@@ -359,6 +359,16 @@ def weather_refresh_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -
     get_logger("weather").info("weather_refresh_done", incidents=done)
 
 
+@register("autotriage")
+def autotriage_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Draft dispositions for the adjudication queue. Proposals only — the
+    operator accepts through the same endpoints a manual decision uses."""
+    from toast.pipeline.autotriage import propose_batch
+
+    result = propose_batch(conn)
+    get_logger("autotriage").info("autotriage_batch", **result)
+
+
 @register("telegram_notify")
 def telegram_notify_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     """Push new-fire / evac-change / draft-for-review alerts to the ops chat."""

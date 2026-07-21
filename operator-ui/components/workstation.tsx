@@ -60,6 +60,7 @@ import {
   AirResource,
   fetchDeferredCount,
   restoreDeferred,
+  autotriageNow,
   triageFact,
 } from "@/lib/api";
 import { C, TIER, TIER_TITLES, confColor, font, Z } from "@/lib/theme";
@@ -460,6 +461,7 @@ function AdjudicationStrip({
   onTriageAllUnmatched: (factIds: string[]) => void;
   onDeferAll: (factIds: string[]) => void;
 }) {
+  const [aiState, setAiState] = useState<string | null>(null);
   // Collapse is display-only and remembered, so the queue can be pushed out of
   // the way without changing a single fact. The operator's choice is honoured and
   // persisted; no auto-collapse heuristic, which mis-fired on mount timing and is
@@ -494,6 +496,9 @@ function AdjudicationStrip({
         >
           ADJUDICATION QUEUE · {items.length} awaiting attribution
         </span>
+        {aiState && (
+          <span style={{ fontFamily: font.mono, fontSize: 8, color: C.blue }}>AI: {aiState}</span>
+        )}
         <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
           {unmatched.length > 1 && (
             <span
@@ -504,6 +509,17 @@ function AdjudicationStrip({
               CLEAR {unmatched.length} UNMATCHED
             </span>
           )}
+          <span
+            onClick={() =>
+              autotriageNow()
+                .then(() => setAiState("queued — proposals appear as the model works"))
+                .catch((e) => setAiState(`failed: ${e instanceof Error ? e.message : e}`))
+            }
+            title="the AI drafts a disposition for each item; nothing applies until you accept"
+            style={{ fontFamily: font.mono, fontSize: 8.5, cursor: "pointer", color: C.blue, border: `1px solid ${C.blue}66`, borderRadius: 3, padding: "2px 7px" }}
+          >
+            ✦ AI TRIAGE
+          </span>
           {items.length > 1 && (
             <span
               onClick={() => onDeferAll(items.map((i) => i.fact.id))}
@@ -516,9 +532,42 @@ function AdjudicationStrip({
         </span>
       </div>
       <div style={{ maxHeight: 180, overflowY: "auto", display: collapsed ? "none" : "block" }}>
-        {items.map(({ fact, candidates, claimed_name, unknown_fire }) => (
+        {items.map(({ fact, candidates, claimed_name, unknown_fire, proposal }) => (
           <div key={fact.id} style={{ padding: "6px 11px", borderTop: `1px solid ${C.line}44` }}>
             <div style={{ fontSize: 11.5 }}>{fact.content}</div>
+            {proposal && (
+              /* AI advice: rendered, reasoned, and inert until accepted. Accepting
+                 routes through the SAME handlers as a manual click. */
+              <div style={{ display: "flex", gap: 6, marginTop: 3, alignItems: "center", flexWrap: "wrap" }}>
+                <span style={{ fontFamily: font.mono, fontSize: 8.5, color: proposal.action === "unsure" ? C.faint : C.blue }}>
+                  ✦ AI{proposal.confidence != null ? ` ${Math.round(proposal.confidence * 100)}%` : ""}:{" "}
+                  {proposal.action === "attach"
+                    ? `attach to ${proposal.incident_name}`
+                    : proposal.action === "watch"
+                      ? "possible new start → WATCH"
+                      : proposal.action === "not_incident"
+                        ? "not a live fire event"
+                        : "unsure — needs your eyes"}
+                  {proposal.reasoning ? ` — ${proposal.reasoning}` : ""}
+                </span>
+                {proposal.action === "attach" && proposal.incident_id && (
+                  <span
+                    onClick={() => onResolve(fact.id, proposal.incident_id!, proposal.incident_name ?? "")}
+                    style={{ fontFamily: font.mono, fontSize: 8.5, cursor: "pointer", color: C.ok, border: `1px solid ${C.ok}66`, borderRadius: 3, padding: "1px 7px" }}
+                  >
+                    ✓ ACCEPT
+                  </span>
+                )}
+                {(proposal.action === "watch" || proposal.action === "not_incident") && (
+                  <span
+                    onClick={() => onTriage(fact.id, proposal.action as TriageState)}
+                    style={{ fontFamily: font.mono, fontSize: 8.5, cursor: "pointer", color: C.ok, border: `1px solid ${C.ok}66`, borderRadius: 3, padding: "1px 7px" }}
+                  >
+                    ✓ ACCEPT
+                  </span>
+                )}
+              </div>
+            )}
             <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap", alignItems: "center" }}>
               <span style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint }}>
                 T{fact.tier} · {fact.source_name} ·{" "}
