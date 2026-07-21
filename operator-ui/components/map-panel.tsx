@@ -74,6 +74,16 @@ function pinRadius(acreage: number | null): number {
   return Math.max(5, Math.min(22, 4 + Math.log10(acreage + 1) * 3.4));
 }
 
+// Aircraft symbols by firefighting role — so a retardant bomber, the lead plane
+// spotting for it, and a helo read differently at a glance. Glyphs, not photos,
+// because they must stay legible at map scale.
+const ROLE_STYLE: Record<string, { glyph: string; color: string; size: number; label: string }> = {
+  tanker: { glyph: "✈", color: C.emberHot, size: 16, label: "AIR TANKER (retardant)" },
+  air_attack: { glyph: "▲", color: C.warn, size: 13, label: "air attack / lead plane" },
+  helicopter: { glyph: "✜", color: C.blue, size: 15, label: "helicopter" },
+  other: { glyph: "▲", color: C.faint, size: 10, label: "aircraft" },
+};
+
 // A hotspot's colour is its heat: fire radiative power in MW. This is the
 // "how intense" read the pins cannot give — a satellite saw this pixel glowing.
 function hotspotColor(frp: number | null): string {
@@ -294,21 +304,23 @@ export default function MapPanel({
     if (!showAircraft || !aircraft?.aircraft?.length) return;
     const group = L.layerGroup();
     for (const a of aircraft.aircraft as Aircraft[]) {
-      const color = a.fire_ops ? C.blue : C.faint;
+      const style = ROLE_STYLE[a.role] ?? ROLE_STYLE.other;
       // the trail shows the orbit — a tanker's racetrack over the fire
       if (a.fire_ops && a.trail.length > 1) {
-        L.polyline(a.trail, { color, weight: 1.5, opacity: 0.5, dashArray: "3 4" }).addTo(group);
+        L.polyline(a.trail, { color: style.color, weight: 1.5, opacity: 0.5, dashArray: "3 4" }).addTo(group);
       }
-      // a small rotated triangle points the way the aircraft is heading
+      // helicopters do not have a meaningful heading arrow when hovering, and a
+      // rotor glyph reads at a glance; fixed-wing get a heading-rotated shape
       const heading = a.track ?? 0;
+      const rotate = a.role === "helicopter" ? 0 : heading;
       const icon = L.divIcon({
         className: "",
         html:
-          `<div style="transform:rotate(${heading}deg);color:${color};` +
-          `font-size:${a.fire_ops ? 15 : 11}px;line-height:1;` +
-          `text-shadow:0 0 3px #000;opacity:${a.fire_ops ? 1 : 0.75}">▲</div>`,
-        iconSize: [16, 16],
-        iconAnchor: [8, 8],
+          `<div style="transform:rotate(${rotate}deg);color:${style.color};` +
+          `font-size:${a.fire_ops ? style.size : 10}px;line-height:1;` +
+          `text-shadow:0 0 3px #000;opacity:${a.fire_ops ? 1 : 0.7}">${style.glyph}</div>`,
+        iconSize: [18, 18],
+        iconAnchor: [9, 9],
       });
       const label =
         `${a.flight || a.type || "aircraft"}${a.descr ? ` — ${a.descr}` : ""}` +
@@ -316,7 +328,7 @@ export default function MapPanel({
         `${a.gs != null ? ` · ${Math.round(a.gs)} kt` : ""}` +
         `<br/>seen ${age(a.seen_at)} ago` +
         (a.fire_ops
-          ? '<br/><b style="color:#5cb8ff">likely air operations</b>'
+          ? `<br/><b style="color:${style.color}">${style.label}</b>`
           : "<br/><i>aircraft near the fire — role unknown</i>");
       L.marker([a.lat, a.lon], { icon }).bindTooltip(label, { direction: "top", opacity: 0.95 }).addTo(group);
     }
@@ -651,7 +663,9 @@ function MapKey({ open, onToggle }: { open: boolean; onToggle: () => void }) {
           <Row swatch={dot(C.ember)} label="10–50 MW — active" />
           <Row swatch={dot(C.warn)} label="under 10 MW — small / faint" />
           <div style={{ color: C.faint, letterSpacing: 1, margin: "6px 0 4px" }}>AIRCRAFT</div>
-          <Row swatch={<span style={{ color: C.blue }}>▲</span>} label="likely air ops (tanker / helo)" />
+          <Row swatch={<span style={{ color: C.emberHot }}>✈</span>} label="air tanker (retardant bomber)" />
+          <Row swatch={<span style={{ color: C.warn }}>▲</span>} label="air attack / lead plane (spotter)" />
+          <Row swatch={<span style={{ color: C.blue }}>✜</span>} label="helicopter" />
           <Row swatch={<span style={{ color: C.faint }}>▲</span>} label="other aircraft near the fire" />
           <Row swatch={<span style={{ color: C.blue }}>┄</span>} label="dashed = its recent orbit" />
           <div style={{ color: C.faint, letterSpacing: 1, margin: "6px 0 4px" }}>SHAPES</div>

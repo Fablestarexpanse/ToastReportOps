@@ -51,6 +51,9 @@ import {
   startResearch,
   toggleNote,
   triageBulk,
+  fetchAircraftPhoto,
+  AircraftPhoto,
+  AirResource,
   fetchDeferredCount,
   restoreDeferred,
   triageFact,
@@ -559,6 +562,111 @@ function Delta({ d, invert }: { d: number | null; invert?: boolean }) {
   );
 }
 
+const ROLE_META: Record<string, { glyph: string; color: string; label: string }> = {
+  tanker: { glyph: "✈", color: C.emberHot, label: "TANKER" },
+  air_attack: { glyph: "▲", color: C.warn, label: "AIR ATTACK" },
+  helicopter: { glyph: "✜", color: C.blue, label: "HELO" },
+  other: { glyph: "▲", color: C.faint, label: "OTHER" },
+};
+
+/* Air resources over the fire — a live ADS-B roster, role-typed, click a row to
+   pull the aircraft's photo (by its ICAO hex, its assigned ID) with the
+   photographer credit that its source requires. */
+function AirResourcesBox({ resources, observed }: { resources: AirResource[]; observed: number }) {
+  const [openHex, setOpenHex] = useState<string | null>(null);
+  const [photos, setPhotos] = useState<Record<string, AircraftPhoto | "loading">>({});
+
+  const openRow = async (hex: string) => {
+    const next = openHex === hex ? null : hex;
+    setOpenHex(next);
+    if (next && !photos[hex]) {
+      setPhotos((p) => ({ ...p, [hex]: "loading" }));
+      try {
+        const photo = await fetchAircraftPhoto(hex);
+        setPhotos((p) => ({ ...p, [hex]: photo }));
+      } catch {
+        setPhotos((p) => ({ ...p, [hex]: { hex, found: false } }));
+      }
+    }
+  };
+
+  // firefighting aircraft only in the headline roster; the count still reflects all
+  const fireOps = resources.filter((r) => r.fire_ops);
+  if (!resources.length && !observed) return null;
+
+  return (
+    <div style={{ background: C.bg, border: `1px solid ${C.line}`, borderRadius: 6, padding: "8px 10px" }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 5 }}>
+        <span style={{ fontFamily: font.mono, fontSize: 8, color: C.faint, letterSpacing: 1 }}>
+          AIR RESOURCES
+        </span>
+        <span style={{ fontFamily: font.mono, fontSize: 8, color: C.blue }}>
+          {fireOps.length} overhead now{observed > fireOps.length ? ` · ${observed} in last 6h` : ""}
+        </span>
+        <span style={{ marginLeft: "auto", fontFamily: font.mono, fontSize: 7, color: C.faint }}>
+          airplanes.live · live
+        </span>
+      </div>
+      {!fireOps.length && (
+        <div style={{ fontFamily: font.mono, fontSize: 9, color: C.faint }}>
+          none tracked right now — ADS-B coverage over the fire may be thin
+        </div>
+      )}
+      {fireOps.map((a) => {
+        const m = ROLE_META[a.role] ?? ROLE_META.other;
+        const photo = photos[a.hex];
+        return (
+          <div key={a.hex} style={{ borderTop: `1px solid ${C.line}44`, padding: "4px 0" }}>
+            <div
+              onClick={() => openRow(a.hex)}
+              className="tr-row"
+              title="click to see the aircraft and pull its photo"
+              style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer" }}
+            >
+              <span style={{ color: m.color, fontSize: 13, width: 14, textAlign: "center" }}>{m.glyph}</span>
+              <span style={{ fontFamily: font.mono, fontSize: 10, color: C.txt, minWidth: 70 }}>
+                {a.flight || a.hex}
+              </span>
+              <span style={{ fontFamily: font.mono, fontSize: 8, color: m.color, border: `1px solid ${m.color}55`, borderRadius: 3, padding: "0 4px" }}>
+                {m.label}
+              </span>
+              <span style={{ fontFamily: font.mono, fontSize: 8.5, color: C.dim, marginLeft: "auto" }}>
+                {a.alt_ft != null ? `${a.alt_ft.toLocaleString()}ft` : "—"}
+                {a.gs != null ? ` · ${Math.round(a.gs)}kt` : ""}
+              </span>
+              <span style={{ color: C.faint, fontSize: 9 }}>{openHex === a.hex ? "▾" : "▸"}</span>
+            </div>
+            {openHex === a.hex && (
+              <div style={{ display: "flex", gap: 8, padding: "5px 0 3px 21px", alignItems: "flex-start" }}>
+                {photo === "loading" && (
+                  <span style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint }}>loading photo…</span>
+                )}
+                {photo && photo !== "loading" && photo.found && (
+                  <a href={photo.link ?? "#"} target="_blank" rel="noopener noreferrer" title="open on planespotters.net">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={photo.large_url ?? photo.thumb_url ?? ""} alt={a.descr ?? a.hex} style={{ width: 150, borderRadius: 4, border: `1px solid ${C.line}` }} />
+                  </a>
+                )}
+                <div style={{ fontFamily: font.mono, fontSize: 8.5, color: C.dim, lineHeight: 1.5 }}>
+                  <div style={{ color: C.txt }}>{a.descr || a.type || "unknown type"}</div>
+                  <div>hex {a.hex}{a.type ? ` · ${a.type}` : ""}</div>
+                  <div>seen {age(a.seen_at)} ago</div>
+                  {photo && photo !== "loading" && !photo.found && (
+                    <div style={{ color: C.faint }}>no photo on file for this hull</div>
+                  )}
+                  {photo && photo !== "loading" && photo.found && photo.photographer && (
+                    <div style={{ color: C.faint }}>photo © {photo.photographer} · planespotters.net</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function IntelPanel({ sel, toast }: { sel: Incident; toast: (m: string) => void }) {
   const intel = usePolling(() => fetchIntel(sel.id), [sel.id]);
   const [notes, setNotes] = useState<Note[]>([]);
@@ -827,16 +935,8 @@ function IntelPanel({ sel, toast }: { sel: Incident; toast: (m: string) => void 
         </div>
       )}
 
-      {/* aircraft seen working the fire — live from ADS-B, a count not a claim */}
-      {!!intel.aircraft_observed && (
-        <div
-          style={{ fontFamily: font.mono, fontSize: 9, color: C.blue, display: "flex", alignItems: "center", gap: 5 }}
-          title="distinct tankers/helicopters observed near this fire in the last 6h (airplanes.live ADS-B). A live count, not a confirmed roster."
-        >
-          <span>✈</span>
-          {intel.aircraft_observed} air resource{intel.aircraft_observed === 1 ? "" : "s"} observed overhead · last 6h
-        </div>
-      )}
+      {/* air resources over the fire — live ADS-B roster, role-typed, click for a photo */}
+      <AirResourcesBox resources={intel.air_resources ?? []} observed={intel.aircraft_observed ?? 0} />
 
       {/* deployed resources — the official total, plus what reporting says */}
       <div>

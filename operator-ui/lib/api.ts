@@ -583,6 +583,7 @@ export type ImpactFact = {
 };
 
 export type IncidentIntel = {
+  air_resources?: AirResource[];
   aircraft_observed?: number;
   metrics: {
     acreage: MetricValue;
@@ -970,6 +971,7 @@ export type Aircraft = {
   gs: number | null;
   track: number | null;
   fire_ops: boolean;      // heuristic: firefighting type or low rotorcraft
+  role: "tanker" | "air_attack" | "helicopter" | "other";
   incident_id: string;
   seen_at: string;
   trail: [number, number][];
@@ -984,6 +986,31 @@ export type AircraftSet = {
 };
 
 export const fetchAircraft = () => get<AircraftSet>("/aircraft");
+
+export type AirResource = {
+  hex: string;
+  flight: string | null;
+  type: string | null;
+  descr: string | null;
+  role: "tanker" | "air_attack" | "helicopter" | "other";
+  fire_ops: boolean;
+  alt_ft: number | null;
+  gs: number | null;
+  track: number | null;
+  seen_at: string;
+};
+
+export type AircraftPhoto = {
+  hex: string;
+  found: boolean;
+  thumb_url?: string | null;
+  large_url?: string | null;
+  photographer?: string | null;
+  link?: string | null;
+};
+
+export const fetchAircraftPhoto = (hex: string) =>
+  get<AircraftPhoto>(`/aircraft/${hex}/photo`);
 
 export const fetchGnis = () => get<{ features: number }>("/gnis");
 
