@@ -16,6 +16,7 @@ import {
   fetchPerimeters,
   fetchWind,
   hasActiveEvac,
+  saveSettings,
 } from "@/lib/api";
 import { CA_OUTLINE } from "@/lib/california";
 import { C, Z, font } from "@/lib/theme";
@@ -145,7 +146,23 @@ export default function MapPanel({
   // It is temporary: zooming back out to a regional view restores whatever
   // basemap they actually chose, so the swap never quietly becomes permanent.
   const [override, setOverride] = useState<string | null>(null);
-  const effective = override ?? basemap;
+  // the operator's on-map basemap choice, seeded from settings and persisted so
+  // it survives a reload and stays in sync with OPTIONS
+  const [chosen, setChosen] = useState(basemap);
+  useEffect(() => setChosen(basemap), [basemap]); // a change in OPTIONS wins
+  const pickBasemap = useCallback((key: string) => {
+    setChosen(key);
+    setOverride(null); // an explicit pick ends any temporary zoom-to-origin swap
+    try {
+      localStorage.setItem("toast-map-basemap", key);
+    } catch {
+      // ignore
+    }
+    // basemap is a display preference — persist it the same way OPTIONS does, or
+    // syncDisplayPrefs would pull the old server value back on the next reload
+    saveSettings({ map_basemap: key }).catch(() => undefined);
+  }, []);
+  const effective = override ?? chosen;
 
   // create once
   useEffect(() => {
@@ -529,6 +546,51 @@ export default function MapPanel({
         }}
       >
         ⌂
+      </div>
+
+      {/* basemap switcher, right on the map — one click, no going into OPTIONS.
+          Topo for terrain, satellite for the ground, dark for everything else. */}
+      <div
+        style={{
+          position: "absolute",
+          top: 114,
+          left: 10,
+          zIndex: Z.mapControl,
+          display: "flex",
+          flexDirection: "column",
+          gap: 2,
+          background: "#1b2128",
+          border: `1px solid ${C.line}`,
+          borderRadius: 4,
+          padding: 2,
+          boxShadow: "0 1px 5px rgba(0,0,0,0.4)",
+        }}
+      >
+        {(["dark", "topo", "satellite", "osm", "offline"] as const).map((key) => {
+          const label = key === "osm" ? "STREET" : (BASEMAPS[key]?.label ?? "OFFLINE");
+          const active = chosen === key;
+          return (
+            <span
+              key={key}
+              onClick={() => pickBasemap(key)}
+              title={`basemap: ${label.toLowerCase()}`}
+              style={{
+                fontFamily: font.mono,
+                fontSize: 8,
+                letterSpacing: 0.5,
+                textAlign: "center",
+                padding: "3px 6px",
+                borderRadius: 3,
+                cursor: "pointer",
+                color: active ? C.bg : C.dim,
+                background: active ? C.ember : "transparent",
+                fontWeight: active ? 700 : 400,
+              }}
+            >
+              {label}
+            </span>
+          );
+        })}
       </div>
 
       {override && (
