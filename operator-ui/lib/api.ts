@@ -229,6 +229,9 @@ export type ResearchJob = {
 export const makeGraphic = (draftId: string) =>
   post<{ graphic_sha: string; bytes: number }>(`/drafts/${draftId}/graphic`, {});
 
+export const buildSiteNow = () =>
+  post<{ ok: boolean; pages?: number }>("/site/build", {});
+
 export const fetchPublishChannels = () => get<{ channels: string[] }>("/publish/channels");
 
 export const releaseDraft = (draftId: string, channels: string[], at?: string) =>

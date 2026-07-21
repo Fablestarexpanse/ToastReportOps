@@ -9,6 +9,7 @@ import {
   cancelResearch,
   createSocialDraft,
   fetchDraft,
+  buildSiteNow,
   fetchPublishChannels,
   makeGraphic,
   releaseDraft,
@@ -219,6 +220,35 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
       refresh();
     } catch (e) {
       toast(`${e instanceof Error ? e.message : e}`);
+    }
+  };
+
+  const download = (name: string, text: string, mime = "text/plain") => {
+    const url = URL.createObjectURL(new Blob([text], { type: mime }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const pushOne = async (channel: string) => {
+    if (!detail) return;
+    try {
+      const r = await releaseDraft(detail.draft.id, [channel]);
+      toast(r.created.length ? `pushed → ${channel}` : `${channel} already has this post`);
+      setDetail(await fetchDraft(detail.draft.id));
+    } catch (e) {
+      toast(`${e instanceof Error ? e.message : e}`);
+    }
+  };
+
+  const doBuildSite = async () => {
+    try {
+      await buildSiteNow();
+      toast("site build queued — ARCHIVE → publishes to your local site output");
+    } catch (e) {
+      toast(`site build failed: ${e instanceof Error ? e.message : e}`);
     }
   };
 
@@ -502,6 +532,74 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
 
       {/* cited facts */}
       <div style={{ borderLeft: `1px solid ${C.line}`, background: C.panel, display: "flex", flexDirection: "column", minHeight: 0 }}>
+        {d && (
+          <div style={{ padding: "10px 13px", borderBottom: `1px solid ${C.line}` }}>
+            <div style={{ fontFamily: font.disp, fontSize: 12, letterSpacing: 2, color: C.dim, marginBottom: 7 }}>
+              PUSH &amp; EXPORT
+            </div>
+            {d.kind === "social" ? (
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8 }}>
+                {channels.map((c) => {
+                  const ready = d.status === "approved" || d.status === "published";
+                  return (
+                    <span
+                      key={c}
+                      onClick={() => ready && pushOne(c)}
+                      title={ready
+                        ? `push this post to ${c} now (safe: an already-sent channel is never doubled)`
+                        : "approve the draft first — nothing publishes itself"}
+                      style={{ fontFamily: font.mono, fontSize: 9.5, padding: "3px 9px", borderRadius: 4, cursor: ready ? "pointer" : "not-allowed", border: `1px solid ${ready ? C.ok + "77" : C.line}`, color: ready ? C.ok : C.faint }}
+                    >
+                      → {c.toUpperCase()}
+                    </span>
+                  );
+                })}
+                {channels.length === 0 && (
+                  <span style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint }}>
+                    no channels configured — OPTIONS → API KEYS
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint, marginBottom: 8 }}>
+                reports publish to the site; social channels take the ✍ SOCIAL VERSION
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+              <span
+                onClick={() => d && download(`${(d.title || d.id).slice(0, 40)}.md`, bodyEdit, "text/markdown")}
+                title="download the draft as markdown"
+                style={{ fontFamily: font.mono, fontSize: 9.5, padding: "3px 9px", borderRadius: 4, cursor: "pointer", border: `1px solid ${C.blue}55`, color: C.blue }}
+              >
+                ⤓ .MD
+              </span>
+              <span
+                onClick={() => d && download(`${(d.title || d.id).slice(0, 40)}.txt`, bodyEdit.replace(/[#*_`>\[\]]/g, ""), "text/plain")}
+                title="download as plain text (markdown stripped)"
+                style={{ fontFamily: font.mono, fontSize: 9.5, padding: "3px 9px", borderRadius: 4, cursor: "pointer", border: `1px solid ${C.blue}55`, color: C.blue }}
+              >
+                ⤓ .TXT
+              </span>
+              {detail?.draft.graphic_sha && (
+                <a
+                  href={`/api/drafts/${d.id}/graphic.png`}
+                  download={`${d.id}-card.png`}
+                  title="download the incident card"
+                  style={{ fontFamily: font.mono, fontSize: 9.5, padding: "3px 9px", borderRadius: 4, cursor: "pointer", border: `1px solid ${C.blue}55`, color: C.blue, textDecoration: "none" }}
+                >
+                  ⤓ CARD
+                </a>
+              )}
+              <span
+                onClick={doBuildSite}
+                title="rebuild the public static site from everything published"
+                style={{ fontFamily: font.mono, fontSize: 9.5, padding: "3px 9px", borderRadius: 4, cursor: "pointer", border: `1px solid ${C.warn}55`, color: C.warn }}
+              >
+                ⌂ BUILD SITE
+              </span>
+            </div>
+          </div>
+        )}
         <div style={{ padding: "10px 13px", fontFamily: font.disp, fontSize: 12, letterSpacing: 2, color: C.dim, borderBottom: `1px solid ${C.line}` }}>
           CITED FACTS {detail ? `· ${detail.cited_facts.length}` : ""}
         </div>
