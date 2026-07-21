@@ -56,13 +56,36 @@ const BASEMAPS: Record<string, BaseSpec | null> = {
     label: "SATELLITE",
     maxNativeZoom: 16, // upscale past this rather than serving blank tiles
   },
-  // USGS topographic — contour lines and terrain, public domain, no key. The
-  // read fire behaviour lives on: a fire runs uphill and follows drainages.
+  // USGS shaded relief — pure land shape, no roads or labels. The cleanest read
+  // of terrain: ridgelines, drainages, aspect — how a fire will actually run.
+  // Add place names on top with the LABELS overlay when you want them.
+  terrain: {
+    url: "https://basemap.nationalmap.gov/arcgis/rest/services/USGSShadedReliefOnly/MapServer/tile/{z}/{y}/{x}",
+    attribution: 'Relief: <a href="https://www.usgs.gov/">USGS</a> The National Map (public domain)',
+    label: "TERRAIN",
+    maxNativeZoom: 15,
+  },
+  // USGS topographic — the full sheet: contour lines, roads, labels, water.
   topo: {
     url: "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}",
     attribution: 'Topo: <a href="https://www.usgs.gov/">USGS</a> The National Map (public domain)',
     label: "TOPO",
     maxNativeZoom: 16,
+  },
+};
+
+// Transparent overlays that ride on top of any basemap — the "enable the items
+// you want" half. Place labels for a clean terrain base; water features.
+const OVERLAYS: Record<string, { url: string; label: string; attribution: string }> = {
+  labels: {
+    url: "https://{s}.basemaps.cartocdn.com/rastertiles/light_only_labels/{z}/{x}/{y}{r}.png",
+    label: "LABELS",
+    attribution: "© OpenStreetMap · © CARTO",
+  },
+  water: {
+    url: "https://basemap.nationalmap.gov/arcgis/rest/services/USGSHydroCached/MapServer/tile/{z}/{y}/{x}",
+    label: "WATER",
+    attribution: "USGS The National Map (public domain)",
   },
 };
 
@@ -131,6 +154,8 @@ export default function MapPanel({
   const hotspotLayer = useRef<L.LayerGroup | null>(null);
   const aircraftLayerRef = useRef<L.LayerGroup | null>(null);
   const windLayerRef = useRef<L.LayerGroup | null>(null);
+  const overlayRefs = useRef<Record<string, L.TileLayer>>({});
+  const [overlays, setOverlays] = useState<Record<string, boolean>>({});
   const [perimeters, setPerimeters] = useState<PerimeterCollection | null>(null);
   const [showPerimeters, setShowPerimeters] = useState(true);
   const [hotspots, setHotspots] = useState<HotspotSet | null>(null);
@@ -211,6 +236,29 @@ export default function MapPanel({
     layer.bringToBack();
     tiles.current = layer;
   }, [effective, ready]);
+
+  // transparent overlays (labels, water) on top of the basemap — toggled on
+  // demand, so a clean terrain base stays clean until you ask for detail
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+    for (const [key, spec] of Object.entries(OVERLAYS)) {
+      const on = !!overlays[key];
+      const existing = overlayRefs.current[key];
+      if (on && !existing) {
+        const ol = L.tileLayer(spec.url, {
+          attribution: spec.attribution,
+          maxZoom: 19,
+          crossOrigin: true,
+          zIndex: 5, // above the basemap tiles, below markers (their own pane)
+        }).addTo(m);
+        overlayRefs.current[key] = ol;
+      } else if (!on && existing) {
+        m.removeLayer(existing);
+        delete overlayRefs.current[key];
+      }
+    }
+  }, [overlays, ready]);
 
   // perimeters: fetched once, refreshed on the server's own 30-minute cache.
   // A failure here is silent by design — the map is still useful without them.
@@ -490,13 +538,20 @@ export default function MapPanel({
     };
   }, [override, ready]);
 
-  // keep the selected fire in view without yanking the map around
+  // Bring a NEWLY selected fire into view — but only on the selection change.
+  // `incidents` is deliberately out of the deps: it refetches every poll, and
+  // with it in, every refresh re-ran this and yanked the map back to the fire
+  // the moment the operator panned away to look at something else.
+  const pannedTo = useRef<string | null>(null);
   useEffect(() => {
+    if (selected === pannedTo.current) return; // same selection, do not chase it
+    pannedTo.current = selected;
     const m = map.current;
     const inc = incidents.find((i) => i.id === selected);
     if (!m || !inc || inc.lat == null || inc.lon == null) return;
     if (!m.getBounds().contains([inc.lat, inc.lon])) m.panTo([inc.lat, inc.lon]);
-  }, [selected, incidents]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
 
   // back to the whole state on the operator's chosen basemap — one action, so
   // there is always a way out of a zoomed-in imagery view
@@ -566,7 +621,7 @@ export default function MapPanel({
           boxShadow: "0 1px 5px rgba(0,0,0,0.4)",
         }}
       >
-        {(["dark", "topo", "satellite", "osm", "offline"] as const).map((key) => {
+        {(["dark", "terrain", "topo", "satellite", "osm", "offline"] as const).map((key) => {
           const label = key === "osm" ? "STREET" : (BASEMAPS[key]?.label ?? "OFFLINE");
           const active = chosen === key;
           return (
@@ -693,6 +748,27 @@ export default function MapPanel({
             {hotspots.latest_pass ? ` · last pass ${age(hotspots.latest_pass)} ago` : ""}
           </span>
         )}
+        {(["labels", "water"] as const).map((key) => (
+          <span
+            key={key}
+            onClick={() => setOverlays((o) => ({ ...o, [key]: !o[key] }))}
+            title={
+              key === "labels"
+                ? "place names on top of any basemap — turn on for a clean terrain base"
+                : "USGS water features (streams, lakes)"
+            }
+            style={{
+              pointerEvents: "auto",
+              cursor: "pointer",
+              color: overlays[key] ? C.txt : C.dim,
+              border: `1px solid ${overlays[key] ? C.txt + "66" : C.line}`,
+              borderRadius: 3,
+              padding: "1px 5px",
+            }}
+          >
+            {overlays[key] ? "◼" : "◻"} {OVERLAYS[key].label}
+          </span>
+        ))}
         {!!wind?.count && (
           <span
             onClick={() => setShowWind((v) => !v)}
