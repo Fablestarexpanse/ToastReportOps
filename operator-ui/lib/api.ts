@@ -1041,6 +1041,55 @@ export type CameraSet = {
 export const fetchCameras = (lat: number, lon: number) =>
   get<CameraSet>(`/cameras?lat=${lat}&lon=${lon}`);
 
+export type FireWeatherFeature = {
+  type: "Feature";
+  geometry: GeoJSON.Geometry | null;
+  properties: {
+    event: string;
+    severity: string | null;
+    headline: string;
+    onset: string | null;
+    ends: string | null;
+    area: string;
+    unresolved?: boolean;
+  };
+};
+
+export type FireWeatherSet = {
+  type: "FeatureCollection";
+  features: FireWeatherFeature[];
+  count: number;
+  unresolved: number;
+  note: string;
+  fetched_at: string;
+};
+
+export type Closure = {
+  lat: number;
+  lon: number;
+  route: string | null;
+  county: string | null;
+  place: string | null;
+  type_of_closure: string;
+  type_of_work: string | null;
+  started: string | null;
+  district: number;
+  fire_worded: boolean;
+  near: { incident_id: string; name: string; km: number } | null;
+};
+
+export type ClosureSet = {
+  closures: Closure[];
+  count: number;
+  dropped: number;
+  failed_districts: number[];
+  note: string;
+  fetched_at: string;
+};
+
+export const fetchFireWeather = () => get<FireWeatherSet>("/fire-weather");
+export const fetchClosures = () => get<ClosureSet>("/closures");
+
 /* ---- AIR mode ---- */
 
 export type AirAircraft = {

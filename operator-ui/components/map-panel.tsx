@@ -8,6 +8,8 @@ import {
   AircraftSet,
   Camera,
   CameraSet,
+  ClosureSet,
+  FireWeatherSet,
   Hotspot,
   HotspotSet,
   Incident,
@@ -15,6 +17,8 @@ import {
   WindSet,
   fetchAircraft,
   fetchCameras,
+  fetchClosures,
+  fetchFireWeather,
   fetchHotspots,
   fetchPerimeters,
   fetchWind,
@@ -159,6 +163,8 @@ export default function MapPanel({
   const aircraftLayerRef = useRef<L.LayerGroup | null>(null);
   const windLayerRef = useRef<L.LayerGroup | null>(null);
   const cameraLayerRef = useRef<L.LayerGroup | null>(null);
+  const firewxLayerRef = useRef<L.GeoJSON | null>(null);
+  const closureLayerRef = useRef<L.LayerGroup | null>(null);
   const overlayRefs = useRef<Record<string, L.TileLayer>>({});
   const [overlays, setOverlays] = useState<Record<string, boolean>>({});
   const [perimeters, setPerimeters] = useState<PerimeterCollection | null>(null);
@@ -171,6 +177,10 @@ export default function MapPanel({
   const [showWind, setShowWind] = useState(true);
   const [cameras, setCameras] = useState<CameraSet | null>(null);
   const [showCameras, setShowCameras] = useState(true);
+  const [firewx, setFirewx] = useState<FireWeatherSet | null>(null);
+  const [showFirewx, setShowFirewx] = useState(true);
+  const [closures, setClosures] = useState<ClosureSet | null>(null);
+  const [showClosures, setShowClosures] = useState(true);
   // the in-tool frame viewer: which camera, and a nonce so REFRESH re-asks
   const [viewCam, setViewCam] = useState<Camera | null>(null);
   const [frameNonce, setFrameNonce] = useState(0);
@@ -500,6 +510,86 @@ export default function MapPanel({
     group.addTo(m);
     cameraLayerRef.current = group;
   }, [cameras, showCameras, ready]);
+
+  // fire-weather (red flag) zones + Caltrans closures: slow-moving layers,
+  // refreshed on the server's own ~10-min cache cadence
+  useEffect(() => {
+    let live = true;
+    const load = () => {
+      fetchFireWeather().then((f) => live && setFirewx(f)).catch(() => undefined);
+      fetchClosures().then((c) => live && setClosures(c)).catch(() => undefined);
+    };
+    load();
+    const t = setInterval(load, 10 * 60 * 1000);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, []);
+
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+    if (firewxLayerRef.current) {
+      m.removeLayer(firewxLayerRef.current);
+      firewxLayerRef.current = null;
+    }
+    if (!showFirewx || !firewx?.features?.length) return;
+    const withShape = firewx.features.filter((f) => f.geometry);
+    if (!withShape.length) return;
+    const layer = L.geoJSON(
+      { type: "FeatureCollection", features: withShape } as GeoJSON.FeatureCollection,
+      {
+        style: () => ({
+          color: C.evac,
+          weight: 1.5,
+          dashArray: "6 4",
+          fillColor: C.evac,
+          fillOpacity: 0.08,
+          interactive: true,
+        }),
+        onEachFeature: (feature, lyr) => {
+          const p = feature.properties as FireWeatherSet["features"][number]["properties"];
+          lyr.bindTooltip(
+            `<b>${p.event}</b> — FORECAST, not a fire<br/>${p.headline}` +
+              `${p.ends ? `<br/>until ${p.ends.slice(0, 16).replace("T", " ")}` : ""}`,
+            { sticky: true, opacity: 0.95 },
+          );
+        },
+      },
+    ).addTo(m);
+    firewxLayerRef.current = layer;
+  }, [firewx, showFirewx, ready]);
+
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+    if (closureLayerRef.current) {
+      m.removeLayer(closureLayerRef.current);
+      closureLayerRef.current = null;
+    }
+    if (!showClosures || !closures?.closures?.length) return;
+    const group = L.layerGroup();
+    for (const c of closures.closures) {
+      const icon = L.divIcon({
+        className: "",
+        html: `<div style="color:${C.warn};font-size:12px;line-height:1;text-shadow:0 0 3px #000;font-weight:700">⛔</div>`,
+        iconSize: [16, 16],
+        iconAnchor: [8, 8],
+      });
+      L.marker([c.lat, c.lon], { icon, interactive: true })
+        .bindTooltip(
+          `<b>${c.route ?? "highway"} CLOSED</b>${c.place ? ` near ${c.place}` : ""}` +
+            `${c.type_of_work ? `<br/>${c.type_of_work}` : ""}` +
+            `${c.near ? `<br/>${c.near.km} km from ${c.near.name}` : ""}` +
+            `<br/><i>Caltrans — state highways only</i>`,
+          { direction: "top", opacity: 0.95, offset: [0, -6] },
+        )
+        .addTo(group);
+    }
+    group.addTo(m);
+    closureLayerRef.current = group;
+  }, [closures, showClosures, ready]);
 
   // wind at each fire: refreshed on the server's own 20-min cadence
   useEffect(() => {
@@ -874,6 +964,38 @@ export default function MapPanel({
             {showWind ? "◼" : "◻"} WIND ({wind.count})
           </span>
         )}
+        {!!firewx?.count && (
+          <span
+            onClick={() => setShowFirewx((v) => !v)}
+            title={`${firewx.note}${firewx.unresolved ? ` (${firewx.unresolved} zone(s) unresolved — listed, not mapped)` : ""}`}
+            style={{
+              pointerEvents: "auto",
+              cursor: "pointer",
+              color: showFirewx ? C.evac : C.dim,
+              border: `1px solid ${showFirewx ? C.evac + "66" : C.line}`,
+              borderRadius: 3,
+              padding: "1px 5px",
+            }}
+          >
+            {showFirewx ? "◼" : "◻"} RED FLAG ({firewx.count}) · forecast
+          </span>
+        )}
+        {!!closures?.count && (
+          <span
+            onClick={() => setShowClosures((v) => !v)}
+            title={closures.note}
+            style={{
+              pointerEvents: "auto",
+              cursor: "pointer",
+              color: showClosures ? C.warn : C.dim,
+              border: `1px solid ${showClosures ? C.warn + "66" : C.line}`,
+              borderRadius: 3,
+              padding: "1px 5px",
+            }}
+          >
+            {showClosures ? "◼" : "◻"} CLOSURES ({closures.count}) · state hwys only
+          </span>
+        )}
         {!!cameras?.count && (
           <span
             onClick={() => setShowCameras((v) => !v)}
@@ -1071,6 +1193,9 @@ function MapKey({ open, onToggle }: { open: boolean; onToggle: () => void }) {
           <div style={{ color: C.faint, letterSpacing: 1, margin: "6px 0 4px" }}>WIND</div>
           <Row swatch={<span style={{ color: C.blue }}>↑</span>} label="points where the fire is pushed" />
           <Row swatch={<span style={{ color: C.emberHot }}>↑</span>} label="red / longer = ≥15 mph (fire-driving)" />
+          <div style={{ color: C.faint, letterSpacing: 1, margin: "6px 0 4px" }}>HAZARD AREAS</div>
+          <Row swatch={<span style={{ width: 12, height: 8, border: `1.5px dashed ${C.evac}`, background: C.evac + "14", display: "inline-block" }} />} label="red flag zone — forecast, not fire" />
+          <Row swatch={<span style={{ color: C.warn }}>⛔</span>} label="highway closed (state hwys only)" />
           <div style={{ color: C.faint, letterSpacing: 1, margin: "6px 0 4px" }}>CAMERAS</div>
           <Row swatch={<span style={{ color: "#45d6d0" }}>◎</span>} label="ALERTCalifornia camera — click to view" />
           <div style={{ color: C.faint, letterSpacing: 1, margin: "6px 0 4px" }}>AIRCRAFT</div>

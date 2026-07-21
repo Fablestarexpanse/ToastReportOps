@@ -355,6 +355,28 @@ def air_log(request: Request, incident_id: str) -> dict:
     return activity_log(_conn(request), incident_id)
 
 
+@router.get("/fire-weather")
+def fire_weather(request: Request, refresh: bool = False) -> dict:
+    """Red flag / fire-weather alert polygons — a FORECAST layer, always
+    labelled as such, with each zone's expiry."""
+    from toast.core.fetch import FetchError
+    from toast.pipeline.firewx import get_fire_weather
+
+    try:
+        return get_fire_weather(_conn(request), refresh=refresh)
+    except FetchError as exc:
+        raise HTTPException(502, f"NWS unreachable: {exc}") from exc
+
+
+@router.get("/closures")
+def closures(request: Request, refresh: bool = False) -> dict:
+    """Caltrans full closures near active fires. State highways only — the
+    payload note says so, and the UI must keep saying so."""
+    from toast.pipeline.closures import get_closures
+
+    return get_closures(_conn(request), refresh=refresh)
+
+
 @router.get("/cameras")
 def get_cameras(request: Request, lat: float, lon: float, refresh: bool = False) -> dict:
     """ALERTCalifornia cameras near a point — metadata only, so the operator can
