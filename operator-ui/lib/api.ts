@@ -1016,6 +1016,31 @@ export type WindSet = { winds: WindPoint[]; count: number; note: string };
 
 export const fetchWind = () => get<WindSet>("/wind");
 
+export type Camera = {
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  elev_m: number | null;
+  county: string | null;
+  az: number | null; // where the lens is pointing right now, degrees
+  fov: number | null;
+  last_frame_ts: number | null;
+  distance_km: number;
+};
+
+export type CameraSet = {
+  cameras: Camera[];
+  count: number;
+  total_in_range: number;
+  fetched_at: string;
+  frame_url_template: string;
+  attribution: string;
+};
+
+export const fetchCameras = (lat: number, lon: number) =>
+  get<CameraSet>(`/cameras?lat=${lat}&lon=${lon}`);
+
 export type AirResource = {
   hex: string;
   flight: string | null;

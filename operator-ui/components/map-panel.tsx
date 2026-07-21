@@ -6,12 +6,15 @@ import "leaflet/dist/leaflet.css";
 import {
   Aircraft,
   AircraftSet,
+  Camera,
+  CameraSet,
   Hotspot,
   HotspotSet,
   Incident,
   PerimeterCollection,
   WindSet,
   fetchAircraft,
+  fetchCameras,
   fetchHotspots,
   fetchPerimeters,
   fetchWind,
@@ -155,6 +158,7 @@ export default function MapPanel({
   const hotspotLayer = useRef<L.LayerGroup | null>(null);
   const aircraftLayerRef = useRef<L.LayerGroup | null>(null);
   const windLayerRef = useRef<L.LayerGroup | null>(null);
+  const cameraLayerRef = useRef<L.LayerGroup | null>(null);
   const overlayRefs = useRef<Record<string, L.TileLayer>>({});
   const [overlays, setOverlays] = useState<Record<string, boolean>>({});
   const [perimeters, setPerimeters] = useState<PerimeterCollection | null>(null);
@@ -165,6 +169,14 @@ export default function MapPanel({
   const [showAircraft, setShowAircraft] = useState(true);
   const [wind, setWind] = useState<WindSet | null>(null);
   const [showWind, setShowWind] = useState(true);
+  const [cameras, setCameras] = useState<CameraSet | null>(null);
+  const [showCameras, setShowCameras] = useState(true);
+  // the in-tool frame viewer: which camera, and a nonce so REFRESH re-asks
+  const [viewCam, setViewCam] = useState<Camera | null>(null);
+  const [frameNonce, setFrameNonce] = useState(0);
+  const [frameErr, setFrameErr] = useState(false);
+  const incidentsRef = useRef<Incident[]>(incidents);
+  incidentsRef.current = incidents;
   const [showKey, setShowKey] = useState(false);
   const [tileError, setTileError] = useState(false);
   const [ready, setReady] = useState(false);
@@ -419,6 +431,67 @@ export default function MapPanel({
     group.addTo(m);
     aircraftLayerRef.current = group;
   }, [aircraft, showAircraft, ready]);
+
+  // ALERTCalifornia cameras near the SELECTED fire only — 2,100 statewide
+  // markers would be noise; the ones that can see this fire are signal. Reads
+  // incidents via a ref so a poll never re-triggers the fetch (the snap-back
+  // lesson, applied).
+  useEffect(() => {
+    setViewCam(null);
+    if (!selected) {
+      setCameras(null);
+      return;
+    }
+    const inc = incidentsRef.current.find((i) => i.id === selected);
+    if (!inc || inc.lat == null || inc.lon == null) {
+      setCameras(null);
+      return;
+    }
+    let live = true;
+    fetchCameras(inc.lat, inc.lon)
+      .then((c) => live && setCameras(c))
+      .catch(() => live && setCameras(null));
+    return () => {
+      live = false;
+    };
+  }, [selected]);
+
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+    if (cameraLayerRef.current) {
+      m.removeLayer(cameraLayerRef.current);
+      cameraLayerRef.current = null;
+    }
+    if (!showCameras || !cameras?.cameras?.length) return;
+    const group = L.layerGroup();
+    for (const cam of cameras.cameras) {
+      const icon = L.divIcon({
+        className: "",
+        // ◎ = a lens; cyan is unused by any other layer so cameras read as
+        // their own thing at a glance
+        html: `<div style="color:#45d6d0;font-size:13px;line-height:1;text-shadow:0 0 3px #000;font-weight:700">◎</div>`,
+        iconSize: [16, 16],
+        iconAnchor: [8, 8],
+      });
+      L.marker([cam.lat, cam.lon], { icon, interactive: true })
+        .bindTooltip(
+          `<b>${cam.name}</b><br/>${cam.distance_km.toFixed(1)} km from the fire` +
+            (cam.az != null ? ` · pointing ${compassOf(cam.az)}` : "") +
+            (cam.elev_m != null ? `<br/>elev ${Math.round(cam.elev_m * 3.281).toLocaleString()} ft` : "") +
+            `<br/><i>click to view — ALERTCalifornia</i>`,
+          { direction: "top", opacity: 0.95, offset: [0, -6] },
+        )
+        .on("click", () => {
+          setFrameErr(false);
+          setFrameNonce((n) => n + 1);
+          setViewCam(cam);
+        })
+        .addTo(group);
+    }
+    group.addTo(m);
+    cameraLayerRef.current = group;
+  }, [cameras, showCameras, ready]);
 
   // wind at each fire: refreshed on the server's own 20-min cadence
   useEffect(() => {
@@ -791,6 +864,22 @@ export default function MapPanel({
             {showWind ? "◼" : "◻"} WIND ({wind.count})
           </span>
         )}
+        {!!cameras?.count && (
+          <span
+            onClick={() => setShowCameras((v) => !v)}
+            title={`ALERTCalifornia cameras within 40 km of the selected fire (${cameras.total_in_range} in range). Click a ◎ on the map to view.`}
+            style={{
+              pointerEvents: "auto",
+              cursor: "pointer",
+              color: showCameras ? "#45d6d0" : C.dim,
+              border: `1px solid ${showCameras ? "#45d6d066" : C.line}`,
+              borderRadius: 3,
+              padding: "1px 5px",
+            }}
+          >
+            {showCameras ? "◼" : "◻"} CAMS ({cameras.count})
+          </span>
+        )}
         {!!aircraft?.count && (
           <span
             onClick={() => setShowAircraft((v) => !v)}
@@ -817,6 +906,80 @@ export default function MapPanel({
       </div>
 
       <MapKey open={showKey} onToggle={() => setShowKey((v) => !v)} />
+
+      {viewCam && cameras && (
+        /* In-tool frame viewer. The image loads in THIS browser directly from
+           ALERTCalifornia — the backend never touches imagery, nothing is
+           stored, and refresh is a deliberate click, not a poll. */
+        <div
+          style={{
+            position: "absolute",
+            top: 40,
+            right: 10,
+            width: 400,
+            zIndex: Z.mapControl,
+            background: C.panel + "f8",
+            border: "1px solid #45d6d066",
+            borderRadius: 8,
+            boxShadow: "0 6px 24px rgba(0,0,0,0.55)",
+            overflow: "hidden",
+            fontFamily: font.mono,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px" }}>
+            <span style={{ color: "#45d6d0", fontSize: 12 }}>◎</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ color: C.txt, fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {viewCam.name}
+              </div>
+              <div style={{ color: C.dim, fontSize: 8.5 }}>
+                {viewCam.distance_km.toFixed(1)} km from fire
+                {viewCam.az != null ? ` · pointing ${compassOf(viewCam.az)}` : ""}
+                {viewCam.elev_m != null ? ` · ${Math.round(viewCam.elev_m * 3.281).toLocaleString()} ft` : ""}
+              </div>
+            </div>
+            <span
+              onClick={() => {
+                setFrameErr(false);
+                setFrameNonce((n) => n + 1);
+              }}
+              title="load the current frame"
+              style={{ cursor: "pointer", color: C.blue, fontSize: 12 }}
+            >
+              ↻
+            </span>
+            <span onClick={() => setViewCam(null)} style={{ cursor: "pointer", color: C.dim, fontSize: 12 }}>
+              ✕
+            </span>
+          </div>
+          {frameErr ? (
+            <div style={{ padding: "28px 12px", textAlign: "center", color: C.dim, fontSize: 10 }}>
+              frame unavailable — the camera may be offline
+            </div>
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={`${cameras.frame_url_template.replace("{id}", viewCam.id)}?t=${frameNonce}`}
+              alt={`${viewCam.name} — live view`}
+              onError={() => setFrameErr(true)}
+              style={{ width: "100%", aspectRatio: "16/9", objectFit: "cover", display: "block", background: "#000" }}
+            />
+          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", fontSize: 8 }}>
+            <span style={{ color: C.faint, flex: 1 }}>
+              {cameras.attribution} · loads direct from their server, nothing stored
+            </span>
+            <a
+              href={`https://cameras.alertcalifornia.org/?pos=${viewCam.lat.toFixed(4)}_${viewCam.lon.toFixed(4)}_13`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: C.blue, textDecoration: "none", whiteSpace: "nowrap" }}
+            >
+              FULL VIEWER (PTZ) ↗
+            </a>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -898,6 +1061,8 @@ function MapKey({ open, onToggle }: { open: boolean; onToggle: () => void }) {
           <div style={{ color: C.faint, letterSpacing: 1, margin: "6px 0 4px" }}>WIND</div>
           <Row swatch={<span style={{ color: C.blue }}>↑</span>} label="points where the fire is pushed" />
           <Row swatch={<span style={{ color: C.emberHot }}>↑</span>} label="red / longer = ≥15 mph (fire-driving)" />
+          <div style={{ color: C.faint, letterSpacing: 1, margin: "6px 0 4px" }}>CAMERAS</div>
+          <Row swatch={<span style={{ color: "#45d6d0" }}>◎</span>} label="ALERTCalifornia camera — click to view" />
           <div style={{ color: C.faint, letterSpacing: 1, margin: "6px 0 4px" }}>AIRCRAFT</div>
           <Row swatch={<span style={{ color: C.emberHot }}>✈</span>} label="air tanker (retardant bomber)" />
           <Row swatch={<span style={{ color: C.warn }}>▲</span>} label="air attack / lead plane (spotter)" />

@@ -318,6 +318,16 @@ def requeue_dead_jobs(request: Request, body: dict) -> dict:
     return {"ok": True, "requeued": n}
 
 
+@router.get("/cameras")
+def get_cameras(request: Request, lat: float, lon: float, refresh: bool = False) -> dict:
+    """ALERTCalifornia cameras near a point — metadata only, so the operator can
+    see which lenses might see the fire. Frames load in the BROWSER, straight
+    from ALERTCalifornia; this backend never touches imagery (see cameras.py)."""
+    from toast.pipeline.cameras import cameras_near
+
+    return cameras_near(_conn(request), lat, lon, refresh=refresh)
+
+
 @router.get("/wind")
 def get_wind(request: Request) -> dict:
     """Current surface wind at each active fire, from cached NWS observations —
