@@ -535,36 +535,49 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
         {d && (
           <div style={{ padding: "10px 13px", borderBottom: `1px solid ${C.line}` }}>
             <div style={{ fontFamily: font.disp, fontSize: 12, letterSpacing: 2, color: C.dim, marginBottom: 7 }}>
-              PUSH &amp; EXPORT
+              SOCIAL PUSH
             </div>
             {d.kind === "social" ? (
-              <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8 }}>
-                {channels.map((c) => {
-                  const ready = d.status === "approved" || d.status === "published";
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
+                {/* the full roster, always visible — a channel without keys is a
+                    to-do, not a secret */}
+                {(["bluesky", "x", "facebook", "telegram"] as const).map((c) => {
+                  const configured = channels.includes(c);
+                  const ready = configured && (d.status === "approved" || d.status === "published");
+                  const pub = detail?.publications?.find((p) => p.channel === c);
+                  const state = pub?.status; // sent | queued | failed | unknown
                   return (
-                    <span
-                      key={c}
-                      onClick={() => ready && pushOne(c)}
-                      title={ready
-                        ? `push this post to ${c} now (safe: an already-sent channel is never doubled)`
-                        : "approve the draft first — nothing publishes itself"}
-                      style={{ fontFamily: font.mono, fontSize: 9.5, padding: "3px 9px", borderRadius: 4, cursor: ready ? "pointer" : "not-allowed", border: `1px solid ${ready ? C.ok + "77" : C.line}`, color: ready ? C.ok : C.faint }}
-                    >
-                      → {c.toUpperCase()}
-                    </span>
+                    <div key={c} style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                      <span
+                        onClick={() => ready && !state && pushOne(c)}
+                        title={!configured
+                          ? `add ${c} keys in OPTIONS → API KEYS to enable`
+                          : state
+                            ? `already ${state} on ${c} — see delivery below`
+                            : ready
+                              ? `push this post to ${c} now (an already-sent channel is never doubled)`
+                              : "approve the draft first — nothing publishes itself"}
+                        style={{ flex: 1, fontFamily: font.mono, fontSize: 10, padding: "4px 10px", borderRadius: 4, cursor: ready && !state ? "pointer" : "not-allowed", border: `1px solid ${ready && !state ? C.ok + "88" : C.line}`, color: !configured ? C.faint : state ? C.dim : ready ? C.ok : C.faint, textAlign: "center", letterSpacing: 1 }}
+                      >
+                        {state === "sent" ? "✓ SENT" : state === "queued" ? "⏱ QUEUED" : state === "unknown" ? "? UNKNOWN" : state === "failed" ? "✗ FAILED" : "→ PUSH"} · {c.toUpperCase()}
+                      </span>
+                      {!configured && (
+                        <span style={{ fontFamily: font.mono, fontSize: 7.5, color: C.faint, whiteSpace: "nowrap" }}>
+                          no keys
+                        </span>
+                      )}
+                    </div>
                   );
                 })}
-                {channels.length === 0 && (
-                  <span style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint }}>
-                    no channels configured — OPTIONS → API KEYS
-                  </span>
-                )}
               </div>
             ) : (
               <div style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint, marginBottom: 8 }}>
                 reports publish to the site; social channels take the ✍ SOCIAL VERSION
               </div>
             )}
+            <div style={{ fontFamily: font.disp, fontSize: 12, letterSpacing: 2, color: C.dim, marginBottom: 7 }}>
+              EXPORT
+            </div>
             <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
               <span
                 onClick={() => d && download(`${(d.title || d.id).slice(0, 40)}.md`, bodyEdit, "text/markdown")}
