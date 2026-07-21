@@ -218,6 +218,14 @@ export default function MapPanel({
       opacity: 0.9,
       interactive: false,
     }).addTo(m);
+    // Fire pins live in their own pane ABOVE the marker pane (600). Wind
+    // arrows, aircraft and camera icons are L.markers that would otherwise
+    // stack over the canvas-rendered dots and swallow their clicks — a fire
+    // with a wind arrow on it (i.e. every fire) became unclickable. The fire
+    // is the primary object on this map; nothing outranks it.
+    m.createPane("firepins");
+    const pinPane = m.getPane("firepins");
+    if (pinPane) pinPane.style.zIndex = "650";
     markers.current = L.layerGroup().addTo(m);
     map.current = m;
     setReady(true);
@@ -571,6 +579,7 @@ export default function MapPanel({
           fill: false,
           className: "tr-pulse",
           interactive: false,
+          pane: "firepins",
         }).addTo(group);
       }
       const dot = L.circleMarker([inc.lat, inc.lon], {
@@ -579,6 +588,7 @@ export default function MapPanel({
         weight: isSel ? 2 : 1,
         fillColor: color,
         fillOpacity: 0.8,
+        pane: "firepins",
       })
         .addTo(group)
         .on("click", () => onSelect(inc.id));

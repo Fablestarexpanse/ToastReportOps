@@ -43,6 +43,23 @@ def test_triage_removes_from_queue_without_touching_the_fact(seeded):
     assert row["incident_id"] is None
 
 
+def test_a_dismissed_claim_does_not_return_under_a_new_fact_id(seeded):
+    """The refill bug: re-polling a changed page re-extracts the same sentence
+    as a FRESH fact, and the operator dismissed the same claim every cycle
+    forever (one live claim was triaged 7 times). A dismissal answers the
+    claim — same source, same kind, same words — not the row id."""
+    req = Req(seeded)
+    fid = _unattributed(seeded, content="A new wildfire was reported in LA County.")
+    routes.triage_fact(req, fid, {"state": "not_incident"})
+
+    twin = _unattributed(seeded, content="A new wildfire was reported in LA County.")
+    assert not any(i["fact"]["id"] == twin for i in _queue(req)), "twin refilled the queue"
+
+    # different words are a NEW claim and must still be adjudicated
+    other = _unattributed(seeded, content="A second, larger fire was reported in LA County.")
+    assert any(i["fact"]["id"] == other for i in _queue(req))
+
+
 def test_untriage_restores_to_queue(seeded):
     req = Req(seeded)
     fid = _unattributed(seeded)

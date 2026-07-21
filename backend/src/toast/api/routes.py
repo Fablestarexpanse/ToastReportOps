@@ -710,6 +710,16 @@ def adjudication_queue(request: Request, limit: int = Query(50, le=200)) -> dict
               -- are still seen, just not as a queue of 126 identical pixels.
               AND s.type != 'satellite'
               AND f.id NOT IN (SELECT fact_id FROM fact_triage)
+              -- A dismissal applies to the CLAIM, not the row id. Re-polling a
+              -- changed page re-extracts the same sentence as a fresh fact, and
+              -- without this check the operator dismisses the same "new fire in
+              -- LA County" every cycle forever (observed: one claim triaged 7
+              -- times). Same source, same kind, same words = already answered.
+              AND NOT EXISTS (
+                SELECT 1 FROM facts f2 JOIN fact_triage t ON t.fact_id = f2.id
+                WHERE f2.source_id = f.source_id AND f2.kind = f.kind
+                  AND f2.content = f.content
+              )
             ORDER BY f.ingested_at DESC LIMIT ?""",
         (limit,),
     ).fetchall()
