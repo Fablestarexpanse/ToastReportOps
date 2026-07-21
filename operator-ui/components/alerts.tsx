@@ -5,24 +5,46 @@ import { fetchIncidents, fetchWatch } from "@/lib/api";
 import { C, font, Z } from "@/lib/theme";
 import { fmtStamp } from "@/lib/time";
 
-/* New-fire alerts: watches /incidents and /watch; a newly-appearing active
-   incident or a newly-corroborating watch candidate raises an alert — browser
-   notification (works in the Edge app window) + the bell dropdown. Seen-state
-   persists in localStorage so restarts don't re-alert history. */
+/* Alerts: new fires, watch candidates, and — highest priority of all —
+   evacuation changes. A new evac order on a tracked fire is the single most
+   important event this system can notice; for a long time the bell fired on new
+   fires but stayed silent on evacuations, which was exactly backwards.
+
+   Evac state uses a PERSISTED per-incident baseline rather than the session
+   "primed" flag the other alerts use, deliberately: an order issued while the
+   app was closed must still alert on the next launch. Missing a fire that
+   started overnight is a gap; missing an evacuation order is a failure. */
 
 type Alert = {
   id: string;
-  kind: "fire" | "watch";
+  kind: "fire" | "watch" | "evac";
   title: string;
   detail: string;
   at: string;
-  incidentId?: string; // fire alerts: the incident to open
+  color?: string;       // dropdown accent; defaults by kind
+  incidentId?: string; // fire/evac alerts: the incident to open
   watchKey?: string;    // watch alerts: the candidate on the WATCH board
 };
 
 const SEEN_KEY = "toast-alert-seen-v1";
+const EVAC_KEY = "toast-alert-evac-v1"; // incidentId -> last known evac status
 const POLL_MS = 30_000;
 const MAX_LOG = 30;
+
+const ACTIVE_EVAC = new Set(["order", "warning", "shelter_in_place"]);
+const EVAC_TITLES: Record<string, string> = {
+  order: "EVACUATION ORDER",
+  warning: "EVACUATION WARNING",
+  shelter_in_place: "SHELTER IN PLACE",
+};
+
+function loadEvacBaseline(): Record<string, string> | null {
+  try {
+    const raw = localStorage.getItem(EVAC_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return null; // first-ever run: baseline silently, never alert on history
+}
 
 function loadSeen(): { incidents: string[]; watch: string[] } {
   try {
@@ -44,16 +66,19 @@ export default function AlertBell({
   const [unread, setUnread] = useState(0);
   const [notifState, setNotifState] = useState<string>("default");
   const seen = useRef<{ incidents: Set<string>; watch: Set<string> } | null>(null);
+  const evacSeen = useRef<Record<string, string> | null | undefined>(undefined);
   const primed = useRef(false);
 
   useEffect(() => {
     if ("Notification" in window) setNotifState(Notification.permission);
   }, []);
 
-  const notify = useCallback((title: string, body: string) => {
+  const notify = useCallback((title: string, body: string, urgent = false) => {
     if ("Notification" in window && Notification.permission === "granted") {
       try {
-        new Notification(title, { body, silent: false });
+        // requireInteraction keeps an evacuation notice on screen until the
+        // operator dismisses it — an order must not fade away unseen
+        new Notification(title, { body, silent: false, requireInteraction: urgent });
       } catch {}
     }
   }, []);
@@ -99,6 +124,47 @@ export default function AlertBell({
           }
         }
       }
+      // Evacuation transitions, against a PERSISTED baseline (see header note).
+      if (evacSeen.current === undefined) evacSeen.current = loadEvacBaseline();
+      const firstEvacRun = evacSeen.current === null;
+      const evacMap: Record<string, string> = evacSeen.current ?? {};
+      for (const i of incs) {
+        const raw = i.evac_status;
+        const cur = raw && (ACTIVE_EVAC.has(raw) || raw === "lifted") ? raw : "none";
+        const prev = evacMap[i.id];
+        evacMap[i.id] = cur;
+        if (firstEvacRun) continue; // recording history, not announcing it
+        const becameActive = ACTIVE_EVAC.has(cur) && cur !== (prev ?? "none");
+        const wasActive = prev != null && ACTIVE_EVAC.has(prev);
+        if (becameActive) {
+          fresh.push({
+            id: `evac-${i.id}-${cur}-${now}`,
+            kind: "evac",
+            incidentId: i.id,
+            title: `${EVAC_TITLES[cur]}: ${i.canonical_name}`,
+            detail:
+              `${i.county ? i.county + " County · " : ""}` +
+              (wasActive && prev !== cur
+                ? `changed from ${prev.replace(/_/g, " ")} — `
+                : "") +
+              "official text in the incident panel — verify before repeating",
+            at: now,
+          });
+        } else if (cur === "lifted" && wasActive) {
+          fresh.push({
+            id: `evac-${i.id}-lifted-${now}`,
+            kind: "evac",
+            color: C.ok,
+            incidentId: i.id,
+            title: `EVACUATION LIFTED: ${i.canonical_name}`,
+            detail: `${i.county ? i.county + " County · " : ""}was under ${prev.replace(/_/g, " ")}`,
+            at: now,
+          });
+        }
+      }
+      evacSeen.current = evacMap;
+      localStorage.setItem(EVAC_KEY, JSON.stringify(evacMap));
+
       // first poll only records the baseline — never alert on history
       primed.current = true;
       localStorage.setItem(
@@ -108,7 +174,7 @@ export default function AlertBell({
       if (fresh.length) {
         setAlerts((prev) => [...fresh, ...prev].slice(0, MAX_LOG));
         setUnread((u) => u + fresh.length);
-        for (const a of fresh) notify(a.title, a.detail);
+        for (const a of fresh) notify(a.title, a.detail, a.kind === "evac" && a.color !== C.ok);
       }
     } catch {}
   }, [notify]);
@@ -191,7 +257,7 @@ export default function AlertBell({
                 className={clickable ? "tr-row" : undefined}
                 style={{ padding: "8px 12px", borderBottom: `1px solid ${C.line}44`, cursor: clickable ? "pointer" : "default" }}
               >
-                <div style={{ fontSize: 11.5, fontWeight: 700, color: a.kind === "fire" ? C.emberHot : C.violet }}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: a.color ?? (a.kind === "evac" ? C.evac : a.kind === "fire" ? C.emberHot : C.violet) }}>
                   {a.title}
                   {clickable && <span style={{ float: "right", color: C.dim, fontSize: 10 }}>→</span>}
                 </div>
