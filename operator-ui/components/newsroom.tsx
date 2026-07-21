@@ -9,6 +9,9 @@ import {
   cancelResearch,
   createSocialDraft,
   fetchDraft,
+  fetchPublishChannels,
+  releaseDraft,
+  retryPublication,
   fetchDrafts,
   fetchIncidents,
   generateDraft,
@@ -137,6 +140,57 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
     }
   };
 
+  // channel-selected release: which channels have working credentials
+  const [channels, setChannels] = useState<string[]>([]);
+  const [selChannels, setSelChannels] = useState<Set<string>>(new Set());
+  const [schedAt, setSchedAt] = useState("");
+  const [releasing, setReleasing] = useState(false);
+  useEffect(() => {
+    fetchPublishChannels()
+      .then((r) => {
+        setChannels(r.channels);
+        setSelChannels(new Set(r.channels)); // default: everything configured
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const doRelease = async () => {
+    if (!detail) return;
+    const picked = [...selChannels];
+    if (!picked.length) {
+      toast("select at least one channel");
+      return;
+    }
+    setReleasing(true);
+    try {
+      const at = schedAt ? new Date(schedAt).toISOString() : undefined;
+      const r = await releaseDraft(detail.draft.id, picked, at);
+      toast(
+        r.scheduled_for
+          ? `scheduled for ${schedAt} → ${picked.join(", ")}`
+          : `released now → ${picked.join(", ")}`,
+      );
+      setSchedAt("");
+      const d2 = await fetchDraft(detail.draft.id);
+      setDetail(d2);
+      refresh();
+    } catch (e) {
+      toast(`release failed: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setReleasing(false);
+    }
+  };
+
+  const doRetry = async (pubId: string) => {
+    try {
+      const r = await retryPublication(pubId);
+      toast(`re-sending to ${r.channel}`);
+      if (detail) setDetail(await fetchDraft(detail.draft.id));
+    } catch (e) {
+      toast(`${e instanceof Error ? e.message : e}`);
+    }
+  };
+
   const advance = async (status: string) => {
     if (!detail) return;
     try {
@@ -156,7 +210,7 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
       ? [["needs_review", "SUBMIT FOR REVIEW", C.warn]]
       : d.status === "needs_review"
         ? [["approved", "APPROVE ✓", C.ok], ["draft", "SEND BACK", C.dim]]
-        : d.status === "approved"
+        : d.status === "approved" && d.kind !== "social"
           ? [["published", "MARK RELEASED ✓", C.ok]]
           : []
     : [];
@@ -348,6 +402,47 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
                 </button>
               )}
               <span style={{ fontFamily: font.mono, fontSize: 9, color: C.faint }}>AI drafts · you approve · nothing publishes itself</span>
+              {d.kind === "social" && (d.status === "approved" || d.status === "published") && (
+                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", border: `1px solid ${C.ok}44`, borderRadius: 6, padding: "5px 9px" }}>
+                  {channels.length === 0 && (
+                    <span style={{ fontFamily: font.mono, fontSize: 9, color: C.faint }}>
+                      no channels configured — OPTIONS → API KEYS
+                    </span>
+                  )}
+                  {channels.map((c) => (
+                    <span
+                      key={c}
+                      onClick={() =>
+                        setSelChannels((cur) => {
+                          const next = new Set(cur);
+                          if (next.has(c)) next.delete(c);
+                          else next.add(c);
+                          return next;
+                        })
+                      }
+                      style={{ fontFamily: font.mono, fontSize: 9.5, cursor: "pointer", color: selChannels.has(c) ? C.ok : C.dim, border: `1px solid ${selChannels.has(c) ? C.ok + "66" : C.line}`, borderRadius: 3, padding: "2px 7px" }}
+                    >
+                      {selChannels.has(c) ? "◼" : "◻"} {c.toUpperCase()}
+                    </span>
+                  ))}
+                  <input
+                    type="datetime-local"
+                    value={schedAt}
+                    onChange={(e) => setSchedAt(e.target.value)}
+                    title="leave empty to release immediately"
+                    style={{ background: C.bg, border: `1px solid ${C.line}`, borderRadius: 4, color: schedAt ? C.warn : C.dim, fontFamily: font.mono, fontSize: 9.5, padding: "3px 6px" }}
+                  />
+                  {channels.length > 0 && (
+                    <button
+                      onClick={doRelease}
+                      disabled={releasing}
+                      style={{ background: C.ok, color: C.bg, border: "none", borderRadius: 5, fontFamily: font.disp, fontWeight: 700, fontSize: 11.5, letterSpacing: 1, padding: "6px 14px", cursor: "pointer" }}
+                    >
+                      {releasing ? "…" : schedAt ? "⏱ SCHEDULE" : "⇧ RELEASE"}
+                    </button>
+                  )}
+                </div>
+              )}
               {nextActions.map(([status, label, color]) => (
                 <button
                   key={status}
@@ -390,8 +485,21 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
                   <span style={{ width: 6, height: 6, borderRadius: 3, background: color }} />
                   <span style={{ color: C.dim, minWidth: 58 }}>{p.channel.toUpperCase()}</span>
                   <span style={{ color }}>
-                    {p.status === "unknown" ? "UNKNOWN — VERIFY MANUALLY" : p.status.toUpperCase()}
+                    {p.status === "unknown"
+                      ? "UNKNOWN — VERIFY MANUALLY"
+                      : p.status === "queued" && p.not_before && new Date(p.not_before) > new Date()
+                        ? `SCHEDULED ${p.not_before.slice(5, 16).replace("T", " ")}Z`
+                        : p.status.toUpperCase()}
                   </span>
+                  {p.status === "failed" && (
+                    <span
+                      onClick={() => doRetry(p.id)}
+                      title="the platform answered no — nothing went out, so re-sending is safe"
+                      style={{ color: C.blue, cursor: "pointer", border: `1px solid ${C.blue}55`, borderRadius: 3, padding: "0 5px" }}
+                    >
+                      ↻ RETRY
+                    </span>
+                  )}
                   {p.external_url && (
                     <a href={p.external_url} target="_blank" rel="noopener noreferrer" style={{ color: C.blue }}>⧉</a>
                   )}

@@ -1414,6 +1414,49 @@ def transition_draft(request: Request, draft_id: str, body: dict) -> dict:
     return {"ok": True, "draft_id": draft_id, "status": target}
 
 
+@router.get("/publish/channels")
+def publish_channels(request: Request) -> dict:
+    """Which social channels have working credentials — the release checkboxes."""
+    from toast.core.credentials import settings_with_credentials
+    from toast.publishers import configured_publishers
+
+    chans = [p.channel for p in configured_publishers(settings_with_credentials(_conn(request)))]
+    return {"channels": chans}
+
+
+@router.post("/drafts/{draft_id}/release")
+def release_draft_route(request: Request, draft_id: str, body: dict) -> dict:
+    """Release an approved social draft to SELECTED channels, now or scheduled.
+    The human decision this endpoint records is the whole point — nothing
+    publishes itself."""
+    from toast.core.timestamps import normalize_iso
+    from toast.pipeline.release import release_draft
+
+    at = None
+    if body.get("at"):
+        at = normalize_iso(str(body["at"]))
+        if at is None:
+            raise HTTPException(400, "'at' must be an ISO timestamp")
+    try:
+        return release_draft(
+            _conn(request), draft_id, list(body.get("channels") or []), at=at
+        )
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.post("/publications/{publication_id}/retry")
+def retry_publication_route(request: Request, publication_id: str) -> dict:
+    """Re-send a definitively failed publication. 'unknown' is refused — check
+    the account first; retrying an unknown is how duplicate posts happen."""
+    from toast.pipeline.release import retry_publication
+
+    try:
+        return retry_publication(_conn(request), publication_id)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
 @router.post("/analyze")
 def analyze(request: Request, body: dict) -> dict:
     """Operator points the AI at a URL; claims are extracted, written as T4

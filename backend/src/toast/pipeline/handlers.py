@@ -359,6 +359,16 @@ def weather_refresh_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -
     get_logger("weather").info("weather_refresh_done", incidents=done)
 
 
+@register("release_due")
+def release_due_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Enqueue publish jobs for scheduled publications whose time has come."""
+    from toast.pipeline.release import release_due
+
+    n = release_due(conn)
+    if n:
+        get_logger("release").info("scheduled_releases_enqueued", n=n)
+
+
 @register("radio_ingest")
 def radio_ingest_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     """Sweep the SDR inbox, then transcribe a few pending calls if a local

@@ -71,6 +71,8 @@ DAILY_STAGES = {
     "aircraft": 60,
     # the SDR inbox: cheap directory scan; calls land seconds after capture
     "radio_ingest": 30,
+    # scheduled releases: a minute of slack on a scheduled post is fine
+    "release_due": 60,
     # weather changes slowly and NWS asks for restraint — every 20 min keeps the
     # wind layer fresh enough for fire behaviour without hammering the API
     "weather_refresh": 20 * 60,

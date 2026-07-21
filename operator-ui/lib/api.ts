@@ -206,6 +206,8 @@ export type Publication = {
   external_url: string | null;
   receipt: string | null;
   sent_at: string | null;
+  /** scheduled hold: delivery waits until this time */
+  not_before?: string | null;
 };
 
 export type DraftDetail = {
@@ -223,6 +225,17 @@ export type ResearchJob = {
   since: string;
   error: string | null;
 };
+
+export const fetchPublishChannels = () => get<{ channels: string[] }>("/publish/channels");
+
+export const releaseDraft = (draftId: string, channels: string[], at?: string) =>
+  post<{ created: { channel: string }[]; enqueued_now: number; scheduled_for: string | null }>(
+    `/drafts/${draftId}/release`,
+    at ? { channels, at } : { channels },
+  );
+
+export const retryPublication = (publicationId: string) =>
+  post<{ state: string; channel: string }>(`/publications/${publicationId}/retry`, {});
 
 export const fetchDrafts = () =>
   get<{ drafts: Draft[]; research_jobs: ResearchJob[] }>("/drafts");
