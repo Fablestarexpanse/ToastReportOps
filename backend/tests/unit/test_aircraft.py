@@ -7,7 +7,9 @@ never asserted as fact and never written to the ledger.
 
 from toast.pipeline.aircraft import (
     _is_fire_ops,
+    classify_role,
     current_aircraft,
+    incident_roster,
     observed_over_incident,
     poll_incident,
 )
@@ -100,3 +102,111 @@ def test_observed_over_incident_counts_distinct_fire_ops(seeded, monkeypatch):
     poll_incident(seeded, inc)
     poll_incident(seeded, inc)  # same aircraft again — must not double-count
     assert observed_over_incident(seeded, "i1") == 2  # t1 and t2, not the non-ops x1
+
+
+class TestRoleClassification:
+    def test_a_tanker_type_is_a_tanker(self):
+        assert classify_role("S2", "A3", 6000) == "tanker"
+        assert classify_role("DC10", "A5", 8000) == "tanker"
+
+    def test_a_lead_plane_is_air_attack(self):
+        assert classify_role("OV10", "A2", 7000) == "air_attack"
+        assert classify_role("BE20", "A2", 6500) == "air_attack"
+
+    def test_a_rotor_type_or_category_is_a_helicopter(self):
+        assert classify_role("H60", "A7", 3000) == "helicopter"
+        assert classify_role("R44", None, 1000) == "helicopter"
+        # unknown type but the transponder says rotorcraft, and it's low
+        assert classify_role("ZZZZ", "A7", 2000) == "helicopter"
+
+    def test_an_airliner_is_other(self):
+        assert classify_role("B738", "A3", 6000) == "other"
+        assert classify_role("A388", "A5", 5000) == "other"
+
+
+class TestRoster:
+    def test_roster_lists_aircraft_with_their_role(self, seeded, monkeypatch):
+        inc = _incident(seeded)
+        FakeAircraft(
+            monkeypatch,
+            [
+                {
+                    "hex": "t1",
+                    "lat": 40.9,
+                    "lon": -121.3,
+                    "alt_baro": 6000,
+                    "gs": 150,
+                    "t": "S2",
+                    "flight": "TANKER 82",
+                    "desc": "Grumman S-2T",
+                },
+                {
+                    "hex": "h1",
+                    "lat": 40.9,
+                    "lon": -121.3,
+                    "alt_baro": 2000,
+                    "gs": 60,
+                    "t": "H60",
+                    "category": "A7",
+                    "desc": "Sikorsky UH-60",
+                },
+                {
+                    "hex": "x1",
+                    "lat": 40.9,
+                    "lon": -121.3,
+                    "alt_baro": 9000,
+                    "gs": 200,
+                    "t": "C172",
+                    "desc": "Cessna 172",
+                },
+            ],
+        )
+        poll_incident(seeded, inc)
+        roster = incident_roster(seeded, "i1")
+        assert len(roster) == 3
+        by_hex = {r["hex"]: r for r in roster}
+        assert by_hex["t1"]["role"] == "tanker" and by_hex["t1"]["flight"] == "TANKER 82"
+        assert by_hex["h1"]["role"] == "helicopter"
+        assert by_hex["x1"]["role"] == "other" and by_hex["x1"]["fire_ops"] is False
+        # firefighting aircraft sort ahead of the unclassified ones
+        assert roster[0]["fire_ops"] is True
+
+
+class TestPhoto:
+    def test_photo_is_fetched_cached_and_credited(self, seeded, monkeypatch):
+        from toast.pipeline import aircraft_photo
+
+        calls = []
+
+        def fake_fetch(url, **kw):
+            calls.append(url)
+            body = (
+                b'{"photos":[{"thumbnail":{"src":"https://t/thumb.jpg"},'
+                b'"thumbnail_large":{"src":"https://t/large.jpg"},'
+                b'"photographer":"Jane Doe","link":"https://planespotters.net/photo/1"}]}'
+            )
+            return body, "application/json"
+
+        monkeypatch.setattr(aircraft_photo, "fetch", fake_fetch)
+        first = aircraft_photo.get_photo(seeded, "a1b2c3")
+        assert first["found"] is True
+        assert first["photographer"] == "Jane Doe"  # credit rides with the image
+        assert first["link"].startswith("https://planespotters.net")
+
+        second = aircraft_photo.get_photo(seeded, "A1B2C3")  # same hull, any case
+        assert second["cached"] is True
+        assert len(calls) == 1  # served from cache, planespotters hit once
+
+    def test_no_photo_is_remembered_so_it_is_not_re_requested(self, seeded, monkeypatch):
+        from toast.pipeline import aircraft_photo
+
+        calls = []
+
+        def empty(url, **kw):
+            calls.append(url)
+            return b'{"photos":[]}', "application/json"
+
+        monkeypatch.setattr(aircraft_photo, "fetch", empty)
+        assert aircraft_photo.get_photo(seeded, "ffffff")["found"] is False
+        aircraft_photo.get_photo(seeded, "ffffff")  # asks again
+        assert len(calls) == 1  # the 'none exists' answer was cached too

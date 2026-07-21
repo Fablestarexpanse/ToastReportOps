@@ -186,7 +186,7 @@ def incident_intel(conn: sqlite3.Connection, incident_id: str) -> dict[str, Any]
         "road_closures": len(impacts["road"]),
     }
 
-    from toast.pipeline.aircraft import observed_over_incident
+    from toast.pipeline.aircraft import incident_roster, observed_over_incident
     from toast.pipeline.resources import current_resources
 
     return {
@@ -196,6 +196,7 @@ def incident_intel(conn: sqlite3.Connection, incident_id: str) -> dict[str, Any]
         # aircraft seen working the fire in the last 6h — a live, borrowed signal,
         # counted not asserted (see aircraft.py)
         "aircraft_observed": observed_over_incident(conn, incident_id),
+        "air_resources": incident_roster(conn, incident_id),
         "situation": situation,
         "evac": impacts["evac"],
         "road": impacts["road"],

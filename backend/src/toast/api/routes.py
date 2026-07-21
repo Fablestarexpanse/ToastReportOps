@@ -318,6 +318,15 @@ def requeue_dead_jobs(request: Request, body: dict) -> dict:
     return {"ok": True, "requeued": n}
 
 
+@router.get("/aircraft/{hex_id}/photo")
+def aircraft_photo(request: Request, hex_id: str) -> dict:
+    """A photo of one aircraft by its ICAO hex — its assigned ID. Borrowed from
+    planespotters.net with the photographer credit attached; cached per hex."""
+    from toast.pipeline.aircraft_photo import get_photo
+
+    return get_photo(_conn(request), hex_id)
+
+
 @router.get("/aircraft")
 def get_aircraft(request: Request) -> dict:
     """Aircraft currently near active fires, each with a short orbit trail.
