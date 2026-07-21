@@ -3167,8 +3167,12 @@ export default function Workstation() {
           flexShrink: 0,
         }}
       >
-        <div style={{ fontFamily: font.disp, fontWeight: 700, fontSize: 19, letterSpacing: 1, color: C.ember }}>
-          TOAST REPORT
+        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo/ops-badge-64.png" alt="" style={{ height: 30, width: 30 }} />
+          <div style={{ fontFamily: font.disp, fontWeight: 700, fontSize: 19, letterSpacing: 1, color: C.ember }}>
+            TOAST REPORT
+          </div>
         </div>
         <div style={{ display: "flex", gap: 2, background: C.bg, borderRadius: 6, padding: 2 }}>
           {MODES.map(([k, label]) => (

@@ -18,6 +18,7 @@ from __future__ import annotations
 import io
 import math
 import sqlite3
+from pathlib import Path
 from typing import Any
 
 from PIL import Image, ImageDraw, ImageFont
@@ -200,10 +201,19 @@ def generate_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
         d.rectangle([(40, map_top), (W - 40, map_top + MAP_H)], fill=PANEL, outline=LINE)
         d.text((60, map_top + 20), "location not yet confirmed", font=_font(22), fill=DIM)
 
-    # footer: when this was true
+    # footer: when this was true, badged
     fy = map_top + MAP_H + 18
     stamp = utcnow()[:16].replace("T", " ")
-    d.text((40, fy), "TOAST REPORT", font=_font(22), fill=EMBER)
+    badge_path = Path(__file__).resolve().parents[1] / "assets" / "ops-badge.png"
+    tx = 40
+    if badge_path.exists():
+        from PIL import Image as _Image
+
+        badge = _Image.open(badge_path).convert("RGBA")
+        badge.thumbnail((40, 40), _Image.LANCZOS)
+        img.paste(badge, (40, fy - 6), badge)
+        tx = 40 + badge.width + 12
+    d.text((tx, fy), "TOAST REPORT", font=_font(22), fill=EMBER)
     d.text(
         (W - 40, fy + 3), f"ledger data · generated {stamp}Z", font=_font(17), fill=DIM, anchor="ra"
     )

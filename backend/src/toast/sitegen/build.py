@@ -56,15 +56,18 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:30px 0}
 
 
 def _page(title: str, body: str, *, back: bool = False) -> str:
-    nav = '<p><a href="./index.html">← all updates</a></p>' if back else ""
+    nav = '<p><a href="../index.html">← all updates</a></p>' if back else ""
+    logo_href = "../logo.png" if back else "./logo.png"
     return f"""<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(title)}</title>
+<link rel="icon" type="image/png" href="{logo_href}">
 <style>{_CSS}</style>
 </head><body>
 <header><div class="wrap">
-  <div class="brand">{SITE_TITLE}</div>
+  <div class="brand"><img src="{logo_href}" alt="" style="height:34px;width:34px;
+    vertical-align:middle;margin-right:9px">{SITE_TITLE}</div>
   <div class="tag">{SITE_TAGLINE}</div>
 </div></header>
 <main class="wrap">
@@ -137,6 +140,9 @@ def build_site(conn: sqlite3.Connection, out_dir: Path) -> dict[str, int]:
     """Regenerate the whole static site. Returns counts."""
     out_dir = Path(out_dir)
     (out_dir / "report").mkdir(parents=True, exist_ok=True)
+    logo = Path(__file__).resolve().parents[1] / "assets" / "ops-badge.png"
+    if logo.exists():
+        (out_dir / "logo.png").write_bytes(logo.read_bytes())
 
     reports = conn.execute(
         """SELECT d.*, i.canonical_name AS incident_name
