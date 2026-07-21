@@ -69,6 +69,9 @@ DAILY_STAGES = {
     "raw_sync": 2 * 3600,
     # aircraft move fast — a tanker orbit is only legible if sampled often
     "aircraft": 60,
+    # weather changes slowly and NWS asks for restraint — every 20 min keeps the
+    # wind layer fresh enough for fire behaviour without hammering the API
+    "weather_refresh": 20 * 60,
 }
 
 

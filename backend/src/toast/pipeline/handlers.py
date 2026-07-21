@@ -337,6 +337,28 @@ def backup_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     )
 
 
+@register("weather_refresh")
+def weather_refresh_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Refresh cached weather for every active incident so the wind layer has
+    data even for fires nobody opened. NWS asks not to be hammered, so this runs
+    on a slow cadence (see scheduler) and skips incidents with no coordinates."""
+    from toast.pipeline.weather import incident_weather
+
+    rows = conn.execute(
+        "SELECT id FROM incidents WHERE status = 'active' AND lat IS NOT NULL AND lon IS NOT NULL"
+    ).fetchall()
+    done = 0
+    for r in rows:
+        try:
+            incident_weather(conn, r["id"], refresh=True)
+            done += 1
+        except Exception as exc:  # one bad point must not stop the sweep
+            get_logger("weather").warning(
+                "weather_refresh_failed", incident=r["id"], error=str(exc)[:100]
+            )
+    get_logger("weather").info("weather_refresh_done", incidents=done)
+
+
 @register("aircraft")
 def aircraft_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     """Sweep aircraft over active fires. Borrowed live positions, pruned after

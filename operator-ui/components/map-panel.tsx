@@ -10,9 +10,11 @@ import {
   HotspotSet,
   Incident,
   PerimeterCollection,
+  WindSet,
   fetchAircraft,
   fetchHotspots,
   fetchPerimeters,
+  fetchWind,
   hasActiveEvac,
 } from "@/lib/api";
 import { CA_OUTLINE } from "@/lib/california";
@@ -53,6 +55,14 @@ const BASEMAPS: Record<string, BaseSpec | null> = {
     label: "SATELLITE",
     maxNativeZoom: 16, // upscale past this rather than serving blank tiles
   },
+  // USGS topographic — contour lines and terrain, public domain, no key. The
+  // read fire behaviour lives on: a fire runs uphill and follows drainages.
+  topo: {
+    url: "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}",
+    attribution: 'Topo: <a href="https://www.usgs.gov/">USGS</a> The National Map (public domain)',
+    label: "TOPO",
+    maxNativeZoom: 16,
+  },
 };
 
 const CA_CENTER: [number, number] = [37.4, -119.6];
@@ -84,6 +94,11 @@ const ROLE_STYLE: Record<string, { glyph: string; color: string; size: number; l
   other: { glyph: "▲", color: C.faint, size: 10, label: "aircraft" },
 };
 
+const COMPASS_16 = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+function compassOf(deg: number): string {
+  return COMPASS_16[Math.round(deg / 22.5) % 16];
+}
+
 // A hotspot's colour is its heat: fire radiative power in MW. This is the
 // "how intense" read the pins cannot give — a satellite saw this pixel glowing.
 function hotspotColor(frp: number | null): string {
@@ -114,12 +129,15 @@ export default function MapPanel({
   const perimLayer = useRef<L.GeoJSON | null>(null);
   const hotspotLayer = useRef<L.LayerGroup | null>(null);
   const aircraftLayerRef = useRef<L.LayerGroup | null>(null);
+  const windLayerRef = useRef<L.LayerGroup | null>(null);
   const [perimeters, setPerimeters] = useState<PerimeterCollection | null>(null);
   const [showPerimeters, setShowPerimeters] = useState(true);
   const [hotspots, setHotspots] = useState<HotspotSet | null>(null);
   const [showHotspots, setShowHotspots] = useState(true);
   const [aircraft, setAircraft] = useState<AircraftSet | null>(null);
   const [showAircraft, setShowAircraft] = useState(true);
+  const [wind, setWind] = useState<WindSet | null>(null);
+  const [showWind, setShowWind] = useState(true);
   const [showKey, setShowKey] = useState(false);
   const [tileError, setTileError] = useState(false);
   const [ready, setReady] = useState(false);
@@ -335,6 +353,61 @@ export default function MapPanel({
     group.addTo(m);
     aircraftLayerRef.current = group;
   }, [aircraft, showAircraft, ready]);
+
+  // wind at each fire: refreshed on the server's own 20-min cadence
+  useEffect(() => {
+    let live = true;
+    const load = () =>
+      fetchWind()
+        .then((w) => live && setWind(w))
+        .catch(() => undefined);
+    load();
+    const t = setInterval(load, 5 * 60 * 1000);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, []);
+
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+    if (windLayerRef.current) {
+      m.removeLayer(windLayerRef.current);
+      windLayerRef.current = null;
+    }
+    if (!showWind || !wind?.winds?.length) return;
+    const group = L.layerGroup();
+    for (const w of wind.winds) {
+      // wind_degrees is where the wind blows FROM (met convention); the fire is
+      // pushed the OTHER way, so the arrow points toward where it is going.
+      const toward = (w.wind_degrees + 180) % 360;
+      const mph = w.wind_mph ?? 0;
+      // longer arrow for stronger wind; red when it is fire-driving (>15 mph)
+      const strong = mph >= 15;
+      const color = strong ? C.emberHot : C.blue;
+      const icon = L.divIcon({
+        className: "",
+        html:
+          `<div style="transform:rotate(${toward}deg);color:${color};` +
+          `font-size:${Math.min(26, 13 + mph * 0.5)}px;line-height:1;` +
+          `text-shadow:0 0 3px #000;font-weight:700">↑</div>`,
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
+      });
+      L.marker([w.lat, w.lon], { icon, interactive: true })
+        .bindTooltip(
+          `wind ${w.wind_mph != null ? Math.round(w.wind_mph) : "?"} mph from ${w.wind_compass ?? "?"}` +
+            `${w.gust_mph ? ` · gusts ${Math.round(w.gust_mph)}` : ""}` +
+            `<br/>pushing the fire toward the ${compassOf(toward)}` +
+            `<br/><i>NWS obs${w.station_km != null ? ` · station ${w.station_km.toFixed(0)} km` : ""}</i>`,
+          { direction: "top", opacity: 0.95, offset: [0, -6] },
+        )
+        .addTo(group);
+    }
+    group.addTo(m);
+    windLayerRef.current = group;
+  }, [wind, showWind, ready]);
 
   const draw = useCallback(() => {
     const group = markers.current;
@@ -558,6 +631,22 @@ export default function MapPanel({
             {hotspots.latest_pass ? ` · last pass ${age(hotspots.latest_pass)} ago` : ""}
           </span>
         )}
+        {!!wind?.count && (
+          <span
+            onClick={() => setShowWind((v) => !v)}
+            title="surface wind at each fire (NWS). Arrow points where the fire is being pushed."
+            style={{
+              pointerEvents: "auto",
+              cursor: "pointer",
+              color: showWind ? C.blue : C.dim,
+              border: `1px solid ${showWind ? C.blue + "66" : C.line}`,
+              borderRadius: 3,
+              padding: "1px 5px",
+            }}
+          >
+            {showWind ? "◼" : "◻"} WIND ({wind.count})
+          </span>
+        )}
         {!!aircraft?.count && (
           <span
             onClick={() => setShowAircraft((v) => !v)}
@@ -662,6 +751,9 @@ function MapKey({ open, onToggle }: { open: boolean; onToggle: () => void }) {
           <Row swatch={dot(C.emberHot)} label="≥ 50 MW — roaring" />
           <Row swatch={dot(C.ember)} label="10–50 MW — active" />
           <Row swatch={dot(C.warn)} label="under 10 MW — small / faint" />
+          <div style={{ color: C.faint, letterSpacing: 1, margin: "6px 0 4px" }}>WIND</div>
+          <Row swatch={<span style={{ color: C.blue }}>↑</span>} label="points where the fire is pushed" />
+          <Row swatch={<span style={{ color: C.emberHot }}>↑</span>} label="red / longer = ≥15 mph (fire-driving)" />
           <div style={{ color: C.faint, letterSpacing: 1, margin: "6px 0 4px" }}>AIRCRAFT</div>
           <Row swatch={<span style={{ color: C.emberHot }}>✈</span>} label="air tanker (retardant bomber)" />
           <Row swatch={<span style={{ color: C.warn }}>▲</span>} label="air attack / lead plane (spotter)" />

@@ -318,6 +318,40 @@ def requeue_dead_jobs(request: Request, body: dict) -> dict:
     return {"ok": True, "requeued": n}
 
 
+@router.get("/wind")
+def get_wind(request: Request) -> dict:
+    """Current surface wind at each active fire, from cached NWS observations —
+    for the map's wind layer. Wind drives fire spread, so this is the single
+    most operationally loaded overlay on the board."""
+    rows = _conn(request).execute(
+        """SELECT i.id, i.canonical_name, i.lat, i.lon, w.payload, w.fetched_at
+           FROM incidents i JOIN incident_weather w ON w.incident_id = i.id
+           WHERE i.status = 'active' AND i.lat IS NOT NULL"""
+    ).fetchall()
+    winds = []
+    for r in rows:
+        p = json.loads(r["payload"])
+        if p.get("wind_degrees") is None:
+            continue
+        winds.append({
+            "incident_id": r["id"],
+            "name": r["canonical_name"],
+            "lat": r["lat"],
+            "lon": r["lon"],
+            "wind_degrees": p.get("wind_degrees"),
+            "wind_compass": p.get("wind_compass"),
+            "wind_mph": p.get("wind_mph"),
+            "gust_mph": p.get("gust_mph"),
+            "station_km": (p.get("station") or {}).get("distance_km"),
+            "fetched_at": r["fetched_at"],
+        })
+    return {
+        "winds": winds,
+        "count": len(winds),
+        "note": "wind_degrees is the direction the wind blows FROM (NWS convention).",
+    }
+
+
 @router.get("/aircraft/{hex_id}/photo")
 def aircraft_photo(request: Request, hex_id: str) -> dict:
     """A photo of one aircraft by its ICAO hex — its assigned ID. Borrowed from

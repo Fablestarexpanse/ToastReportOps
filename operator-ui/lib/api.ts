@@ -987,6 +987,23 @@ export type AircraftSet = {
 
 export const fetchAircraft = () => get<AircraftSet>("/aircraft");
 
+export type WindPoint = {
+  incident_id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  wind_degrees: number;   // direction wind blows FROM (NWS convention)
+  wind_compass: string | null;
+  wind_mph: number | null;
+  gust_mph: number | null;
+  station_km: number | null;
+  fetched_at: string;
+};
+
+export type WindSet = { winds: WindPoint[]; count: number; note: string };
+
+export const fetchWind = () => get<WindSet>("/wind");
+
 export type AirResource = {
   hex: string;
   flight: string | null;

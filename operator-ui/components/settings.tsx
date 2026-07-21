@@ -110,6 +110,7 @@ const CHOICES: Record<string, { value: string; label: string }[]> = {
     { value: "dark", label: "DARK" },
     { value: "osm", label: "STREET" },
     { value: "satellite", label: "SATELLITE" },
+    { value: "topo", label: "TOPO" },
     { value: "offline", label: "OFFLINE" },
   ],
 };
