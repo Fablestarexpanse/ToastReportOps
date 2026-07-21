@@ -199,8 +199,26 @@ function FactRow({
 }) {
   const superseded = f.superseded_by != null;
   const tags = factTags(f);
+  const [cited, setCited] = useState(false);
   const openSource = () => {
     if (f.source_url) window.open(f.source_url, "_blank", "noopener,noreferrer");
+  };
+  // One click -> a quotable, attributed line. The citation carries everything a
+  // reader needs to check it: who said it, when it was observed, and the link.
+  const copyCitation = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const parts = [
+      `"${f.content}"`,
+      `— ${f.source_name} (tier ${f.tier})`,
+      `observed ${fmtStamp(f.observed_at)}`,
+    ];
+    if (superseded) parts.push("[SUPERSEDED — a newer report replaces this]");
+    if (f.source_url) parts.push(f.source_url);
+    try {
+      await navigator.clipboard.writeText(parts.join(" "));
+      setCited(true);
+      setTimeout(() => setCited(false), 1600);
+    } catch {}
   };
   const lagged = lag(f.observed_at, f.ingested_at);
   return (
@@ -337,6 +355,13 @@ function FactRow({
               {f.starred ? "★" : "☆"}
             </span>
           )}
+          <span
+            onClick={copyCitation}
+            title='copy as citation: "quote" — source (tier), observed time, link'
+            style={{ color: cited ? C.ok : C.faint, cursor: "pointer" }}
+          >
+            {cited ? "✓ copied" : "⧉ cite"}
+          </span>
           {f.supersedes && (
             <span style={{ color: C.blue }} title={`supersedes ${f.supersedes}`}>
               ⤷ supersedes #{f.supersedes.slice(-6)}
