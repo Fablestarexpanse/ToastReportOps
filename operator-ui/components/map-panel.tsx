@@ -56,14 +56,15 @@ const BASEMAPS: Record<string, BaseSpec | null> = {
     label: "SATELLITE",
     maxNativeZoom: 16, // upscale past this rather than serving blank tiles
   },
-  // USGS shaded relief — pure land shape, no roads or labels. The cleanest read
-  // of terrain: ridgelines, drainages, aspect — how a fire will actually run.
-  // Add place names on top with the LABELS overlay when you want them.
+  // Esri World Hillshade — pure land shape, no roads or labels, and it stays
+  // sharp all the way to street zoom (USGS shaded relief blanked out past ~z13,
+  // which was the "terrain disappears when I zoom in"). Ridgelines, drainages
+  // and aspect — how a fire runs. Add names with the LABELS overlay when wanted.
   terrain: {
-    url: "https://basemap.nationalmap.gov/arcgis/rest/services/USGSShadedReliefOnly/MapServer/tile/{z}/{y}/{x}",
-    attribution: 'Relief: <a href="https://www.usgs.gov/">USGS</a> The National Map (public domain)',
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}",
+    attribution: "Terrain: Esri, USGS, NGA, NASA — hillshade",
     label: "TERRAIN",
-    maxNativeZoom: 15,
+    maxNativeZoom: 16,
   },
   // USGS topographic — the full sheet: contour lines, roads, labels, water.
   topo: {
@@ -112,10 +113,10 @@ function pinRadius(acreage: number | null): number {
 // spotting for it, and a helo read differently at a glance. Glyphs, not photos,
 // because they must stay legible at map scale.
 const ROLE_STYLE: Record<string, { glyph: string; color: string; size: number; label: string }> = {
-  tanker: { glyph: "✈", color: C.emberHot, size: 16, label: "AIR TANKER (retardant)" },
-  air_attack: { glyph: "▲", color: C.warn, size: 13, label: "air attack / lead plane" },
-  helicopter: { glyph: "✜", color: C.blue, size: 15, label: "helicopter" },
-  other: { glyph: "▲", color: C.faint, size: 10, label: "aircraft" },
+  tanker: { glyph: "✈", color: C.emberHot, size: 22, label: "AIR TANKER (retardant)" },
+  air_attack: { glyph: "▲", color: C.warn, size: 18, label: "air attack / lead plane" },
+  helicopter: { glyph: "✜", color: C.blue, size: 21, label: "helicopter" },
+  other: { glyph: "▲", color: C.faint, size: 14, label: "aircraft" },
 };
 
 const COMPASS_16 = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
@@ -400,10 +401,10 @@ export default function MapPanel({
         className: "",
         html:
           `<div style="transform:rotate(${rotate}deg);color:${style.color};` +
-          `font-size:${a.fire_ops ? style.size : 10}px;line-height:1;` +
+          `font-size:${a.fire_ops ? style.size : 14}px;line-height:1;` +
           `text-shadow:0 0 3px #000;opacity:${a.fire_ops ? 1 : 0.7}">${style.glyph}</div>`,
-        iconSize: [18, 18],
-        iconAnchor: [9, 9],
+        iconSize: [26, 26],
+        iconAnchor: [13, 13],
       });
       const label =
         `${a.flight || a.type || "aircraft"}${a.descr ? ` — ${a.descr}` : ""}` +
