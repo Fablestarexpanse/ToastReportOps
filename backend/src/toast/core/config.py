@@ -58,6 +58,12 @@ class Settings(BaseSettings):
     whisper_url: str = ""
     whisper_model: str = "Systran/faster-whisper-small"
 
+    # Telegram: one bot serves two rooms — a public channel we PUBLISH to, and
+    # a private ops chat that receives alerts and can approve drafts. The ops
+    # chat id is the auth boundary: commands from any other chat are ignored.
+    telegram_bot_token: str = ""
+    telegram_channel_id: str = ""
+    telegram_ops_chat_id: str = ""
     bluesky_handle: str = ""
     bluesky_app_password: str = ""
     x_api_key: str = ""

@@ -141,6 +141,21 @@ def check_airnow(conn: sqlite3.Connection, client: httpx.Client) -> dict[str, st
     return _http_verdict(r.status_code, "key valid", r.text)
 
 
+def check_telegram(conn: sqlite3.Connection, client: httpx.Client) -> dict[str, str]:
+    token = get_credential(conn, "TELEGRAM_BOT_TOKEN")
+    if not token:
+        return _result("unconfigured", "bot token required")
+    r = client.get(f"https://api.telegram.org/bot{token}/getMe")
+    if r.status_code == 200:
+        name = (r.json().get("result") or {}).get("username", "bot")
+        chan = get_credential(conn, "TELEGRAM_CHANNEL_ID")
+        ops = get_credential(conn, "TELEGRAM_OPS_CHAT_ID")
+        missing = [n for n, v in (("channel id", chan), ("ops chat id", ops)) if not v]
+        note = f" (still needed: {', '.join(missing)})" if missing else ""
+        return _result("ok", f"@{name} connected{note}")
+    return _http_verdict(r.status_code, "", r.text)
+
+
 CHECKS = {
     "firms": check_firms,
     "bluesky": check_bluesky,
@@ -148,6 +163,7 @@ CHECKS = {
     "x": check_x,
     "facebook": check_facebook,
     "airnow": check_airnow,
+    "telegram": check_telegram,
 }
 
 

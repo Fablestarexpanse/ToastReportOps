@@ -115,6 +115,19 @@ SERVICES: list[Service] = [
         signup_label="Request an AirNow API key",
         fields=[Field("AIRNOW_API_KEY", "API key")],
     ),
+    Service(
+        id="telegram",
+        label="Telegram — publish channel + ops hub",
+        why="Publishes releases to a Telegram channel, pushes alerts to your "
+        "phone, and lets you approve drafts from chat.",
+        signup_url="https://core.telegram.org/bots#how-do-i-create-a-bot",
+        signup_label="Create a bot with @BotFather",
+        fields=[
+            Field("TELEGRAM_BOT_TOKEN", "Bot token"),
+            Field("TELEGRAM_CHANNEL_ID", "Public channel id (@name or -100…)"),
+            Field("TELEGRAM_OPS_CHAT_ID", "Private ops chat id"),
+        ],
+    ),
 ]
 
 SERVICE_BY_ID = {s.id: s for s in SERVICES}

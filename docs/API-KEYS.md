@@ -27,6 +27,7 @@ value-per-minute-of-signup.
 
 | Key | Register at | `.env` variable | Unlocks |
 |---|---|---|---|
+| **Telegram** | @BotFather (free, 2 min) | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHANNEL_ID`, `TELEGRAM_OPS_CHAT_ID` | Publish channel + phone alerts + approve-from-chat. Make the bot admin of your channel; get the ops chat id by messaging the bot and reading /getUpdates. |
 | **AirNow** | docs.airnowapi.org (free) | `AIRNOW_API_KEY` | Smoke / AQI layer per incident area. |
 | **MapTiler or Protomaps** (optional) | maptiler.com free tier / protomaps (self-host PMTiles, no key) | `MAPTILER_KEY` (if used) | Real basemap tiles for the OPS map. Recommendation: **Protomaps PMTiles self-hosted** — no key, works offline during PSPS (plan-aligned); MapTiler only if you want hosted raster tiles. |
 | **OpenWeatherMap** (optional) | openweathermap.org (free) | `OWM_API_KEY` | Simple wind/temp overlays. Note RAWS/HRRR (planned WEATHER tab) are keyless public feeds — this is only a convenience layer. |

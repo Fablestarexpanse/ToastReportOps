@@ -55,6 +55,10 @@ def configured_publishers(settings: Settings | None = None) -> list[Publisher]:
         from toast.publishers.x import XPublisher
 
         out.append(XPublisher(s))
+    if s.telegram_bot_token and s.telegram_channel_id:
+        from toast.publishers.telegram import TelegramPublisher
+
+        out.append(TelegramPublisher(s))
     if s.fb_page_id and s.fb_page_token:
         from toast.publishers.facebook import FacebookPublisher
 

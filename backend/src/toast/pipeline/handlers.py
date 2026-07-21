@@ -359,6 +359,22 @@ def weather_refresh_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -
     get_logger("weather").info("weather_refresh_done", incidents=done)
 
 
+@register("telegram_notify")
+def telegram_notify_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Push new-fire / evac-change / draft-for-review alerts to the ops chat."""
+    from toast.pipeline.telegram_ops import notify_sweep
+
+    notify_sweep(conn)
+
+
+@register("telegram_poll")
+def telegram_poll_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Handle APPROVE / SEND BACK buttons pressed in the ops chat."""
+    from toast.pipeline.telegram_ops import poll_updates
+
+    poll_updates(conn)
+
+
 @register("release_due")
 def release_due_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     """Enqueue publish jobs for scheduled publications whose time has come."""
@@ -468,7 +484,7 @@ def publish_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     # the attached card rides along where the channel supports images; a
     # missing or unreadable graphic degrades to a text post, never a failure
     image_bytes = None
-    if draft["graphic_sha"] and channel == "bluesky":
+    if draft["graphic_sha"] and channel in ("bluesky", "telegram"):
         blob = conn.execute(
             "SELECT path FROM raw_blobs WHERE sha256 = ?", (draft["graphic_sha"],)
         ).fetchone()

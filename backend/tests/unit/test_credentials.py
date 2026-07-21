@@ -150,7 +150,8 @@ def test_successful_check_is_persisted(seeded):
     assert run_check(seeded, "airnow", client=ok)["status"] == "ok"
     row = seeded.execute("SELECT status FROM credential_checks WHERE service='airnow'").fetchone()
     assert row["status"] == "ok"
-    assert service_status(seeded)[-1]["status"] == "ok"  # airnow is last in the registry
+    by_id = {s["id"]: s for s in service_status(seeded)}
+    assert by_id["airnow"]["status"] == "ok"  # positional indexing broke when telegram joined
 
 
 def test_clearing_credentials_resets_a_stale_verdict(seeded):
