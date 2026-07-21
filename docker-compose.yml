@@ -93,7 +93,7 @@ services:
       LDR_WEB_PORT: "5000"
       LDR_DATA_DIR: /data
       LDR_LLM_PROVIDER: ollama
-      LDR_LLM_OLLAMA_URL: http://host.docker.internal:11434
+      LDR_LLM_OLLAMA_URL: http://llm:11434
       LDR_SEARCH_TOOL: searxng
       LDR_SEARCH_ENGINE_WEB_SEARXNG_DEFAULT_PARAMS_INSTANCE_URL: http://searxng:8080
     ports:
@@ -102,5 +102,40 @@ services:
       - ldr_data:/data
     restart: unless-stopped
 
+  # The language model is part of the stack, not a separate program to
+  # remember. First boot pulls the models it needs into OLLAMA_MODELS_DIR
+  # (reuse an existing Ollama cache by pointing that at it); every later boot
+  # is instant. The backend talks to http://llm:11434/v1 — the same
+  # OpenAI-compatible contract, so a cloud key in LLM_BASE_URL still overrides.
+  llm:
+    profiles: [desktop]
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama serve &
+        sleep 4
+        ollama pull "${LLM_PULL_MODEL:-qwen3:14b}" || true
+        ollama pull "${LLM_EMBED_PULL_MODEL:-nomic-embed-text}" || true
+        wait
+    environment:
+      OLLAMA_KEEP_ALIVE: 30m
+    volumes:
+      - "${OLLAMA_MODELS_DIR:-ollama_models}:/root/.ollama/models"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
 volumes:
   ldr_data:
+  ollama_models:

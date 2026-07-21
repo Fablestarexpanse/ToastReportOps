@@ -203,3 +203,19 @@ in `toast/sitegen/` already produces a self-contained `data/site/` directory
 Contained + N days → automatic freeze. Frozen incidents reject all writes except
 supersession corrections (DB trigger). Retrospective export produces a
 self-contained incident bundle (ledger JSONL, media manifest, GeoJSON perimeters).
+
+
+## The LLM is part of the stack (2026-07-21)
+
+No separate program to remember: `docker compose --profile desktop up` starts
+an `llm` service (Ollama in a container, GPU passthrough) alongside everything
+else. First boot pulls the models named in `LLM_PULL_MODEL` /
+`LLM_EMBED_PULL_MODEL` into `OLLAMA_MODELS_DIR` (a named volume by default; on
+this machine it is pointed at the existing F:\Pi Coder\models cache so
+nothing re-downloads). Every later boot is instant.
+
+Why: twice now a separately-started host Ollama was down without anyone
+noticing, and extraction/watch/triage jobs dead-lettered silently. The stack
+owning its model ends that failure class. The backend contract is unchanged —
+`LLM_BASE_URL=http://llm:11434/v1` — so pointing it at OpenAI/OpenRouter/etc.
+with a key still overrides for anyone who prefers cloud.
