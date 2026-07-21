@@ -278,7 +278,18 @@ The assessment ranked these the two biggest remaining gaps against Watch Duty.
 Neither is a code task until Brian decides; the research is recorded here so
 the decision needs no re-work.
 
-### 1. Evacuation zones as map polygons
+### 1. Evacuation zones as map polygons — RESOLVED 2026-07-21
+
+Genasys direct is out: their terms expressly prohibit bots/scrapers and any
+redistribution ("personal, non-commercial use" only). It does not matter:
+**Cal OES publishes the California Evacuation Aggregation Layer** on the state
+open-data portal — every county's zones, same Zonehaven zone ids and statuses,
+rebuilt every 5 minutes, published by the state's own emergency authority.
+Built as the EVAC ZONES map layer (pipeline/evaczones.py): statuses and
+official text verbatim, zones matched to tracked fires, order/warning/shelter
+colour convention. Tier-1 official source; no vendor terms involved.
+
+#### (superseded original analysis)
 
 We render evac text verbatim with official deep links — correct, but Watch
 Duty's zone map is simply better for "which side of Clark Road". Options:

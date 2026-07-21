@@ -1121,6 +1121,38 @@ export const fetchAqi = (incidentId: string) => get<IncidentAqi>(`/incidents/${i
 export const fetchFireWeather = () => get<FireWeatherSet>("/fire-weather");
 export const fetchClosures = () => get<ClosureSet>("/closures");
 
+export type EvacZoneFeature = {
+  type: "Feature";
+  geometry: GeoJSON.Geometry | null;
+  properties: {
+    COUNTY: string | null;
+    CITY: string | null;
+    ZONE_ID: string | null;
+    ZONE_NAME: string | null;
+    STATUS: string | null;
+    EVENT_TYPE: string | null;
+    CRITICAL_INFO: string | null;
+    PUBLIC_INFO: string | null;
+    EDIT_DATE: string | null;
+    incident_id: string | null;
+    incident_name?: string;
+    distance_km?: number;
+  };
+};
+
+export type EvacZoneSet = {
+  type: "FeatureCollection";
+  features: EvacZoneFeature[];
+  count: number;
+  matched: number;
+  statuses: Record<string, number>;
+  source: string;
+  note: string;
+  fetched_at: string;
+};
+
+export const fetchEvacZones = () => get<EvacZoneSet>("/evac-zones");
+
 /* ---- AIR mode ---- */
 
 export type AirAircraft = {

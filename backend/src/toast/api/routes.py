@@ -413,6 +413,19 @@ def incident_aqi(request: Request, incident_id: str, refresh: bool = False) -> d
         raise HTTPException(502, f"AirNow unreachable: {exc}") from exc
 
 
+@router.get("/evac-zones")
+def evac_zones(request: Request, refresh: bool = False) -> dict:
+    """Elevated evacuation zones statewide from Cal OES — statuses VERBATIM.
+    Every polygon in this layer is an active instruction to someone."""
+    from toast.core.fetch import FetchError
+    from toast.pipeline.evaczones import get_evac_zones
+
+    try:
+        return get_evac_zones(_conn(request), refresh=refresh)
+    except FetchError as exc:
+        raise HTTPException(502, f"Cal OES layer unreachable: {exc}") from exc
+
+
 @router.get("/fire-weather")
 def fire_weather(request: Request, refresh: bool = False) -> dict:
     """Red flag / fire-weather alert polygons — a FORECAST layer, always

@@ -9,6 +9,7 @@ import {
   Camera,
   CameraSet,
   ClosureSet,
+  EvacZoneSet,
   FireWeatherSet,
   Hotspot,
   HotspotSet,
@@ -18,6 +19,7 @@ import {
   fetchAircraft,
   fetchCameras,
   fetchClosures,
+  fetchEvacZones,
   fetchFireWeather,
   fetchHotspots,
   fetchPerimeters,
@@ -165,6 +167,7 @@ export default function MapPanel({
   const cameraLayerRef = useRef<L.LayerGroup | null>(null);
   const firewxLayerRef = useRef<L.GeoJSON | null>(null);
   const closureLayerRef = useRef<L.LayerGroup | null>(null);
+  const evacZoneLayerRef = useRef<L.GeoJSON | null>(null);
   const overlayRefs = useRef<Record<string, L.TileLayer>>({});
   const [overlays, setOverlays] = useState<Record<string, boolean>>({});
   const [perimeters, setPerimeters] = useState<PerimeterCollection | null>(null);
@@ -179,6 +182,8 @@ export default function MapPanel({
   const [showCameras, setShowCameras] = useState(true);
   const [firewx, setFirewx] = useState<FireWeatherSet | null>(null);
   const [showFirewx, setShowFirewx] = useState(true);
+  const [evacZones, setEvacZones] = useState<EvacZoneSet | null>(null);
+  const [showEvacZones, setShowEvacZones] = useState(true);
   const [closures, setClosures] = useState<ClosureSet | null>(null);
   const [showClosures, setShowClosures] = useState(true);
   // the in-tool frame viewer: which camera, and a nonce so REFRESH re-asks
@@ -526,6 +531,63 @@ export default function MapPanel({
       clearInterval(t);
     };
   }, []);
+
+  // Evacuation zones (Cal OES, rebuilds every 5 min): the highest-stakes layer
+  // on the board — poll on its own faster cadence
+  useEffect(() => {
+    let live = true;
+    const load = () => fetchEvacZones().then((z) => live && setEvacZones(z)).catch(() => undefined);
+    load();
+    const t = setInterval(load, 2 * 60 * 1000);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, []);
+
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+    if (evacZoneLayerRef.current) {
+      m.removeLayer(evacZoneLayerRef.current);
+      evacZoneLayerRef.current = null;
+    }
+    if (!showEvacZones || !evacZones?.features?.length) return;
+    // status colors mirror the official public convention: order = the alarm
+    // color, warning = amber, shelter-in-place = blue, anything else dim
+    const colorOf = (status: string | null): string => {
+      const s = (status || "").toLowerCase();
+      if (s.includes("order")) return C.evac;
+      if (s.includes("warning")) return C.warn;
+      if (s.includes("shelter")) return C.blue;
+      return C.dim;
+    };
+    const layer = L.geoJSON(
+      { type: "FeatureCollection", features: evacZones.features.filter((f) => f.geometry) } as GeoJSON.FeatureCollection,
+      {
+        style: (feature) => {
+          const c = colorOf((feature?.properties as EvacZoneSet["features"][number]["properties"])?.STATUS ?? null);
+          return { color: c, weight: 2, fillColor: c, fillOpacity: 0.22, interactive: true };
+        },
+        onEachFeature: (feature, lyr) => {
+          const p = feature.properties as EvacZoneSet["features"][number]["properties"];
+          const esc = (s: string | null | undefined) =>
+            (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+          // VERBATIM: status and official text exactly as the county issued them
+          lyr.bindTooltip(
+            `<b style="color:#ff4d8f">${esc(p.STATUS)?.toUpperCase()}</b> — zone ${esc(p.ZONE_ID)}` +
+              `${p.COUNTY ? `<br/>${esc(p.COUNTY)} County` : ""}` +
+              `${p.incident_name ? ` · nearest fire: ${esc(p.incident_name)}` : ""}` +
+              `${p.CRITICAL_INFO ? `<br/><b>${esc(p.CRITICAL_INFO)}</b>` : ""}` +
+              `${p.PUBLIC_INFO ? `<br/>${esc(p.PUBLIC_INFO).slice(0, 300)}` : ""}` +
+              `<br/><i>Cal OES · official status, verbatim · verify locally before acting</i>`,
+            { sticky: true, opacity: 0.97 },
+          );
+        },
+      },
+    ).addTo(m);
+    evacZoneLayerRef.current = layer;
+  }, [evacZones, showEvacZones, ready]);
 
   useEffect(() => {
     const m = map.current;
@@ -964,6 +1026,23 @@ export default function MapPanel({
             {showWind ? "◼" : "◻"} WIND ({wind.count})
           </span>
         )}
+        {!!evacZones?.count && (
+          <span
+            onClick={() => setShowEvacZones((v) => !v)}
+            title={`${evacZones.note} Statuses right now: ${Object.entries(evacZones.statuses).map(([s, n]) => `${s}: ${n}`).join(", ")}`}
+            style={{
+              pointerEvents: "auto",
+              cursor: "pointer",
+              color: showEvacZones ? C.evac : C.dim,
+              border: `1px solid ${showEvacZones ? C.evac + "88" : C.line}`,
+              borderRadius: 3,
+              padding: "1px 5px",
+              fontWeight: 700,
+            }}
+          >
+            {showEvacZones ? "◼" : "◻"} EVAC ZONES ({evacZones.count}) · Cal OES
+          </span>
+        )}
         {!!firewx?.count && (
           <span
             onClick={() => setShowFirewx((v) => !v)}
@@ -1193,6 +1272,10 @@ function MapKey({ open, onToggle }: { open: boolean; onToggle: () => void }) {
           <div style={{ color: C.faint, letterSpacing: 1, margin: "6px 0 4px" }}>WIND</div>
           <Row swatch={<span style={{ color: C.blue }}>↑</span>} label="points where the fire is pushed" />
           <Row swatch={<span style={{ color: C.emberHot }}>↑</span>} label="red / longer = ≥15 mph (fire-driving)" />
+          <div style={{ color: C.faint, letterSpacing: 1, margin: "6px 0 4px" }}>EVACUATION ZONES (Cal OES)</div>
+          <Row swatch={<span style={{ width: 12, height: 8, border: `1.5px solid ${C.evac}`, background: C.evac + "38", display: "inline-block" }} />} label="EVACUATION ORDER — leave now" />
+          <Row swatch={<span style={{ width: 12, height: 8, border: `1.5px solid ${C.warn}`, background: C.warn + "38", display: "inline-block" }} />} label="evacuation warning — be ready" />
+          <Row swatch={<span style={{ width: 12, height: 8, border: `1.5px solid ${C.blue}`, background: C.blue + "38", display: "inline-block" }} />} label="shelter in place" />
           <div style={{ color: C.faint, letterSpacing: 1, margin: "6px 0 4px" }}>HAZARD AREAS</div>
           <Row swatch={<span style={{ width: 12, height: 8, border: `1.5px dashed ${C.evac}`, background: C.evac + "14", display: "inline-block" }} />} label="red flag zone — forecast, not fire" />
           <Row swatch={<span style={{ color: C.warn }}>⛔</span>} label="highway closed (state hwys only)" />
