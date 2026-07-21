@@ -1266,7 +1266,13 @@ const SORT_LABELS: Record<SortMode, string> = {
   tier: "TRUST TIER",
 };
 
-function OpsMode({ toast }: { toast: (m: string) => void }) {
+function OpsMode({
+  toast,
+  focusIncident,
+}: {
+  toast: (m: string) => void;
+  focusIncident?: { id: string; nonce: number } | null;
+}) {
   const incidents = usePolling(fetchIncidents);
   const intake = usePolling(fetchIntake);
   const adjudication = usePolling(fetchAdjudication);
@@ -1341,6 +1347,12 @@ function OpsMode({ toast }: { toast: (m: string) => void }) {
   useEffect(() => {
     if (!selected && incidents?.length) setSelected(incidents[0].id);
   }, [incidents, selected]);
+
+  // an alert was clicked in the bell: select that fire. nonce is in the dep so
+  // clicking the same fire again re-focuses it (the id alone would not change).
+  useEffect(() => {
+    if (focusIncident) setSelected(focusIncident.id);
+  }, [focusIncident?.id, focusIncident?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const kinds = useMemo(
     () => [...new Set((intake ?? []).map((f) => f.kind))].sort(),
@@ -2745,6 +2757,17 @@ function DeadLetterPanel({ onClose, toast }: { onClose: () => void; toast: (m: s
 
 export default function Workstation() {
   const [mode, setMode] = useState("ops");
+  // an alert click routes here: a fire opens its incident in OPS (nonce bumps so
+  // clicking the same fire twice re-focuses it), a watch candidate opens WATCH
+  const [focusIncident, setFocusIncident] = useState<{ id: string; nonce: number } | null>(null);
+  const openAlertTarget = useCallback((target: { incidentId?: string; watchKey?: string }) => {
+    if (target.incidentId) {
+      setFocusIncident({ id: target.incidentId, nonce: Date.now() });
+      setMode("ops");
+    } else if (target.watchKey) {
+      setMode("watch");
+    }
+  }, []);
   const health = usePolling(fetchHealth);
   const [showDead, setShowDead] = useState(false);
   // usePolling deliberately swallows fetch errors and keeps the last value, so
@@ -2823,7 +2846,7 @@ export default function Workstation() {
           ))}
         </div>
         <div style={{ flex: 1 }} />
-        <AlertBell />
+        <AlertBell onOpen={openAlertTarget} />
         <span
           onClick={() => setShowSettings(true)}
           title="options — time display, local AI models"
@@ -2887,7 +2910,7 @@ export default function Workstation() {
         </div>
       )}
 
-      {mode === "ops" && <OpsMode key={uiKey} toast={toast} />}
+      {mode === "ops" && <OpsMode key={uiKey} toast={toast} focusIncident={focusIncident} />}
       {mode === "news" && <NewsroomMode toast={toast} />}
       {mode === "watch" && <WatchMode toast={toast} />}
       {mode === "archive" && <ArchiveMode toast={toast} />}

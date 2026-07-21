@@ -10,7 +10,15 @@ import { fmtStamp } from "@/lib/time";
    notification (works in the Edge app window) + the bell dropdown. Seen-state
    persists in localStorage so restarts don't re-alert history. */
 
-type Alert = { id: string; kind: "fire" | "watch"; title: string; detail: string; at: string };
+type Alert = {
+  id: string;
+  kind: "fire" | "watch";
+  title: string;
+  detail: string;
+  at: string;
+  incidentId?: string; // fire alerts: the incident to open
+  watchKey?: string;    // watch alerts: the candidate on the WATCH board
+};
 
 const SEEN_KEY = "toast-alert-seen-v1";
 const POLL_MS = 30_000;
@@ -24,7 +32,13 @@ function loadSeen(): { incidents: string[]; watch: string[] } {
   return { incidents: [], watch: [] };
 }
 
-export default function AlertBell() {
+export default function AlertBell({
+  onOpen,
+}: {
+  /** route a clicked alert: a fire opens its incident in OPS, a watch
+   *  candidate opens the WATCH board */
+  onOpen?: (target: { incidentId?: string; watchKey?: string }) => void;
+}) {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [open, setOpen] = useState(false);
   const [unread, setUnread] = useState(0);
@@ -62,6 +76,7 @@ export default function AlertBell() {
             fresh.push({
               id: `inc-${i.id}`,
               kind: "fire",
+              incidentId: i.id,
               title: `NEW FIRE: ${i.canonical_name}`,
               detail: `${i.county ? i.county + " County · " : ""}${i.acreage != null ? i.acreage.toLocaleString() + " ac" : "size unknown"}`,
               at: now,
@@ -76,6 +91,7 @@ export default function AlertBell() {
             fresh.push({
               id: `watch-${c.key}`,
               kind: "watch",
+              watchKey: c.key,
               title: `POSSIBLE NEW START: ${c.name}`,
               detail: `${c.source_count} independent sources — check the WATCH board`,
               at: now,
@@ -152,16 +168,39 @@ export default function AlertBell() {
           <div style={{ padding: "8px 12px", fontFamily: font.disp, fontSize: 11, letterSpacing: 2, color: C.dim, borderBottom: `1px solid ${C.line}` }}>
             ALERTS {notifState !== "granted" && "· notifications off — click bell to enable"}
           </div>
-          {alerts.map((a) => (
-            <div key={a.id} style={{ padding: "8px 12px", borderBottom: `1px solid ${C.line}44` }}>
-              <div style={{ fontSize: 11.5, fontWeight: 700, color: a.kind === "fire" ? C.emberHot : C.violet }}>
-                {a.title}
+          {alerts.map((a) => {
+            const clickable = !!(a.incidentId || a.watchKey);
+            return (
+              <div
+                key={a.id}
+                onClick={
+                  clickable
+                    ? () => {
+                        onOpen?.({ incidentId: a.incidentId, watchKey: a.watchKey });
+                        setOpen(false);
+                      }
+                    : undefined
+                }
+                title={
+                  clickable
+                    ? a.kind === "fire"
+                      ? "open this fire in OPS"
+                      : "open the WATCH board"
+                    : undefined
+                }
+                className={clickable ? "tr-row" : undefined}
+                style={{ padding: "8px 12px", borderBottom: `1px solid ${C.line}44`, cursor: clickable ? "pointer" : "default" }}
+              >
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: a.kind === "fire" ? C.emberHot : C.violet }}>
+                  {a.title}
+                  {clickable && <span style={{ float: "right", color: C.dim, fontSize: 10 }}>→</span>}
+                </div>
+                <div style={{ fontFamily: font.mono, fontSize: 9, color: C.dim, marginTop: 2 }}>
+                  {a.detail} · {fmtStamp(a.at)}
+                </div>
               </div>
-              <div style={{ fontFamily: font.mono, fontSize: 9, color: C.dim, marginTop: 2 }}>
-                {a.detail} · {fmtStamp(a.at)}
-              </div>
-            </div>
-          ))}
+            );
+          })}
           {!alerts.length && (
             <div style={{ padding: 14, fontFamily: font.mono, fontSize: 9.5, color: C.faint }}>
               no alerts this session — new active fires and corroborating watch candidates land here
