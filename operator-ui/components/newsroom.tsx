@@ -396,6 +396,22 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
               </span>
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "14px 18px" }}>
+              {detail?.draft.graphic_sha && (
+                /* the attached card as the article's hero — how readers will
+                   actually see the post, not a thumbnail in a side rail */
+                <div style={{ marginBottom: 14 }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`/api/drafts/${detail.draft.id}/graphic.png?t=${graphicNonce}`}
+                    alt="attached incident card"
+                    style={{ width: "100%", maxWidth: 760, borderRadius: 8, border: `1px solid ${C.line}`, display: "block" }}
+                  />
+                  <div style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint, marginTop: 4 }}>
+                    attached card — publishes with the post on image-capable channels ·
+                    regenerate with 🗺 GRAPHIC after new numbers land
+                  </div>
+                </div>
+              )}
               <textarea
                 value={bodyEdit}
                 onChange={(e) => setBodyEdit(e.target.value)}
