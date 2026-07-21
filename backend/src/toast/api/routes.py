@@ -413,6 +413,36 @@ def incident_aqi(request: Request, incident_id: str, refresh: bool = False) -> d
         raise HTTPException(502, f"AirNow unreachable: {exc}") from exc
 
 
+@router.get("/mesh/nodes")
+def mesh_nodes(request: Request, hours: int = Query(24, le=168)) -> dict:
+    """NorCal Meshtastic nodes heard recently, freshest first."""
+    rows = _conn(request).execute(
+        """SELECT * FROM mesh_nodes
+           WHERE unixepoch('now') - unixepoch(last_heard) < ? * 3600
+           ORDER BY last_heard DESC LIMIT 300""",
+        (hours,),
+    ).fetchall()
+    return {
+        "nodes": [dict(r) for r in rows],
+        "count": len(rows),
+        "note": "heard via the public Meshtastic MQTT broker — the mesh itself "
+        "needs no internet; this VIEW of it does",
+    }
+
+
+@router.get("/mesh/messages")
+def mesh_messages(request: Request, limit: int = Query(100, le=500)) -> dict:
+    """Recent mesh text traffic (48 h retained). Community text: shown inert,
+    never rendered as markup, never treated as fact."""
+    rows = _conn(request).execute(
+        """SELECT m.*, n.long_name, n.short_name FROM mesh_messages m
+           LEFT JOIN mesh_nodes n ON n.node_id = m.node_id
+           ORDER BY m.rx_at DESC LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    return {"messages": [dict(r) for r in rows], "count": len(rows)}
+
+
 @router.get("/radio/calls")
 def radio_calls(request: Request, limit: int = Query(100, le=500)) -> dict:
     """Captured scanner traffic, newest first, transcript state shown honestly."""

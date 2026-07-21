@@ -1184,6 +1184,42 @@ export type EvacZoneSet = {
 
 export const fetchEvacZones = () => get<EvacZoneSet>("/evac-zones");
 
+export type MeshNode = {
+  node_id: string;
+  long_name: string | null;
+  short_name: string | null;
+  hw_model: string | null;
+  lat: number | null;
+  lon: number | null;
+  alt_m: number | null;
+  battery: number | null;
+  voltage: number | null;
+  snr: number | null;
+  hops: number | null;
+  in_region: number;
+  last_gateway: string | null;
+  first_heard: string;
+  last_heard: string;
+};
+
+export type MeshNodes = { nodes: MeshNode[]; count: number; note: string };
+
+export type MeshMessage = {
+  id: number;
+  node_id: string;
+  gateway_id: string | null;
+  channel: string | null;
+  text: string;
+  rx_at: string;
+  long_name: string | null;
+  short_name: string | null;
+};
+
+export type MeshMessages = { messages: MeshMessage[]; count: number };
+
+export const fetchMeshNodes = () => get<MeshNodes>("/mesh/nodes");
+export const fetchMeshMessages = () => get<MeshMessages>("/mesh/messages");
+
 export type RadioCall = {
   id: string;
   system: string | null;

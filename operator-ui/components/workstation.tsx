@@ -79,7 +79,15 @@ const MapPanel = dynamic(() => import("@/components/map-panel"), {
     </div>
   ),
 });
-// AIR mode owns its own Leaflet map, so it gets the same client-only treatment.
+// AIR and MESH own their own Leaflet maps: same client-only treatment.
+const MeshMode = dynamic(() => import("@/components/mesh-mode"), {
+  ssr: false,
+  loading: () => (
+    <div style={{ flex: 1, background: "#10141a", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: font.mono, fontSize: 10, color: C.faint }}>
+      listening to the mesh…
+    </div>
+  ),
+});
 const AirMode = dynamic(() => import("@/components/air-mode"), {
   ssr: false,
   loading: () => (
@@ -2978,6 +2986,7 @@ const MODES: [string, string][] = [
   ["ops", "OPS"],
   ["air", "AIR"],
   ["radio", "RADIO"],
+  ["mesh", "MESH"],
   ["news", "NEWSROOM"],
   ["watch", "WATCH"],
   ["archive", "ARCHIVE"],
@@ -3250,6 +3259,7 @@ export default function Workstation() {
       {mode === "ops" && <OpsMode key={uiKey} toast={toast} focusIncident={focusIncident} />}
       {mode === "air" && <AirMode toast={toast} />}
       {mode === "radio" && <RadioMode toast={toast} />}
+      {mode === "mesh" && <MeshMode toast={toast} />}
       {mode === "news" && <NewsroomMode toast={toast} />}
       {mode === "watch" && <WatchMode toast={toast} />}
       {mode === "archive" && <ArchiveMode toast={toast} />}

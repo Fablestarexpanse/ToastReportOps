@@ -15,6 +15,9 @@ dependencies = [
     "feedparser>=6.0.12",
     "markdown>=3.10.2",
     "pillow>=10.4",
+    "paho-mqtt>=2.1",
+    "meshtastic>=2.5",
+    "cryptography>=43.0",
 ]
 
 [dependency-groups]

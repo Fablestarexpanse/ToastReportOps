@@ -102,6 +102,13 @@ services:
       - ldr_data:/data
     restart: unless-stopped
 
+  # Mesh listener: the public Meshtastic MQTT firehose filtered to a NorCal
+  # picture. Persistent subscription, so a service rather than a job.
+  mesh:
+    <<: *backend
+    profiles: [desktop]
+    command: python -m toast.mesh.listener
+
   # The language model is part of the stack, not a separate program to
   # remember. First boot pulls the models it needs into OLLAMA_MODELS_DIR
   # (reuse an existing Ollama cache by pointing that at it); every later boot
