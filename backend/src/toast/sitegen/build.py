@@ -66,7 +66,7 @@ def _page(title: str, body: str, *, back: bool = False) -> str:
 <style>{_CSS}</style>
 </head><body>
 <header><div class="wrap">
-  <div class="brand"><img src="{logo_href}" alt="" style="height:34px;width:34px;
+  <div class="brand"><img src="{logo_href}" alt="" style="height:68px;width:68px;
     vertical-align:middle;margin-right:9px">{SITE_TITLE}</div>
   <div class="tag">{SITE_TAGLINE}</div>
 </div></header>

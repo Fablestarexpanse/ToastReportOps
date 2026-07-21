@@ -3169,7 +3169,7 @@ export default function Workstation() {
       >
         <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo/ops-badge-64.png" alt="" style={{ height: 30, width: 30 }} />
+          <img src="/logo/ops-badge-256.png" alt="" style={{ height: 60, width: 60 }} />
           <div style={{ fontFamily: font.disp, fontWeight: 700, fontSize: 19, letterSpacing: 1, color: C.ember }}>
             TOAST REPORT
           </div>

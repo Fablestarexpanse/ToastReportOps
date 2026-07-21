@@ -210,8 +210,8 @@ def generate_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
         from PIL import Image as _Image
 
         badge = _Image.open(badge_path).convert("RGBA")
-        badge.thumbnail((40, 40), _Image.LANCZOS)
-        img.paste(badge, (40, fy - 6), badge)
+        badge.thumbnail((80, 80), _Image.LANCZOS)
+        img.paste(badge, (40, fy - 36), badge)
         tx = 40 + badge.width + 12
     d.text((tx, fy), "TOAST REPORT", font=_font(22), fill=EMBER)
     d.text(
