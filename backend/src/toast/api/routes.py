@@ -318,6 +318,43 @@ def requeue_dead_jobs(request: Request, body: dict) -> dict:
     return {"ok": True, "requeued": n}
 
 
+@router.get("/air/focus/{incident_id}")
+def air_focus(request: Request, incident_id: str) -> dict:
+    """AIR mode: the selected fire's airspace, throttled upstream, read-through
+    otherwise — a fast UI poll degrades to store reads, never to API abuse."""
+    from toast.pipeline.air import focus_poll
+
+    try:
+        return focus_poll(_conn(request), incident_id)
+    except ValueError:
+        raise HTTPException(404, "incident not found") from None
+
+
+@router.get("/air/bases")
+def air_bases(request: Request) -> dict:
+    """Tanker-base watch: fire/military hulls at or recently departed from
+    CAL FIRE and USFS bases, one base scanned per window, round-robin."""
+    from toast.pipeline.air import base_watch
+
+    return base_watch(_conn(request))
+
+
+@router.get("/air/mil")
+def air_mil(request: Request) -> dict:
+    """Military aircraft over California from the dedicated /mil feed."""
+    from toast.pipeline.air import mil_snapshot
+
+    return mil_snapshot(_conn(request))
+
+
+@router.get("/air/log/{incident_id}")
+def air_log(request: Request, incident_id: str) -> dict:
+    """Per-fire aviation timeline derived from our stored positions."""
+    from toast.pipeline.air import activity_log
+
+    return activity_log(_conn(request), incident_id)
+
+
 @router.get("/cameras")
 def get_cameras(request: Request, lat: float, lon: float, refresh: bool = False) -> dict:
     """ALERTCalifornia cameras near a point — metadata only, so the operator can

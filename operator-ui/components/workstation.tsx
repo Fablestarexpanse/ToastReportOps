@@ -74,6 +74,15 @@ const MapPanel = dynamic(() => import("@/components/map-panel"), {
     </div>
   ),
 });
+// AIR mode owns its own Leaflet map, so it gets the same client-only treatment.
+const AirMode = dynamic(() => import("@/components/air-mode"), {
+  ssr: false,
+  loading: () => (
+    <div style={{ flex: 1, background: "#10141a", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: font.mono, fontSize: 10, color: C.faint }}>
+      loading airspace…
+    </div>
+  ),
+});
 import NewsroomMode from "@/components/newsroom";
 import WatchMode from "@/components/watch";
 
@@ -2790,6 +2799,7 @@ function ArchiveMode({ toast }: { toast: (m: string) => void }) {
 // "arrives in a later phase" tooltip and not-allowed cursor were unreachable.
 const MODES: [string, string][] = [
   ["ops", "OPS"],
+  ["air", "AIR"],
   ["news", "NEWSROOM"],
   ["watch", "WATCH"],
   ["archive", "ARCHIVE"],
@@ -3060,6 +3070,7 @@ export default function Workstation() {
       )}
 
       {mode === "ops" && <OpsMode key={uiKey} toast={toast} focusIncident={focusIncident} />}
+      {mode === "air" && <AirMode toast={toast} />}
       {mode === "news" && <NewsroomMode toast={toast} />}
       {mode === "watch" && <WatchMode toast={toast} />}
       {mode === "archive" && <ArchiveMode toast={toast} />}

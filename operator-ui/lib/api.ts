@@ -1041,6 +1041,87 @@ export type CameraSet = {
 export const fetchCameras = (lat: number, lon: number) =>
   get<CameraSet>(`/cameras?lat=${lat}&lon=${lon}`);
 
+/* ---- AIR mode ---- */
+
+export type AirAircraft = {
+  hex: string;
+  flight: string | null;
+  type: string | null;
+  descr: string | null;
+  lat: number;
+  lon: number;
+  alt_ft: number | null;
+  gs: number | null;
+  track: number | null;
+  role: "tanker" | "air_attack" | "helicopter" | "other";
+  military: boolean;
+  fire_ops: boolean;
+  seen_at: string;
+  first_seen: string;
+  trail: [number, number][];
+};
+
+export type AirFocus = {
+  aircraft: AirAircraft[];
+  count: number;
+  fire_ops: number;
+  polled_upstream: boolean;
+  fetched_at: string;
+  note: string;
+};
+
+export type AirBase = { id: string; name: string; lat: number; lon: number };
+
+export type BaseSighting = {
+  hex: string;
+  base: string;
+  base_name: string;
+  flight: string | null;
+  type: string | null;
+  descr: string | null;
+  role: string;
+  military: boolean;
+  airborne: boolean;
+  last_seen: string;
+  departed_at?: string;
+};
+
+export type AirBases = {
+  bases: AirBase[];
+  sightings: BaseSighting[];
+  last_scan: { base: string; at: string } | null;
+  note: string;
+};
+
+export type AirMil = {
+  aircraft: (Omit<AirAircraft, "trail" | "first_seen" | "seen_at" | "military" | "fire_ops">)[];
+  count: number;
+  fetched_at: string;
+  note: string;
+};
+
+export type AirSession = {
+  hex: string;
+  flight: string | null;
+  type: string | null;
+  descr: string | null;
+  role: string;
+  military: boolean;
+  fire_ops: boolean;
+  arrived: string;
+  last_seen: string;
+  on_station_s: number;
+  ongoing: boolean;
+  positions: number;
+};
+
+export type AirLog = { sessions: AirSession[]; count: number; note: string };
+
+export const fetchAirFocus = (incidentId: string) => get<AirFocus>(`/air/focus/${incidentId}`);
+export const fetchAirBases = () => get<AirBases>("/air/bases");
+export const fetchAirMil = () => get<AirMil>("/air/mil");
+export const fetchAirLog = (incidentId: string) => get<AirLog>(`/air/log/${incidentId}`);
+
 export type AirResource = {
   hex: string;
   flight: string | null;
