@@ -1236,6 +1236,27 @@ function WeatherPanel({ incidentId }: { incidentId: string }) {
         </div>
       )}
 
+      {wx.forecast && (
+        <div
+          style={{
+            border: `1px solid ${wx.forecast.peak_wind_mph >= 15 || (wx.forecast.peak_gust_mph ?? 0) >= 25 ? C.warn : C.line}`,
+            background: wx.forecast.peak_wind_mph >= 15 || (wx.forecast.peak_gust_mph ?? 0) >= 25 ? C.warn + "12" : C.bg,
+            borderRadius: 6,
+            padding: "6px 10px",
+            fontFamily: font.mono,
+            fontSize: 9.5,
+            color: wx.forecast.peak_wind_mph >= 15 || (wx.forecast.peak_gust_mph ?? 0) >= 25 ? C.warn : C.dim,
+          }}
+          title="NWS hourly forecast, summarized — the official product relayed, never our model"
+        >
+          NEXT {wx.forecast.window_hours}H · peak {Math.round(wx.forecast.peak_wind_mph)} mph
+          {wx.forecast.direction ? ` ${wx.forecast.direction}` : ""}
+          {wx.forecast.peak_gust_mph ? ` · gusts ${Math.round(wx.forecast.peak_gust_mph)}` : ""}
+          {wx.forecast.rising ? " · RISING" : ""}
+          <span style={{ color: C.faint }}> — NWS forecast</span>
+        </div>
+      )}
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 6 }}>
         {cells.map(([label, value]) => (
           <div key={label} style={{ background: C.bg, border: `1px solid ${C.line}`, borderRadius: 6, padding: "7px 9px" }}>

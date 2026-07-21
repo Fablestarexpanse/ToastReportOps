@@ -343,6 +343,7 @@ def get_wind(request: Request) -> dict:
             "wind_mph": p.get("wind_mph"),
             "gust_mph": p.get("gust_mph"),
             "station_km": (p.get("station") or {}).get("distance_km"),
+            "forecast": p.get("forecast"),
             "fetched_at": r["fetched_at"],
         })
     return {

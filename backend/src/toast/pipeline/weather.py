@@ -87,6 +87,50 @@ def _compass(deg: float | None) -> str | None:
     return points[int((deg / 22.5) + 0.5) % 16]
 
 
+def _parse_mph(text: Any) -> float | None:
+    """NWS forecast winds are strings — "10 mph", "15 to 25 mph". Take the max
+    stated figure; inventing a midpoint would be our number, not theirs."""
+    import re
+
+    if not isinstance(text, str):
+        return None
+    nums = [float(n) for n in re.findall(r"\d+", text)]
+    return max(nums) if nums else None
+
+
+def _forecast_wind(point: dict[str, Any]) -> dict[str, Any] | None:
+    """Next ~12 hours of wind from the NWS hourly forecast — an official product
+    relayed verbatim in summary form, never modelled by us. Tonight's wind event
+    is tomorrow's fire run, and the current observation cannot say so."""
+    from collections import Counter
+
+    try:
+        periods = _get(point["forecastHourly"])["properties"]["periods"][:12]
+    except (KeyError, TypeError, ValueError, OSError):
+        return None  # a forecast failure must never lose the observation
+    speeds, gusts, dirs = [], [], []
+    for pd in periods:
+        s = _parse_mph(pd.get("windSpeed"))
+        g = _parse_mph(pd.get("windGust"))
+        if s is not None:
+            speeds.append(s)
+        if g is not None:
+            gusts.append(g)
+        if pd.get("windDirection"):
+            dirs.append(pd["windDirection"])
+    if not speeds:
+        return None
+    return {
+        "window_hours": len(periods),
+        "peak_wind_mph": max(speeds),
+        "peak_gust_mph": max(gusts) if gusts else None,
+        "direction": Counter(dirs).most_common(1)[0][0] if dirs else None,
+        # rising = the back half of the window is meaningfully windier than now
+        "rising": speeds[-1] > speeds[0] + 3,
+        "source": "NWS hourly forecast (official, relayed)",
+    }
+
+
 def fetch_weather(lat: float, lon: float) -> dict[str, Any]:
     """Current conditions + active alerts for a point. Raises WeatherError."""
     try:
@@ -147,6 +191,7 @@ def fetch_weather(lat: float, lon: float) -> dict[str, Any]:
         "wind_degrees": direction,
         "wind_compass": _compass(direction),
         "conditions": obs.get("textDescription"),
+        "forecast": _forecast_wind(point),
         "alerts": alerts,
         "red_flag": any(a["event"] == "Red Flag Warning" for a in alerts),
         "critical": any(a["critical"] for a in alerts),

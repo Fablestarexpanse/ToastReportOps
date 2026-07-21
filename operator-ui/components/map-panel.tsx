@@ -466,6 +466,11 @@ export default function MapPanel({
           `wind ${w.wind_mph != null ? Math.round(w.wind_mph) : "?"} mph from ${w.wind_compass ?? "?"}` +
             `${w.gust_mph ? ` · gusts ${Math.round(w.gust_mph)}` : ""}` +
             `<br/>pushing the fire toward the ${compassOf(toward)}` +
+            (w.forecast
+              ? `<br/>next ${w.forecast.window_hours}h: peak ${Math.round(w.forecast.peak_wind_mph)}` +
+                `${w.forecast.peak_gust_mph ? ` g ${Math.round(w.forecast.peak_gust_mph)}` : ""} mph` +
+                `${w.forecast.rising ? " — rising" : ""} (NWS forecast)`
+              : "") +
             `<br/><i>NWS obs${w.station_km != null ? ` · station ${w.station_km.toFixed(0)} km` : ""}</i>`,
           { direction: "top", opacity: 0.95, offset: [0, -6] },
         )

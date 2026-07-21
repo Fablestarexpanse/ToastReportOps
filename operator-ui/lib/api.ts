@@ -823,6 +823,7 @@ export const fetchOriginCheck = (incidentId: string) =>
   get<OriginCheck>(`/incidents/${incidentId}/origin-check`);
 
 export type IncidentWeather = {
+  forecast?: WindForecast | null;
   available?: boolean;
   reason?: string;
   cached?: boolean;
@@ -988,6 +989,15 @@ export type AircraftSet = {
 
 export const fetchAircraft = () => get<AircraftSet>("/aircraft");
 
+export type WindForecast = {
+  window_hours: number;
+  peak_wind_mph: number;
+  peak_gust_mph: number | null;
+  direction: string | null;
+  rising: boolean;
+  source: string;
+};
+
 export type WindPoint = {
   incident_id: string;
   name: string;
@@ -998,6 +1008,7 @@ export type WindPoint = {
   wind_mph: number | null;
   gust_mph: number | null;
   station_km: number | null;
+  forecast?: WindForecast | null;
   fetched_at: string;
 };
 
