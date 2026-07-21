@@ -972,6 +972,7 @@ export type Aircraft = {
   track: number | null;
   fire_ops: boolean;      // heuristic: firefighting type or low rotorcraft
   role: "tanker" | "air_attack" | "helicopter" | "other";
+  military: boolean;
   incident_id: string;
   seen_at: string;
   trail: [number, number][];
@@ -1011,6 +1012,7 @@ export type AirResource = {
   descr: string | null;
   role: "tanker" | "air_attack" | "helicopter" | "other";
   fire_ops: boolean;
+  military: boolean;
   alt_ft: number | null;
   gs: number | null;
   track: number | null;

@@ -105,23 +105,39 @@ def test_observed_over_incident_counts_distinct_fire_ops(seeded, monkeypatch):
 
 
 class TestRoleClassification:
-    def test_a_tanker_type_is_a_tanker(self):
+    def test_a_unique_fire_airframe_is_a_tanker(self):
+        # only fire flies an S-2T or an Air Tractor — type alone is enough
         assert classify_role("S2", "A3", 6000) == "tanker"
-        assert classify_role("DC10", "A5", 8000) == "tanker"
-
-    def test_a_lead_plane_is_air_attack(self):
+        assert classify_role("AT802", "A2", 3000) == "tanker"
         assert classify_role("OV10", "A2", 7000) == "air_attack"
-        assert classify_role("BE20", "A2", 6500) == "air_attack"
 
-    def test_a_rotor_type_or_category_is_a_helicopter(self):
+    def test_a_fire_callsign_beats_the_airframe(self):
+        # a DC-10 leased to anyone, flying as TANKER 914, is a tanker
+        assert classify_role("DC10", "A5", 8000, "TKR914", "BC AIRCRAFT LEASING") == "tanker"
+        assert classify_role("BE20", "A2", 6000, "ATGS7", None) == "air_attack"
+
+    def test_a_shared_airframe_needs_a_fire_operator(self):
+        # a FedEx DC-10 (shared airframe, no fire callsign, cargo operator) is NOT
+        # a tanker — this is the exact false positive that started this
+        assert classify_role("DC10", "A5", 8000, "FDX1234", "FEDERAL EXPRESS") == "other"
+        assert classify_role("DC10", "A5", 8000, None, "10 TANKER AIR CARRIER") == "tanker"
+
+    def test_a_cargo_caravan_is_not_air_attack(self):
+        # the C208 feeders (PCM/BXR/CFS callsigns) that flooded the roster
+        assert classify_role("C208", "A1", 6000, "PCM7654", "WEST AIR") == "other"
+
+    def test_a_low_rotorcraft_is_a_helicopter(self):
         assert classify_role("H60", "A7", 3000) == "helicopter"
-        assert classify_role("R44", None, 1000) == "helicopter"
-        # unknown type but the transponder says rotorcraft, and it's low
-        assert classify_role("ZZZZ", "A7", 2000) == "helicopter"
+        assert classify_role("ZZZZ", "A7", 2000) == "helicopter"  # transponder says rotor
 
     def test_an_airliner_is_other(self):
-        assert classify_role("B738", "A3", 6000) == "other"
-        assert classify_role("A388", "A5", 5000) == "other"
+        assert classify_role("B738", "A3", 6000, "SWA22", "SOUTHWEST") == "other"
+
+    def test_military_flag_reads_dbflags_bit_zero(self):
+        from toast.pipeline.aircraft import is_military
+
+        assert is_military(1) is True and is_military(3) is True
+        assert is_military(2) is False and is_military(None) is False and is_military(0) is False
 
 
 class TestRoster:

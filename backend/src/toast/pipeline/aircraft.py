@@ -32,67 +32,37 @@ LOW_CEILING_FT = 10000  # above this it is transit; not stored
 ROTOR_CEILING_FT = 8000  # a helicopter this low near a fire is plausibly working it
 RETAIN_HOURS = 12
 
-# ICAO type codes by firefighting ROLE. Split so the map and the roster can
-# tell a retardant bomber from the lead plane spotting for it from a helo.
+# Classification is an ALLOWLIST of fire, not a blocklist of everything else.
+# The reason is FedEx: it flies DC-10s and MD-11s (same airframe as the VLAT
+# tankers) and hundreds of Cessna 208 feeders. Matching on type alone called all
+# of them air operations. So a shared airframe is only fire when a fire CALLSIGN
+# or a known fire OPERATOR says so; unconfirmed, it is 'other' — still shown on
+# the map, just not asserted to be fighting the fire.
 
-# Fixed-wing air tankers — the "bombers" that drop retardant or water.
-TANKER_TYPES = frozenset(
-    {
-        "S2",  # CAL FIRE Grumman S-2T — the backbone of the state fleet
-        "C130",
-        "RJ85",
-        "BAE146",
-        "DC10",
-        "MD87",
-        "B73Q",  # 737 tanker
-        "AT8T",
-        "AT802",  # Air Tractor / Fire Boss
-        "CL2T",
-        "CL41",  # CL-415 Super Scooper
-        "P3",
-        "MD11",
-        "B744",
-    }
+# Airframes essentially nobody but fire flies in California airspace.
+UNIQUE_TANKER_TYPES = frozenset(
+    {"S2", "AT8T", "AT802", "CL2T", "CL41", "P3"}  # S-2T, Air Tractor, CL-415, P-3
 )
+# Airframes fire shares with cargo/charter — need a fire callsign or operator.
+SHARED_TANKER_TYPES = frozenset({"DC10", "MD11", "MD87", "C130", "RJ85", "BAE146", "B73Q", "B744"})
+SHARED_LEAD_TYPES = frozenset({"BE20", "BE30", "BE9L", "C90", "PC12", "TBM9"})  # King Airs etc.
+# NOTE: C208 (Caravan) deliberately excluded — it is overwhelmingly a cargo
+# feeder (the FedEx-Feeder fleet), not an air-attack platform.
 
-# Air attack, lead plane, and aerial supervision — the "spotters" that direct
-# the drops and scout the fire, usually small twins.
-AIR_ATTACK_TYPES = frozenset(
-    {
-        "OV10",  # CAL FIRE OV-10 Bronco air-attack
-        "BE20",
-        "BE30",
-        "BE9L",
-        "C90",  # King Air lead planes
-        "C208",  # Caravan
-        "PC12",
-        "TBM9",
-    }
-)
-
-# Rotorcraft — helitankers, recon, and crew transport. Caught by these types OR
-# by ADS-B category A7 (the transponder self-declares "rotorcraft").
 HELICOPTER_TYPES = frozenset(
     {
-        "H60",
-        "S64",
-        "CH47",
-        "H47",
-        "B407",
-        "B412",
-        "B212",
-        "B205",
-        "AS50",
-        "AS32",
-        "EC30",
-        "EC35",
-        "B06",
-        "R44",
-        "R22",
-        "UH1",
-        "A139",
-        "S76",
+        "H60", "S64", "CH47", "H47", "B407", "B412", "B212", "B205",
+        "AS50", "AS32", "EC30", "EC35", "B06", "R44", "R22", "UH1", "A139", "S76",
     }
+)
+
+# Operator names (airplanes.live `ownOp`) that confirm a shared airframe is fire.
+FIRE_OPERATORS = (
+    "CAL FIRE", "CALFIRE", "CDF", "NEPTUNE", "10 TANKER", "TEN TANKER", "COULSON",
+    "AERO AIR", "AERO-FLITE", "AEROFLITE", "AERO FLITE", "ERICKSON", "BRIDGER",
+    "DAUNTLESS", "US FOREST", "FOREST SERVICE", "USFS", "BLM", "NATIONAL GUARD",
+    "AIR NATIONAL GUARD", "CAL GUARD", "GRANDVIEW", "BC AIRCRAFT LEASING", "SIS-Q",
+    "FIREWATCH", "SPRING AIR", "AERO-SPRAY",
 )
 
 Role = str  # 'tanker' | 'air_attack' | 'helicopter' | 'other'
@@ -102,31 +72,63 @@ def _num(v: Any) -> float | None:
     return float(v) if isinstance(v, int | float) else None
 
 
-def classify_role(type_code: str | None, category: str | None, alt_ft: int | None) -> Role:
-    """What kind of firefighting aircraft is this — or none.
+def is_military(db_flags: Any) -> bool:
+    """airplanes.live dbFlags bit 0 marks a military transponder — National Guard
+    MAFFS C-130s and military helos matter around a fire, so it is surfaced."""
+    return isinstance(db_flags, int) and bool(db_flags & 1)
 
-    Airframe first, because it is the only reliable signal: a jet on approach to
-    Sacramento is low and slow too. A known tanker/lead/rotor type is classified
-    outright; a bare ADS-B rotorcraft (A7) down low is a helicopter even without a
-    matching type. Everything else is 'other' — shown near the fire, not claimed
-    to be fighting it.
+
+def _callsign_role(cs: str) -> Role | None:
+    """The strongest signal there is: fire aircraft fly named callsigns. A DC-10
+    as TANKER 914 is a tanker no matter who leases the hull."""
+    if cs.startswith(("TANKER", "TNKR", "TKR")):
+        return "tanker"
+    if cs.startswith(("ATGS", "AIRATT", "BRONCO", "LEAD")) or "AIR ATTACK" in cs:
+        return "air_attack"
+    if cs.startswith(("COPTER", "HELCO", "HELITACK", "FIREHAWK")):
+        return "helicopter"
+    return None
+
+
+def classify_role(
+    type_code: str | None,
+    category: str | None,
+    alt_ft: int | None,
+    flight: str | None = None,
+    own_op: str | None = None,
+) -> Role:
+    """What kind of firefighting aircraft is this — or 'other'.
+
+    Order of trust: a fire callsign (TANKER 914) beats everything; then airframes
+    only fire flies; then shared airframes, but ONLY with a fire operator, so a
+    FedEx DC-10 or a cargo Caravan does not masquerade as a tanker; then low
+    rotorcraft. Anything unconfirmed is 'other' — shown, not claimed.
     """
     t = (type_code or "").upper()
-    if t in TANKER_TYPES:
+    cs = (flight or "").upper().strip()
+    op = (own_op or "").upper()
+    fire_op = any(m in op for m in FIRE_OPERATORS)
+
+    by_callsign = _callsign_role(cs)
+    if by_callsign:
+        return by_callsign
+    if t in UNIQUE_TANKER_TYPES:
         return "tanker"
-    if t in AIR_ATTACK_TYPES:
+    if t == "OV10":
         return "air_attack"
-    if t in HELICOPTER_TYPES:
-        return "helicopter"
+    if t in SHARED_TANKER_TYPES:
+        return "tanker" if fire_op else "other"
+    if t in SHARED_LEAD_TYPES:
+        return "air_attack" if fire_op else "other"
     if (category or "").upper() == "A7" and alt_ft is not None and alt_ft <= ROTOR_CEILING_FT:
+        return "helicopter"
+    if t in HELICOPTER_TYPES:
         return "helicopter"
     return "other"
 
 
 def _is_fire_ops(alt_ft: int | None, type_code: str | None, category: str | None) -> bool:
-    """Air operations = any classified firefighting role. Conservative by design:
-    the flag rests on the airframe, never on 'low + slow' alone (which flagged
-    73 of 154 aircraft — airliners descending near a fire — in the first pass)."""
+    """Air operations = any classified firefighting role."""
     return classify_role(type_code, category, alt_ft) != "other"
 
 
@@ -156,16 +158,18 @@ def poll_incident(conn: sqlite3.Connection, incident: sqlite3.Row) -> int:
             continue  # transit, not fire ops — do not store
         gs = _num(a.get("gs"))
         type_code = a.get("t")
-        role = classify_role(type_code, a.get("category"), alt_ft)
+        flight = (a.get("flight") or "").strip() or None
+        role = classify_role(type_code, a.get("category"), alt_ft, flight, a.get("ownOp"))
+        mil = is_military(a.get("dbFlags"))
         conn.execute(
             """INSERT INTO aircraft_positions
                (hex, incident_id, flight, type, descr, lat, lon, alt_ft, gs, track,
-                fire_ops, role, seen_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                fire_ops, role, military, seen_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 str(a.get("hex") or ""),
                 incident["id"],
-                (a.get("flight") or "").strip() or None,
+                flight,
                 type_code,
                 a.get("desc"),
                 lat,
@@ -175,6 +179,7 @@ def poll_incident(conn: sqlite3.Connection, incident: sqlite3.Row) -> int:
                 _num(a.get("track")),
                 1 if role != "other" else 0,
                 role,
+                1 if mil else 0,
                 now,
             ),
         )
@@ -239,6 +244,7 @@ def current_aircraft(conn: sqlite3.Connection, *, minutes: int = 10) -> dict[str
                 "track": r["track"],
                 "fire_ops": bool(r["fire_ops"]),
                 "role": r["role"],
+                "military": bool(r["military"]),
                 "incident_id": r["incident_id"],
                 "seen_at": r["seen_at"],
                 "trail": [[t["lat"], t["lon"]] for t in trail],
@@ -274,6 +280,7 @@ def incident_roster(conn: sqlite3.Connection, incident_id: str, *, minutes: int 
             "descr": r["descr"],
             "role": r["role"],
             "fire_ops": bool(r["fire_ops"]),
+            "military": bool(r["military"]),
             "alt_ft": r["alt_ft"],
             "gs": r["gs"],
             "track": r["track"],

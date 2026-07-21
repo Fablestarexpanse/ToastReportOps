@@ -630,6 +630,11 @@ function AirResourcesBox({ resources, observed }: { resources: AirResource[]; ob
               <span style={{ fontFamily: font.mono, fontSize: 8, color: m.color, border: `1px solid ${m.color}55`, borderRadius: 3, padding: "0 4px" }}>
                 {m.label}
               </span>
+              {a.military && (
+                <span title="military transponder (ADS-B)" style={{ fontFamily: font.mono, fontSize: 8, color: C.violet, border: `1px solid ${C.violet}55`, borderRadius: 3, padding: "0 4px" }}>
+                  MIL
+                </span>
+              )}
               <span style={{ fontFamily: font.mono, fontSize: 8.5, color: C.dim, marginLeft: "auto" }}>
                 {a.alt_ft != null ? `${a.alt_ft.toLocaleString()}ft` : "—"}
                 {a.gs != null ? ` · ${Math.round(a.gs)}kt` : ""}
