@@ -1344,7 +1344,10 @@ def get_draft(request: Request, draft_id: str) -> dict:
             for r in conn.execute(
                 f"""SELECT f.id, f.content, f.kind, f.tier, f.observed_at, s.name AS source_name
                     FROM facts f JOIN sources s ON s.id = f.source_id
-                    WHERE f.id IN ({placeholders})""",
+                    WHERE f.id IN ({placeholders})
+                    -- newest observation first: without this, IN() returns
+                    -- index-walk order and the cited rail reads as random
+                    ORDER BY f.observed_at DESC""",
                 cited_ids,
             )
         ]
