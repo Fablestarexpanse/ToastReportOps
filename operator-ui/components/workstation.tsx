@@ -1885,6 +1885,21 @@ function OpsMode({
                 ⌖ ZOOM TO ORIGIN
               </span>
             )}
+            {sel?.lat != null && sel?.lon != null && (
+              /* Visual confirmation: the ALERTCalifornia PTZ network, centred on
+                 this fire. A deep link, deliberately — their TOS on automated
+                 sampling is unresolved, so we open their own viewer rather than
+                 scrape a frame. URL format verified empirically (?pos=lat_lon_zoom). */
+              <a
+                href={`https://cameras.alertcalifornia.org/?pos=${sel.lat.toFixed(4)}_${sel.lon.toFixed(4)}_12`}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="open ALERTCalifornia's live cameras centred on this fire — visual confirmation before anything official"
+                style={{ fontFamily: font.mono, fontSize: 9, color: C.blue, border: `1px solid ${C.blue}66`, borderRadius: 3, padding: "2px 7px", cursor: "pointer", whiteSpace: "nowrap", textDecoration: "none" }}
+              >
+                ⎙ CAMERAS
+              </a>
+            )}
             {sel && (
               <span
                 onClick={toggleFollow}
