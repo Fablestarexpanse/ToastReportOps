@@ -354,11 +354,36 @@ def get_wind(request: Request) -> dict:
 
 @router.get("/aircraft/{hex_id}/photo")
 def aircraft_photo(request: Request, hex_id: str) -> dict:
-    """A photo of one aircraft by its ICAO hex — its assigned ID. Borrowed from
-    planespotters.net with the photographer credit attached; cached per hex."""
+    """A photo of one aircraft by its ICAO hex — its assigned ID. Found on
+    planespotters.net (credit attached), downloaded and saved to this hull's ID
+    so it is ours; cached per hex."""
     from toast.pipeline.aircraft_photo import get_photo
 
     return get_photo(_conn(request), hex_id)
+
+
+@router.get("/aircraft/{hex_id}/image")
+def aircraft_image(request: Request, hex_id: str):
+    """The saved photo bytes for one aircraft, served from our own store rather
+    than hotlinked — the picture belongs to the hull's ID now."""
+    from fastapi import Response
+
+    from toast.pipeline.aircraft_photo import get_photo, image_bytes
+
+    conn = _conn(request)
+    result = image_bytes(conn, hex_id)
+    if result is None:
+        # not fetched yet — do the lookup+save, then try once more
+        get_photo(conn, hex_id)
+        result = image_bytes(conn, hex_id)
+    if result is None:
+        raise HTTPException(404, "no image for this aircraft")
+    body, media_type = result
+    return Response(
+        content=body,
+        media_type=media_type,
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @router.get("/aircraft")

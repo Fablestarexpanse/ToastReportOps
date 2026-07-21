@@ -180,6 +180,8 @@ class TestPhoto:
 
         def fake_fetch(url, **kw):
             calls.append(url)
+            if url.endswith(".jpg"):  # the CDN image download
+                return bytes.fromhex("ffd8ff") + b"-fake-jpeg", "image/jpeg"
             body = (
                 b'{"photos":[{"thumbnail":{"src":"https://t/thumb.jpg"},'
                 b'"thumbnail_large":{"src":"https://t/large.jpg"},'
@@ -191,11 +193,15 @@ class TestPhoto:
         first = aircraft_photo.get_photo(seeded, "a1b2c3")
         assert first["found"] is True
         assert first["photographer"] == "Jane Doe"  # credit rides with the image
-        assert first["link"].startswith("https://planespotters.net")
+        assert first["image_sha"]  # the picture was saved to this hull's ID
+
+        # and the saved bytes are readable back from our own store
+        img = aircraft_photo.image_bytes(seeded, "a1b2c3")
+        assert img is not None and img[0].startswith(bytes.fromhex("ffd8ff"))
 
         second = aircraft_photo.get_photo(seeded, "A1B2C3")  # same hull, any case
         assert second["cached"] is True
-        assert len(calls) == 1  # served from cache, planespotters hit once
+        assert len([c for c in calls if not c.endswith(".jpg")]) == 1  # planespotters hit once
 
     def test_no_photo_is_remembered_so_it_is_not_re_requested(self, seeded, monkeypatch):
         from toast.pipeline import aircraft_photo

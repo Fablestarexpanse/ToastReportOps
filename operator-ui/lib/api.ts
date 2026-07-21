@@ -1024,6 +1024,7 @@ export type AircraftPhoto = {
   large_url?: string | null;
   photographer?: string | null;
   link?: string | null;
+  image_sha?: string | null; // present = saved to this unit's ID
 };
 
 export const fetchAircraftPhoto = (hex: string) =>

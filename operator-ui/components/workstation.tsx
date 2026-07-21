@@ -638,16 +638,8 @@ function AirResourcesBox({ resources, observed }: { resources: AirResource[]; ob
             </div>
             {openHex === a.hex && (
               <div style={{ display: "flex", gap: 8, padding: "5px 0 3px 21px", alignItems: "flex-start" }}>
-                {photo === "loading" && (
-                  <span style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint }}>loading photo…</span>
-                )}
-                {photo && photo !== "loading" && photo.found && (
-                  <a href={photo.link ?? "#"} target="_blank" rel="noopener noreferrer" title="open on planespotters.net">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={photo.large_url ?? photo.thumb_url ?? ""} alt={a.descr ?? a.hex} style={{ width: 150, borderRadius: 4, border: `1px solid ${C.line}` }} />
-                  </a>
-                )}
-                <div style={{ fontFamily: font.mono, fontSize: 8.5, color: C.dim, lineHeight: 1.5 }}>
+                {/* details on the left */}
+                <div style={{ fontFamily: font.mono, fontSize: 8.5, color: C.dim, lineHeight: 1.5, flex: 1, minWidth: 0 }}>
                   <div style={{ color: C.txt }}>{a.descr || a.type || "unknown type"}</div>
                   <div>hex {a.hex}{a.type ? ` · ${a.type}` : ""}</div>
                   <div>seen {age(a.seen_at)} ago</div>
@@ -655,7 +647,23 @@ function AirResourcesBox({ resources, observed }: { resources: AirResource[]; ob
                     <div style={{ color: C.faint }}>no photo on file for this hull</div>
                   )}
                   {photo && photo !== "loading" && photo.found && photo.photographer && (
-                    <div style={{ color: C.faint }}>photo © {photo.photographer} · planespotters.net</div>
+                    <div style={{ color: C.faint }}>photo © {photo.photographer} · saved to unit</div>
+                  )}
+                </div>
+                {/* photo on the RIGHT — the blank area. Served from our own store
+                    (saved to the hull's ID), not hotlinked. */}
+                <div style={{ width: 150, flexShrink: 0, minHeight: 44, display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${C.line}`, borderRadius: 4, background: C.bg }}>
+                  {photo === "loading" && (
+                    <span style={{ fontFamily: font.mono, fontSize: 8, color: C.faint }}>finding photo…</span>
+                  )}
+                  {photo && photo !== "loading" && photo.found && (
+                    <a href={photo.link ?? "#"} target="_blank" rel="noopener noreferrer" title="open on planespotters.net (source)" style={{ display: "block", width: "100%" }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={`/api/aircraft/${a.hex}/image`} alt={a.descr ?? a.hex} style={{ width: "100%", display: "block", borderRadius: 4 }} />
+                    </a>
+                  )}
+                  {photo && photo !== "loading" && !photo.found && (
+                    <span style={{ fontFamily: font.mono, fontSize: 8, color: C.faint, textAlign: "center", padding: 6 }}>no photo<br/>found</span>
                   )}
                 </div>
               </div>
