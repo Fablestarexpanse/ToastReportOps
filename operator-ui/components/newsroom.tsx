@@ -10,6 +10,7 @@ import {
   createSocialDraft,
   fetchDraft,
   buildSiteNow,
+  fetchCredStatuses,
   fetchPublishChannels,
   makeGraphic,
   releaseDraft,
@@ -147,6 +148,7 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
   const [selChannels, setSelChannels] = useState<Set<string>>(new Set());
   const [schedAt, setSchedAt] = useState("");
   const [releasing, setReleasing] = useState(false);
+  const [credStatus, setCredStatus] = useState<Record<string, string>>({});
   useEffect(() => {
     fetchPublishChannels()
       .then((r) => {
@@ -154,6 +156,7 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
         setSelChannels(new Set(r.channels)); // default: everything configured
       })
       .catch(() => undefined);
+    fetchCredStatuses().then(setCredStatus).catch(() => undefined);
   }, []);
 
   const doRelease = async () => {
@@ -543,21 +546,31 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
                     to-do, not a secret */}
                 {(["bluesky", "x", "facebook", "telegram"] as const).map((c) => {
                   const configured = channels.includes(c);
-                  const ready = configured && (d.status === "approved" || d.status === "published");
+                  // the light tells the truth from the live credential check:
+                  // green = tested ok, red = no keys or the check failed
+                  const cred = credStatus[c];
+                  const lightOk = configured && cred !== "failed";
+                  const light = lightOk ? C.ok : C.evac;
+                  const ready = lightOk && (d.status === "approved" || d.status === "published");
                   const pub = detail?.publications?.find((p) => p.channel === c);
                   const state = pub?.status; // sent | queued | failed | unknown
+                  const active = ready && !state;
                   return (
                     <div key={c} style={{ display: "flex", alignItems: "center", gap: 7 }}>
                       <span
-                        onClick={() => ready && !state && pushOne(c)}
-                        title={!configured
+                        title={lightOk ? `${c} connected and ready` : cred === "failed" ? `${c} keys failing the connection test — OPTIONS → API KEYS` : `no ${c} keys — OPTIONS → API KEYS`}
+                        style={{ width: 8, height: 8, borderRadius: 4, background: light, boxShadow: `0 0 5px ${light}`, flexShrink: 0 }}
+                      />
+                      <span
+                        onClick={() => active && pushOne(c)}
+                        title={!lightOk
                           ? `add ${c} keys in OPTIONS → API KEYS to enable`
                           : state
                             ? `already ${state} on ${c} — see delivery below`
                             : ready
                               ? `push this post to ${c} now (an already-sent channel is never doubled)`
                               : "approve the draft first — nothing publishes itself"}
-                        style={{ flex: 1, fontFamily: font.mono, fontSize: 10, padding: "4px 10px", borderRadius: 4, cursor: ready && !state ? "pointer" : "not-allowed", border: `1px solid ${ready && !state ? C.ok + "88" : C.line}`, color: !configured ? C.faint : state ? C.dim : ready ? C.ok : C.faint, textAlign: "center", letterSpacing: 1 }}
+                        style={{ flex: 1, fontFamily: font.mono, fontSize: 10, fontWeight: active ? 700 : 400, padding: "4px 10px", borderRadius: 4, cursor: active ? "pointer" : "not-allowed", background: active ? C.ok + "1a" : "transparent", border: `1px solid ${active ? C.ok : state === "sent" ? C.ok + "44" : C.line}`, color: !lightOk ? C.faint : state === "sent" ? C.ok : state ? C.dim : ready ? C.ok : C.dim, textAlign: "center", letterSpacing: 1 }}
                       >
                         {state === "sent" ? "✓ SENT" : state === "queued" ? "⏱ QUEUED" : state === "unknown" ? "? UNKNOWN" : state === "failed" ? "✗ FAILED" : "→ PUSH"} · {c.toUpperCase()}
                       </span>

@@ -229,6 +229,11 @@ export type ResearchJob = {
 export const makeGraphic = (draftId: string) =>
   post<{ graphic_sha: string; bytes: number }>(`/drafts/${draftId}/graphic`, {});
 
+export const fetchCredStatuses = () =>
+  get<{ services: { id: string; status: string }[] }>("/credentials").then((r) =>
+    Object.fromEntries(r.services.map((s) => [s.id, s.status])),
+  );
+
 export const buildSiteNow = () =>
   post<{ ok: boolean; pages?: number }>("/site/build", {});
 
