@@ -271,3 +271,46 @@ that attempts the violation and asserts the refusal.
   codebase; config via env vars only.
 - **Operator UI design** follows `docs/mockups/toast-report-workstation.jsx`
   (functions/style/layout, not pixel-perfect).
+
+## 2026-07-21 — Two decisions waiting on the operator (researched, not built)
+
+The assessment ranked these the two biggest remaining gaps against Watch Duty.
+Neither is a code task until Brian decides; the research is recorded here so
+the decision needs no re-work.
+
+### 1. Evacuation zones as map polygons
+
+We render evac text verbatim with official deep links — correct, but Watch
+Duty's zone map is simply better for "which side of Clark Road". Options:
+
+- **A. Ask Genasys.** protect.genasys.com serves the zone GeoJSON its own app
+  uses, but its TOS does not clearly permit third-party use. One email to
+  Genasys (or the county OES) asking for permission — press/public-safety use,
+  attributed — settles it either way. Cost: a letter. Risk: none.
+- **B. County open-data layers.** Several CA counties publish their evacuation
+  zone boundaries on their own ArcGIS open-data portals (public records, no TOS
+  question). Coverage is county-by-county, not statewide — fine for a
+  Butte-first posture, uneven for the statewide doctrine.
+- **C. Status quo.** Verbatim text + deep link only. Defensible, weakest.
+
+Recommendation: A and B together — send the letter, and wire the counties that
+already publish openly (Butte first) while waiting on the answer.
+
+### 2. Scanner audio (the speed gap)
+
+Dispatch traffic beats CAL FIRE's website by 20–60 minutes routinely; it is how
+Watch Duty's humans win. Broadcastify's TOS forbids automated capture — off the
+table. Options:
+
+- **A. OpenMHz.** Free, volunteer-fed trunked-radio archives with a public API;
+  several CA systems are present. Software-only; coverage depends on which
+  systems volunteers feed; CAL FIRE VHF is thin there.
+- **B. Own RTL-SDR.** ~$40–100 of hardware + trunk-recorder locally. Full
+  control, Butte/CAL FIRE ECC coverage by our own antenna, PSPS-resilient
+  (local RF needs no internet). Hardware project; single-site coverage.
+- **C. Both**: SDR for the home county, OpenMHz where volunteers already cover.
+
+Recommendation: B for Butte County (the operator's stated ground truth), A
+opportunistically. Whisper transcription runs locally either way; transcripts
+would enter the ledger as T4/T5 signals — never as publishable fact without
+official corroboration, same as all community-grade sources.
