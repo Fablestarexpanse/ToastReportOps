@@ -355,6 +355,21 @@ def air_log(request: Request, incident_id: str) -> dict:
     return activity_log(_conn(request), incident_id)
 
 
+@router.get("/incidents/{incident_id}/aqi")
+def incident_aqi(request: Request, incident_id: str, refresh: bool = False) -> dict:
+    """Smoke/AQI near this fire from AirNow — the nearest reporting site, named,
+    because the monitor can be a town over from the flames."""
+    from toast.core.fetch import FetchError
+    from toast.pipeline.airnow import aqi_for
+
+    try:
+        return aqi_for(_conn(request), incident_id, refresh=refresh)
+    except ValueError:
+        raise HTTPException(404, "incident not found") from None
+    except FetchError as exc:
+        raise HTTPException(502, f"AirNow unreachable: {exc}") from exc
+
+
 @router.get("/fire-weather")
 def fire_weather(request: Request, refresh: bool = False) -> dict:
     """Red flag / fire-weather alert polygons — a FORECAST layer, always

@@ -7,6 +7,7 @@ import {
   Fact,
   FireSearchResult,
   Incident,
+  IncidentAqi,
   IncidentWeather,
   OriginCheck,
   Note,
@@ -32,6 +33,7 @@ import {
   fetchIntake,
   fetchIntel,
   fetchOriginCheck,
+  fetchAqi,
   fetchWeather,
   fetchNotes,
   fetchSourceSuggestions,
@@ -1175,8 +1177,23 @@ function IntelPanel({ sel, toast }: { sel: Incident; toast: (m: string) => void 
 /* WEATHER — real observations from the nearest NWS/RAWS station, always shown
    with which station, how far away, and how old. Weather from 30 km away over
    a ridge is not weather at the fire. */
+const AQI_COLORS: [number, string, string][] = [
+  [50, "#4ade80", "GOOD"],
+  [100, "#facc15", "MODERATE"],
+  [150, "#fb923c", "SENSITIVE GROUPS"],
+  [200, "#ef4444", "UNHEALTHY"],
+  [300, "#a855f7", "VERY UNHEALTHY"],
+  [9999, "#9f1239", "HAZARDOUS"],
+];
+
+function aqiStyle(aqi: number): { color: string; label: string } {
+  const hit = AQI_COLORS.find(([max]) => aqi <= max) ?? AQI_COLORS[AQI_COLORS.length - 1];
+  return { color: hit[1], label: hit[2] };
+}
+
 function WeatherPanel({ incidentId }: { incidentId: string }) {
   const [wx, setWx] = useState<IncidentWeather | null>(null);
+  const [aqi, setAqi] = useState<IncidentAqi | null>(null);
   const [busy, setBusy] = useState(false);
   // Switch fires mid-fetch, or double-click refresh, and the slower response
   // used to win — this panel would show another fire's station readings with
@@ -1206,6 +1223,14 @@ function WeatherPanel({ incidentId }: { incidentId: string }) {
     setWx(null); // never show the previous fire's weather while the new one loads
     load();
   }, [load]);
+  useEffect(() => {
+    let live = true;
+    setAqi(null);
+    fetchAqi(incidentId).then((a) => live && setAqi(a)).catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [incidentId]);
 
   if (!wx)
     return <div style={{ padding: 14, fontFamily: font.mono, fontSize: 10, color: C.faint }}>loading weather…</div>;
@@ -1263,6 +1288,27 @@ function WeatherPanel({ incidentId }: { incidentId: string }) {
           {wx.forecast.peak_gust_mph ? ` · gusts ${Math.round(wx.forecast.peak_gust_mph)}` : ""}
           {wx.forecast.rising ? " · RISING" : ""}
           <span style={{ color: C.faint }}> — NWS forecast</span>
+        </div>
+      )}
+
+      {aqi?.available && aqi.worst && (
+        <div
+          title={aqi.note}
+          style={{
+            border: `1px solid ${aqiStyle(aqi.worst.aqi).color}66`,
+            background: aqiStyle(aqi.worst.aqi).color + "14",
+            borderRadius: 6,
+            padding: "6px 10px",
+            fontFamily: font.mono,
+            fontSize: 9.5,
+            color: aqiStyle(aqi.worst.aqi).color,
+          }}
+        >
+          AQI {aqi.worst.aqi} {aqiStyle(aqi.worst.aqi).label}
+          {aqi.worst.parameter ? ` (${aqi.worst.parameter})` : ""}
+          <span style={{ color: C.faint }}>
+            {" "}— {aqi.worst.area ?? "nearest site"} reporting area · AirNow (EPA)
+          </span>
         </div>
       )}
 

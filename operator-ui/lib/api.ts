@@ -1087,6 +1087,25 @@ export type ClosureSet = {
   fetched_at: string;
 };
 
+export type AqiReading = {
+  parameter: string | null;
+  aqi: number;
+  category: string | null;
+  area: string | null;
+  hour: number | null;
+};
+
+export type IncidentAqi = {
+  available: boolean;
+  reason?: string;
+  readings?: AqiReading[];
+  worst?: AqiReading | null;
+  note?: string;
+  fetched_at?: string;
+};
+
+export const fetchAqi = (incidentId: string) => get<IncidentAqi>(`/incidents/${incidentId}/aqi`);
+
 export const fetchFireWeather = () => get<FireWeatherSet>("/fire-weather");
 export const fetchClosures = () => get<ClosureSet>("/closures");
 
