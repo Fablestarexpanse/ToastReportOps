@@ -359,6 +359,23 @@ def weather_refresh_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -
     get_logger("weather").info("weather_refresh_done", incidents=done)
 
 
+@register("radio_ingest")
+def radio_ingest_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Sweep the SDR inbox, then transcribe a few pending calls if a local
+    Whisper endpoint is configured. Both halves degrade honestly without
+    hardware or endpoint — nothing dead-letters for equipment not yet owned."""
+    from toast.pipeline.radio import ingest_inbox, pending_transcriptions, transcribe_call
+
+    result = ingest_inbox(conn)
+    transcribed = 0
+    for call_id in pending_transcriptions(conn, limit=5):
+        out = transcribe_call(conn, call_id)
+        if out.get("state") == "pending":
+            break  # no endpoint configured; stop asking
+        transcribed += 1
+    get_logger("radio").info("radio_sweep_done", **result, transcribed=transcribed)
+
+
 @register("aircraft")
 def aircraft_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     """Sweep aircraft over active fires. Borrowed live positions, pruned after

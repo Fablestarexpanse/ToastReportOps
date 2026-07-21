@@ -1153,6 +1153,25 @@ export type EvacZoneSet = {
 
 export const fetchEvacZones = () => get<EvacZoneSet>("/evac-zones");
 
+export type RadioCall = {
+  id: string;
+  system: string | null;
+  talkgroup: string | null;
+  freq_hz: number | null;
+  started_at: string;
+  duration_s: number | null;
+  audio_sha: string;
+  audio_type: string;
+  transcript: string | null;
+  transcript_state: "pending" | "done" | "failed" | "none";
+  watch_fact_id: string | null;
+  ingested_at: string;
+};
+
+export type RadioCalls = { calls: RadioCall[]; count: number; pending_transcripts: number };
+
+export const fetchRadioCalls = () => get<RadioCalls>("/radio/calls");
+
 /* ---- AIR mode ---- */
 
 export type AirAircraft = {

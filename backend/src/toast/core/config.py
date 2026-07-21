@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     # see toast/core/credentials.py.
     firms_map_key: str = ""
     airnow_api_key: str = ""
+    # local OpenAI-compatible Whisper endpoint (faster-whisper-server / speaches);
+    # empty = radio calls stay visibly 'pending', never fabricated
+    whisper_url: str = ""
+    whisper_model: str = "Systran/faster-whisper-small"
 
     bluesky_handle: str = ""
     bluesky_app_password: str = ""

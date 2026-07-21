@@ -413,6 +413,48 @@ def incident_aqi(request: Request, incident_id: str, refresh: bool = False) -> d
         raise HTTPException(502, f"AirNow unreachable: {exc}") from exc
 
 
+@router.get("/radio/calls")
+def radio_calls(request: Request, limit: int = Query(100, le=500)) -> dict:
+    """Captured scanner traffic, newest first, transcript state shown honestly."""
+    rows = _conn(request).execute(
+        "SELECT * FROM radio_calls ORDER BY started_at DESC LIMIT ?", (limit,)
+    ).fetchall()
+    pend = _conn(request).execute(
+        "SELECT COUNT(*) AS n FROM radio_calls WHERE transcript_state = 'pending'"
+    ).fetchone()["n"]
+    return {"calls": [dict(r) for r in rows], "count": len(rows), "pending_transcripts": pend}
+
+
+@router.get("/radio/calls/{call_id}/audio")
+def radio_audio(request: Request, call_id: str):
+    """The recording itself, from the CAS — the evidence behind the row."""
+    from fastapi import Response
+
+    conn = _conn(request)
+    call = conn.execute("SELECT * FROM radio_calls WHERE id = ?", (call_id,)).fetchone()
+    if call is None:
+        raise HTTPException(404, "call not found")
+    blob = conn.execute(
+        "SELECT path FROM raw_blobs WHERE sha256 = ?", (call["audio_sha"],)
+    ).fetchone()
+    if blob is None:
+        raise HTTPException(404, "audio missing from store")
+    from pathlib import Path as _Path
+
+    from toast.core.config import Settings as _Settings
+
+    data = (_Path(_Settings().toast_data_dir) / blob["path"]).read_bytes()
+    return Response(content=data, media_type=call["audio_type"])
+
+
+@router.post("/radio/ingest")
+def radio_ingest_now(request: Request) -> dict:
+    """Manual inbox sweep — the scheduler runs the same thing every 30 s."""
+    from toast.pipeline.radio import ingest_inbox
+
+    return ingest_inbox(_conn(request))
+
+
 @router.get("/evac-zones")
 def evac_zones(request: Request, refresh: bool = False) -> dict:
     """Elevated evacuation zones statewide from Cal OES — statuses VERBATIM.

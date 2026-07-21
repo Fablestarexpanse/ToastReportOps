@@ -87,6 +87,7 @@ const AirMode = dynamic(() => import("@/components/air-mode"), {
     </div>
   ),
 });
+import RadioMode from "@/components/radio-mode";
 import NewsroomMode from "@/components/newsroom";
 import WatchMode from "@/components/watch";
 
@@ -2927,6 +2928,7 @@ function ArchiveMode({ toast }: { toast: (m: string) => void }) {
 const MODES: [string, string][] = [
   ["ops", "OPS"],
   ["air", "AIR"],
+  ["radio", "RADIO"],
   ["news", "NEWSROOM"],
   ["watch", "WATCH"],
   ["archive", "ARCHIVE"],
@@ -3198,6 +3200,7 @@ export default function Workstation() {
 
       {mode === "ops" && <OpsMode key={uiKey} toast={toast} focusIncident={focusIncident} />}
       {mode === "air" && <AirMode toast={toast} />}
+      {mode === "radio" && <RadioMode toast={toast} />}
       {mode === "news" && <NewsroomMode toast={toast} />}
       {mode === "watch" && <WatchMode toast={toast} />}
       {mode === "archive" && <ArchiveMode toast={toast} />}
