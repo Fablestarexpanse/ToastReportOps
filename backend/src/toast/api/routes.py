@@ -318,6 +318,18 @@ def requeue_dead_jobs(request: Request, body: dict) -> dict:
     return {"ok": True, "requeued": n}
 
 
+@router.get("/aircraft")
+def get_aircraft(request: Request) -> dict:
+    """Aircraft currently near active fires, each with a short orbit trail.
+    A live layer — positions in the sky, not ledger facts."""
+    from toast.pipeline.aircraft import current_aircraft
+
+    try:
+        return current_aircraft(_conn(request))
+    except Exception as exc:  # a feed outage must not break the map
+        return {"aircraft": [], "count": 0, "fire_ops": 0, "error": str(exc)[:200]}
+
+
 @router.get("/hotspots")
 def get_hotspots(request: Request, hours: int = Query(24, ge=1, le=168)) -> dict:
     """Recent satellite fire detections (NASA FIRMS) as map points.

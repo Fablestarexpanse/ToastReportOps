@@ -583,6 +583,7 @@ export type ImpactFact = {
 };
 
 export type IncidentIntel = {
+  aircraft_observed?: number;
   metrics: {
     acreage: MetricValue;
     containment: MetricValue;
@@ -957,6 +958,32 @@ export type HotspotSet = {
 
 export const fetchHotspots = (hours = 24) =>
   get<HotspotSet>(`/hotspots?hours=${hours}`);
+
+export type Aircraft = {
+  hex: string;
+  flight: string | null;
+  type: string | null;
+  descr: string | null;
+  lat: number;
+  lon: number;
+  alt_ft: number | null;
+  gs: number | null;
+  track: number | null;
+  fire_ops: boolean;      // heuristic: firefighting type or low rotorcraft
+  incident_id: string;
+  seen_at: string;
+  trail: [number, number][];
+};
+
+export type AircraftSet = {
+  aircraft: Aircraft[];
+  count: number;
+  fire_ops: number;
+  note: string;
+  error?: string;
+};
+
+export const fetchAircraft = () => get<AircraftSet>("/aircraft");
 
 export const fetchGnis = () => get<{ features: number }>("/gnis");
 

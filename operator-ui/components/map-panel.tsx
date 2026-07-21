@@ -4,10 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import {
+  Aircraft,
+  AircraftSet,
   Hotspot,
   HotspotSet,
   Incident,
   PerimeterCollection,
+  fetchAircraft,
   fetchHotspots,
   fetchPerimeters,
   hasActiveEvac,
@@ -100,10 +103,13 @@ export default function MapPanel({
   const markers = useRef<L.LayerGroup | null>(null);
   const perimLayer = useRef<L.GeoJSON | null>(null);
   const hotspotLayer = useRef<L.LayerGroup | null>(null);
+  const aircraftLayerRef = useRef<L.LayerGroup | null>(null);
   const [perimeters, setPerimeters] = useState<PerimeterCollection | null>(null);
   const [showPerimeters, setShowPerimeters] = useState(true);
   const [hotspots, setHotspots] = useState<HotspotSet | null>(null);
   const [showHotspots, setShowHotspots] = useState(true);
+  const [aircraft, setAircraft] = useState<AircraftSet | null>(null);
+  const [showAircraft, setShowAircraft] = useState(true);
   const [showKey, setShowKey] = useState(false);
   const [tileError, setTileError] = useState(false);
   const [ready, setReady] = useState(false);
@@ -261,6 +267,62 @@ export default function MapPanel({
     // keep incident pins above the hotspot dusting
     markers.current?.eachLayer((l) => (l as L.CircleMarker).bringToFront?.());
   }, [hotspots, showHotspots, ready]);
+
+  // aircraft near active fires: faster refresh than the static layers because
+  // an orbit only reads if sampled often. Silent on failure like the rest.
+  useEffect(() => {
+    let live = true;
+    const load = () =>
+      fetchAircraft()
+        .then((a) => live && setAircraft(a))
+        .catch(() => undefined);
+    load();
+    const t = setInterval(load, 45 * 1000);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, []);
+
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+    if (aircraftLayerRef.current) {
+      m.removeLayer(aircraftLayerRef.current);
+      aircraftLayerRef.current = null;
+    }
+    if (!showAircraft || !aircraft?.aircraft?.length) return;
+    const group = L.layerGroup();
+    for (const a of aircraft.aircraft as Aircraft[]) {
+      const color = a.fire_ops ? C.blue : C.faint;
+      // the trail shows the orbit — a tanker's racetrack over the fire
+      if (a.fire_ops && a.trail.length > 1) {
+        L.polyline(a.trail, { color, weight: 1.5, opacity: 0.5, dashArray: "3 4" }).addTo(group);
+      }
+      // a small rotated triangle points the way the aircraft is heading
+      const heading = a.track ?? 0;
+      const icon = L.divIcon({
+        className: "",
+        html:
+          `<div style="transform:rotate(${heading}deg);color:${color};` +
+          `font-size:${a.fire_ops ? 15 : 11}px;line-height:1;` +
+          `text-shadow:0 0 3px #000;opacity:${a.fire_ops ? 1 : 0.75}">▲</div>`,
+        iconSize: [16, 16],
+        iconAnchor: [8, 8],
+      });
+      const label =
+        `${a.flight || a.type || "aircraft"}${a.descr ? ` — ${a.descr}` : ""}` +
+        `<br/>${a.alt_ft != null ? `${a.alt_ft.toLocaleString()} ft` : "alt n/a"}` +
+        `${a.gs != null ? ` · ${Math.round(a.gs)} kt` : ""}` +
+        `<br/>seen ${age(a.seen_at)} ago` +
+        (a.fire_ops
+          ? '<br/><b style="color:#5cb8ff">likely air operations</b>'
+          : "<br/><i>aircraft near the fire — role unknown</i>");
+      L.marker([a.lat, a.lon], { icon }).bindTooltip(label, { direction: "top", opacity: 0.95 }).addTo(group);
+    }
+    group.addTo(m);
+    aircraftLayerRef.current = group;
+  }, [aircraft, showAircraft, ready]);
 
   const draw = useCallback(() => {
     const group = markers.current;
@@ -484,6 +546,23 @@ export default function MapPanel({
             {hotspots.latest_pass ? ` · last pass ${age(hotspots.latest_pass)} ago` : ""}
           </span>
         )}
+        {!!aircraft?.count && (
+          <span
+            onClick={() => setShowAircraft((v) => !v)}
+            title={aircraft.note}
+            style={{
+              pointerEvents: "auto",
+              cursor: "pointer",
+              color: showAircraft ? C.blue : C.dim,
+              border: `1px solid ${showAircraft ? C.blue + "66" : C.line}`,
+              borderRadius: 3,
+              padding: "1px 5px",
+            }}
+          >
+            {showAircraft ? "◼" : "◻"} AIRCRAFT ({aircraft.count})
+            {aircraft.fire_ops ? ` · ${aircraft.fire_ops} air ops` : ""}
+          </span>
+        )}
         {evacCount > 0 && (
           <span style={{ color: C.evac, display: "flex", alignItems: "center", gap: 4 }}>
             <span style={{ width: 7, height: 7, borderRadius: 4, background: C.evac, display: "inline-block" }} />
@@ -571,6 +650,10 @@ function MapKey({ open, onToggle }: { open: boolean; onToggle: () => void }) {
           <Row swatch={dot(C.emberHot)} label="≥ 50 MW — roaring" />
           <Row swatch={dot(C.ember)} label="10–50 MW — active" />
           <Row swatch={dot(C.warn)} label="under 10 MW — small / faint" />
+          <div style={{ color: C.faint, letterSpacing: 1, margin: "6px 0 4px" }}>AIRCRAFT</div>
+          <Row swatch={<span style={{ color: C.blue }}>▲</span>} label="likely air ops (tanker / helo)" />
+          <Row swatch={<span style={{ color: C.faint }}>▲</span>} label="other aircraft near the fire" />
+          <Row swatch={<span style={{ color: C.blue }}>┄</span>} label="dashed = its recent orbit" />
           <div style={{ color: C.faint, letterSpacing: 1, margin: "6px 0 4px" }}>SHAPES</div>
           <Row swatch={dot(C.dim)} label="big dot = fire (size ∝ acreage)" />
           <Row swatch={<span style={{ width: 10, height: 6, border: `1px solid ${C.dim}`, display: "inline-block" }} />} label="small dot = satellite pixel" />

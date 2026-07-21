@@ -337,6 +337,16 @@ def backup_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     )
 
 
+@register("aircraft")
+def aircraft_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Sweep aircraft over active fires. Borrowed live positions, pruned after
+    12h — never ledger facts."""
+    from toast.pipeline.aircraft import poll_active
+
+    result = poll_active(conn)
+    get_logger("aircraft").info("aircraft_sweep_done", **result)
+
+
 @register("raw_sync")
 def raw_sync_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     """Ship a batch of the raw archive offsite. Bounded per run so a first sync

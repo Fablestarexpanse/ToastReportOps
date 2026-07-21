@@ -827,6 +827,17 @@ function IntelPanel({ sel, toast }: { sel: Incident; toast: (m: string) => void 
         </div>
       )}
 
+      {/* aircraft seen working the fire — live from ADS-B, a count not a claim */}
+      {!!intel.aircraft_observed && (
+        <div
+          style={{ fontFamily: font.mono, fontSize: 9, color: C.blue, display: "flex", alignItems: "center", gap: 5 }}
+          title="distinct tankers/helicopters observed near this fire in the last 6h (airplanes.live ADS-B). A live count, not a confirmed roster."
+        >
+          <span>✈</span>
+          {intel.aircraft_observed} air resource{intel.aircraft_observed === 1 ? "" : "s"} observed overhead · last 6h
+        </div>
+      )}
+
       {/* deployed resources — the official total, plus what reporting says */}
       <div>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>

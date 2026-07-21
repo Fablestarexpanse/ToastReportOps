@@ -67,6 +67,8 @@ DAILY_STAGES = {
     # every 2h: the raw archive grows ~25 MB/day and the first sync has a
     # thousand-blob backlog, so it drains in bounded batches rather than one run
     "raw_sync": 2 * 3600,
+    # aircraft move fast — a tanker orbit is only legible if sampled often
+    "aircraft": 60,
 }
 
 
