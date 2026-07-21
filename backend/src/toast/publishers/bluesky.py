@@ -25,7 +25,9 @@ class BlueskyPublisher:
         self.password = settings.bluesky_app_password
         self.http = httpx.Client(base_url=base_url, timeout=30)
 
-    def publish(self, text: str) -> dict[str, Any]:
+    def publish(
+        self, text: str, image: bytes | None = None, image_alt: str = ""
+    ) -> dict[str, Any]:
         from toast.publishers import PublishError
 
         if len(text) > MAX_CHARS:
@@ -37,17 +39,37 @@ class BlueskyPublisher:
         if r.status_code != 200:
             raise PublishError(f"bluesky login failed: HTTP {r.status_code} {r.text[:120]}")
         session = r.json()
+        auth = {"Authorization": f"Bearer {session['accessJwt']}"}
+
+        record: dict[str, Any] = {
+            "$type": "app.bsky.feed.post",
+            "text": text,
+            "createdAt": utcnow(),
+        }
+        if image is not None:
+            # the card is a bonus: an upload failure degrades to a text post,
+            # never a failed publication
+            up = self.http.post(
+                "/xrpc/com.atproto.repo.uploadBlob",
+                headers={**auth, "Content-Type": "image/png"},
+                content=image,
+            )
+            if up.status_code == 200:
+                record["embed"] = {
+                    "$type": "app.bsky.embed.images",
+                    "images": [
+                        {"alt": image_alt or "incident map and statistics card",
+                         "image": up.json()["blob"]}
+                    ],
+                }
+
         r = self.http.post(
             "/xrpc/com.atproto.repo.createRecord",
-            headers={"Authorization": f"Bearer {session['accessJwt']}"},
+            headers=auth,
             json={
                 "repo": session["did"],
                 "collection": "app.bsky.feed.post",
-                "record": {
-                    "$type": "app.bsky.feed.post",
-                    "text": text,
-                    "createdAt": utcnow(),
-                },
+                "record": record,
             },
         )
         if r.status_code != 200:

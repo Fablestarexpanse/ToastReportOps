@@ -1414,6 +1414,38 @@ def transition_draft(request: Request, draft_id: str, body: dict) -> dict:
     return {"ok": True, "draft_id": draft_id, "status": target}
 
 
+@router.post("/drafts/{draft_id}/graphic")
+def make_graphic(request: Request, draft_id: str) -> dict:
+    """Render the incident card (map + ledger numbers) and attach it."""
+    from toast.pipeline.graphics import attach_card
+
+    try:
+        return attach_card(_conn(request), draft_id)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.get("/drafts/{draft_id}/graphic.png")
+def get_graphic(request: Request, draft_id: str):
+    from pathlib import Path as _Path
+
+    from fastapi import Response
+
+    from toast.core.config import Settings as _Settings
+
+    conn = _conn(request)
+    row = conn.execute("SELECT graphic_sha FROM drafts WHERE id = ?", (draft_id,)).fetchone()
+    if row is None or not row["graphic_sha"]:
+        raise HTTPException(404, "no graphic attached")
+    blob = conn.execute(
+        "SELECT path FROM raw_blobs WHERE sha256 = ?", (row["graphic_sha"],)
+    ).fetchone()
+    if blob is None:
+        raise HTTPException(404, "graphic missing from store")
+    data = (_Path(_Settings().toast_data_dir) / blob["path"]).read_bytes()
+    return Response(content=data, media_type="image/png")
+
+
 @router.get("/publish/channels")
 def publish_channels(request: Request) -> dict:
     """Which social channels have working credentials — the release checkboxes."""

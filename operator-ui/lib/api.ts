@@ -211,7 +211,7 @@ export type Publication = {
 };
 
 export type DraftDetail = {
-  draft: Draft & { body_md: string; cited_fact_ids: string };
+  draft: Draft & { body_md: string; cited_fact_ids: string; graphic_sha?: string | null };
   cited_facts: CitedFact[];
   publications: Publication[];
 };
@@ -225,6 +225,9 @@ export type ResearchJob = {
   since: string;
   error: string | null;
 };
+
+export const makeGraphic = (draftId: string) =>
+  post<{ graphic_sha: string; bytes: number }>(`/drafts/${draftId}/graphic`, {});
 
 export const fetchPublishChannels = () => get<{ channels: string[] }>("/publish/channels");
 

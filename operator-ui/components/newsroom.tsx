@@ -10,6 +10,7 @@ import {
   createSocialDraft,
   fetchDraft,
   fetchPublishChannels,
+  makeGraphic,
   releaseDraft,
   retryPublication,
   fetchDrafts,
@@ -178,6 +179,23 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
       toast(`release failed: ${e instanceof Error ? e.message : e}`);
     } finally {
       setReleasing(false);
+    }
+  };
+
+  const [graphicBusy, setGraphicBusy] = useState(false);
+  const [graphicNonce, setGraphicNonce] = useState(0);
+  const doGraphic = async () => {
+    if (!detail) return;
+    setGraphicBusy(true);
+    try {
+      const r = await makeGraphic(detail.draft.id);
+      toast(`card rendered (${Math.round(r.bytes / 1024)} KB) — attaches to Bluesky posts`);
+      setGraphicNonce((n) => n + 1);
+      setDetail(await fetchDraft(detail.draft.id));
+    } catch (e) {
+      toast(`graphic failed: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setGraphicBusy(false);
     }
   };
 
@@ -396,6 +414,15 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
               <button onClick={copyBody} title="copy the full text to clipboard" style={{ background: C.panelUp, color: C.txt, border: `1px solid ${C.line}`, borderRadius: 5, fontFamily: font.disp, fontWeight: 600, fontSize: 12, letterSpacing: 1, padding: "7px 14px", cursor: "pointer" }}>
                 ⧉ COPY
               </button>
+              {d.incident_id && (
+                <button
+                  onClick={doGraphic}
+                  title="render a map + stats card from the ledger; rides along on image-capable channels"
+                  style={{ background: C.panelUp, color: C.warn, border: `1px solid ${C.warn}55`, borderRadius: 5, fontFamily: font.disp, fontWeight: 600, fontSize: 12, letterSpacing: 1, padding: "7px 14px", cursor: "pointer" }}
+                >
+                  {graphicBusy ? "…" : "🗺 GRAPHIC"}
+                </button>
+              )}
               {d.kind !== "social" && (
                 <button onClick={makeSocial} title="rewrite in a human voice for posting (full + X-length)" style={{ background: C.panelUp, color: C.blue, border: `1px solid ${C.blue}55`, borderRadius: 5, fontFamily: font.disp, fontWeight: 600, fontSize: 12, letterSpacing: 1, padding: "7px 14px", cursor: "pointer" }}>
                   {socialBusy ? "…" : "✍ SOCIAL VERSION"}
@@ -506,6 +533,23 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
                 </div>
               );
             })}
+          </div>
+        )}
+        {detail?.draft.graphic_sha && (
+          <div style={{ padding: "8px 13px", borderBottom: `1px solid ${C.line}` }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={`/api/drafts/${detail.draft.id}/graphic.png?t=${graphicNonce}`}
+              alt="attached incident card"
+              style={{ width: "100%", borderRadius: 6, border: `1px solid ${C.line}` }}
+            />
+            <a
+              href={`/api/drafts/${detail.draft.id}/graphic.png`}
+              download={`${detail.draft.id}-card.png`}
+              style={{ fontFamily: font.mono, fontSize: 8.5, color: C.blue, textDecoration: "none" }}
+            >
+              ⤓ download card
+            </a>
           </div>
         )}
         <div style={{ flex: 1, overflowY: "auto" }}>

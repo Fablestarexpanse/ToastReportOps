@@ -465,8 +465,31 @@ def publish_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
 
     from toast.core.credentials import settings_with_credentials
 
+    # the attached card rides along where the channel supports images; a
+    # missing or unreadable graphic degrades to a text post, never a failure
+    image_bytes = None
+    if draft["graphic_sha"] and channel == "bluesky":
+        blob = conn.execute(
+            "SELECT path FROM raw_blobs WHERE sha256 = ?", (draft["graphic_sha"],)
+        ).fetchone()
+        if blob:
+            from pathlib import Path as _Path
+
+            from toast.core.config import Settings as _Settings
+
+            try:
+                image_bytes = (_Path(_Settings().toast_data_dir) / blob["path"]).read_bytes()
+            except OSError:
+                image_bytes = None
+
     try:
-        receipt = get_publisher(channel, settings_with_credentials(conn)).publish(text)
+        publisher = get_publisher(channel, settings_with_credentials(conn))
+        if image_bytes is not None:
+            receipt = publisher.publish(
+                text, image=image_bytes, image_alt="incident map and statistics card"
+            )
+        else:
+            receipt = publisher.publish(text)
     except PublishError as exc:
         # the publisher got a definitive answer: it did not go out
         conn.execute(
