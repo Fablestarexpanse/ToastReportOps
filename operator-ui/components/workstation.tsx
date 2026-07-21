@@ -2945,7 +2945,8 @@ function ArchiveMode({ toast }: { toast: (m: string) => void }) {
                           </span>
                         )}
                         <span style={{ fontFamily: font.mono, fontSize: 9, color: inc.status === "frozen" ? C.dim : C.emberHot }}>
-                          {inc.status.toUpperCase()}
+                          {/* historical imports can arrive without a status */}
+                          {(inc.status ?? "archived").toUpperCase()}
                         </span>
                       </span>
                     </div>
