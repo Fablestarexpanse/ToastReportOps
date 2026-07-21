@@ -318,6 +318,52 @@ def requeue_dead_jobs(request: Request, body: dict) -> dict:
     return {"ok": True, "requeued": n}
 
 
+@router.get("/hotspots")
+def get_hotspots(request: Request, hours: int = Query(24, ge=1, le=168)) -> dict:
+    """Recent satellite fire detections (NASA FIRMS) as map points.
+
+    A VIIRS pixel is a ~375 m patch that was hot when a satellite passed over —
+    not a confirmed fire, and hours stale by the next overpass. So each point
+    carries its detection time and FRP (fire radiative power, MW = how much heat
+    it radiated), and the layer's own age is reported, because a bright dot from
+    this morning's pass is not a live flame front.
+    """
+    rows = _conn(request).execute(
+        """SELECT f.lat, f.lon, f.observed_at, f.structured, f.incident_id
+           FROM facts f JOIN sources s ON s.id = f.source_id
+           WHERE s.type = 'satellite' AND f.lat IS NOT NULL
+             AND unixepoch('now') - unixepoch(f.observed_at) < ? * 3600
+           ORDER BY f.observed_at DESC""",
+        (hours,),
+    ).fetchall()
+    points = []
+    latest = None
+    for r in rows:
+        s = json.loads(r["structured"] or "{}")
+        points.append(
+            {
+                "lat": r["lat"],
+                "lon": r["lon"],
+                "observed_at": r["observed_at"],
+                "frp": s.get("frp"),
+                "confidence": s.get("confidence"),
+                "attached": r["incident_id"] is not None,
+            }
+        )
+        if latest is None or r["observed_at"] > latest:
+            latest = r["observed_at"]
+    return {
+        "hotspots": points,
+        "count": len(points),
+        "latest_pass": latest,
+        "window_hours": hours,
+        "note": (
+            "NASA FIRMS VIIRS 375 m — a hot pixel at satellite overpass, "
+            "not a confirmed live fire."
+        ),
+    }
+
+
 @router.get("/perimeters")
 def get_map_perimeters(request: Request, refresh: bool = False) -> dict:
     """Current California fire perimeters (WFIGS/NIFC, free) as GeoJSON,

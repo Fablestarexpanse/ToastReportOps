@@ -938,6 +938,26 @@ export type PerimeterCollection = {
 
 export const fetchPerimeters = () => get<PerimeterCollection>("/perimeters");
 
+export type Hotspot = {
+  lat: number;
+  lon: number;
+  observed_at: string;
+  frp: number | null;      // fire radiative power, MW
+  confidence: string | null; // FIRMS: n(ominal) | l(ow) | h(igh)
+  attached: boolean;       // tied to a known incident
+};
+
+export type HotspotSet = {
+  hotspots: Hotspot[];
+  count: number;
+  latest_pass: string | null;
+  window_hours: number;
+  note: string;
+};
+
+export const fetchHotspots = (hours = 24) =>
+  get<HotspotSet>(`/hotspots?hours=${hours}`);
+
 export const fetchGnis = () => get<{ features: number }>("/gnis");
 
 export async function loadGnis(): Promise<{ job_id: string }> {

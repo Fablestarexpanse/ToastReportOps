@@ -3,7 +3,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { Incident, PerimeterCollection, fetchPerimeters, hasActiveEvac } from "@/lib/api";
+import {
+  Hotspot,
+  HotspotSet,
+  Incident,
+  PerimeterCollection,
+  fetchHotspots,
+  fetchPerimeters,
+  hasActiveEvac,
+} from "@/lib/api";
 import { CA_OUTLINE } from "@/lib/california";
 import { C, Z, font } from "@/lib/theme";
 import { age } from "@/lib/time";
@@ -63,6 +71,15 @@ function pinRadius(acreage: number | null): number {
   return Math.max(5, Math.min(22, 4 + Math.log10(acreage + 1) * 3.4));
 }
 
+// A hotspot's colour is its heat: fire radiative power in MW. This is the
+// "how intense" read the pins cannot give — a satellite saw this pixel glowing.
+function hotspotColor(frp: number | null): string {
+  if (frp == null) return C.warn;
+  if (frp >= 50) return C.emberHot; // roaring
+  if (frp >= 10) return C.ember; // active
+  return C.warn; // smouldering / small
+}
+
 export default function MapPanel({
   incidents,
   selected,
@@ -82,8 +99,12 @@ export default function MapPanel({
   const tiles = useRef<L.TileLayer | null>(null);
   const markers = useRef<L.LayerGroup | null>(null);
   const perimLayer = useRef<L.GeoJSON | null>(null);
+  const hotspotLayer = useRef<L.LayerGroup | null>(null);
   const [perimeters, setPerimeters] = useState<PerimeterCollection | null>(null);
   const [showPerimeters, setShowPerimeters] = useState(true);
+  const [hotspots, setHotspots] = useState<HotspotSet | null>(null);
+  const [showHotspots, setShowHotspots] = useState(true);
+  const [showKey, setShowKey] = useState(false);
   const [tileError, setTileError] = useState(false);
   const [ready, setReady] = useState(false);
   // A zoom-to-origin swaps in imagery so the operator can see the ground.
@@ -190,6 +211,56 @@ export default function MapPanel({
     // pins stay clickable above the polygons
     markers.current?.eachLayer((l) => (l as L.CircleMarker).bringToFront?.());
   }, [perimeters, showPerimeters, incidents, onSelect, ready]);
+
+  // satellite hotspots: the same 10-minute refresh cadence as perimeters, and
+  // silent on failure — the map is still useful without them
+  useEffect(() => {
+    let live = true;
+    const load = () =>
+      fetchHotspots(24)
+        .then((h) => live && setHotspots(h))
+        .catch(() => undefined);
+    load();
+    const t = setInterval(load, 10 * 60 * 1000);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, []);
+
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+    if (hotspotLayer.current) {
+      m.removeLayer(hotspotLayer.current);
+      hotspotLayer.current = null;
+    }
+    if (!showHotspots || !hotspots?.hotspots?.length) return;
+    const group = L.layerGroup();
+    for (const h of hotspots.hotspots as Hotspot[]) {
+      const color = hotspotColor(h.frp);
+      // a small diamond-ish dot; low FIRMS confidence reads as fainter, never hidden
+      L.circleMarker([h.lat, h.lon], {
+        radius: 3.5,
+        color,
+        weight: 0,
+        fillColor: color,
+        fillOpacity: h.confidence === "l" ? 0.4 : 0.85,
+      })
+        .bindTooltip(
+          `satellite hotspot<br/>${h.frp != null ? `${Math.round(h.frp)} MW radiated` : "intensity n/a"}` +
+            `<br/>detected ${age(h.observed_at)} ago` +
+            `<br/><i>a hot pixel at overpass, not a confirmed flame</i>`,
+          { direction: "top", opacity: 0.95 },
+        )
+        .addTo(group);
+    }
+    group.addTo(m);
+    group.eachLayer((l) => (l as L.Path).bringToBack?.());
+    hotspotLayer.current = group;
+    // keep incident pins above the hotspot dusting
+    markers.current?.eachLayer((l) => (l as L.CircleMarker).bringToFront?.());
+  }, [hotspots, showHotspots, ready]);
 
   const draw = useCallback(() => {
     const group = markers.current;
@@ -396,6 +467,23 @@ export default function MapPanel({
             {perimeters.mapped_latest ? ` · newest flown ${age(perimeters.mapped_latest)} ago` : ""}
           </span>
         )}
+        {!!hotspots?.count && (
+          <span
+            onClick={() => setShowHotspots((v) => !v)}
+            title={hotspots.note}
+            style={{
+              pointerEvents: "auto",
+              cursor: "pointer",
+              color: showHotspots ? C.emberHot : C.dim,
+              border: `1px solid ${showHotspots ? C.emberHot + "66" : C.line}`,
+              borderRadius: 3,
+              padding: "1px 5px",
+            }}
+          >
+            {showHotspots ? "◼" : "◻"} HOTSPOTS ({hotspots.count})
+            {hotspots.latest_pass ? ` · last pass ${age(hotspots.latest_pass)} ago` : ""}
+          </span>
+        )}
         {evacCount > 0 && (
           <span style={{ color: C.evac, display: "flex", alignItems: "center", gap: 4 }}>
             <span style={{ width: 7, height: 7, borderRadius: 4, background: C.evac, display: "inline-block" }} />
@@ -403,6 +491,95 @@ export default function MapPanel({
           </span>
         )}
       </div>
+
+      <MapKey open={showKey} onToggle={() => setShowKey((v) => !v)} />
+    </div>
+  );
+}
+
+/* What everything on the map means. A colour-coded map with no key is a puzzle,
+   and this one carries life-safety colours — the evac pink especially must never
+   be guessed at. Collapsed to a small ? by default so it never covers the map. */
+function MapKey({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  const dot = (color: string, ring = false) => (
+    <span
+      style={{
+        width: 10,
+        height: 10,
+        borderRadius: 6,
+        background: ring ? "transparent" : color,
+        border: ring ? `2px solid ${color}` : "none",
+        display: "inline-block",
+        flexShrink: 0,
+      }}
+    />
+  );
+  const Row = ({ swatch, label }: { swatch: React.ReactNode; label: string }) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "2px 0" }}>
+      {swatch}
+      <span>{label}</span>
+    </div>
+  );
+  return (
+    <div style={{ position: "absolute", top: 8, right: 10, zIndex: Z.mapControl }}>
+      <div
+        onClick={onToggle}
+        title={open ? "hide the key" : "what do the colours mean?"}
+        style={{
+          marginLeft: "auto",
+          width: open ? "auto" : 24,
+          height: 24,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 5,
+          background: "#1b2128",
+          border: `1px solid ${C.line}`,
+          borderRadius: 4,
+          color: C.dim,
+          fontFamily: font.mono,
+          fontSize: 10,
+          cursor: "pointer",
+          padding: open ? "0 8px" : 0,
+          boxShadow: "0 1px 5px rgba(0,0,0,0.4)",
+        }}
+      >
+        {open ? "✕ KEY" : "?"}
+      </div>
+      {open && (
+        <div
+          style={{
+            marginTop: 4,
+            background: C.panel + "f2",
+            border: `1px solid ${C.line}`,
+            borderRadius: 6,
+            padding: "8px 10px",
+            fontFamily: font.mono,
+            fontSize: 9,
+            color: C.dim,
+            width: 210,
+            boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
+          }}
+        >
+          <div style={{ color: C.faint, letterSpacing: 1, marginBottom: 4 }}>INCIDENT PINS</div>
+          <Row swatch={dot(C.evac)} label="under evacuation" />
+          <Row swatch={dot(C.emberHot)} label="active, under 60% contained" />
+          <Row swatch={dot(C.warn)} label="active, 60%+ contained" />
+          <Row swatch={dot(C.dim)} label="contained / closed" />
+          <Row swatch={dot(C.evac, true)} label="pulsing ring = evac or selected" />
+          <div style={{ color: C.faint, letterSpacing: 1, margin: "6px 0 4px" }}>SATELLITE HOTSPOTS</div>
+          <Row swatch={dot(C.emberHot)} label="≥ 50 MW — roaring" />
+          <Row swatch={dot(C.ember)} label="10–50 MW — active" />
+          <Row swatch={dot(C.warn)} label="under 10 MW — small / faint" />
+          <div style={{ color: C.faint, letterSpacing: 1, margin: "6px 0 4px" }}>SHAPES</div>
+          <Row swatch={dot(C.dim)} label="big dot = fire (size ∝ acreage)" />
+          <Row swatch={<span style={{ width: 10, height: 6, border: `1px solid ${C.dim}`, display: "inline-block" }} />} label="small dot = satellite pixel" />
+          <Row swatch={<span style={{ width: 12, height: 8, border: `1.5px solid ${C.ember}`, background: C.ember + "22", display: "inline-block" }} />} label="outline = mapped perimeter" />
+          <div style={{ color: C.faint, marginTop: 6, lineHeight: 1.4 }}>
+            Hotspots and perimeters are hours old — a satellite pass, not a live edge.
+          </div>
+        </div>
+      )}
     </div>
   );
 }
