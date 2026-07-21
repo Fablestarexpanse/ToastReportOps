@@ -8,6 +8,7 @@ import {
   FireSearchResult,
   Incident,
   IncidentAqi,
+  IncidentHistory,
   IncidentWeather,
   OriginCheck,
   Note,
@@ -34,6 +35,7 @@ import {
   fetchIntel,
   fetchOriginCheck,
   fetchAqi,
+  fetchHistory,
   fetchWeather,
   fetchNotes,
   fetchSourceSuggestions,
@@ -691,8 +693,60 @@ function AirResourcesBox({ resources, observed }: { resources: AirResource[]; ob
   );
 }
 
+/* The growth curve: every reported acreage in time order (supersession IS the
+   history) as a sparkline, containment as a second line on its own 0-100
+   scale. SVG, no library — ~40 lines beats a chart dependency. */
+function Sparkline({ hist }: { hist: IncidentHistory }) {
+  const ac = hist.acreage;
+  if (ac.length < 2) return null;
+  const W = 260, H = 44, PAD = 3;
+  const t0 = new Date(ac[0].observed_at).getTime();
+  const t1 = new Date(ac[ac.length - 1].observed_at).getTime() || t0 + 1;
+  const vMax = Math.max(...ac.map((p) => p.value)) || 1;
+  const x = (iso: string) => PAD + ((new Date(iso).getTime() - t0) / Math.max(1, t1 - t0)) * (W - PAD * 2);
+  const yAc = (v: number) => H - PAD - (v / vMax) * (H - PAD * 2);
+  const yCt = (v: number) => H - PAD - (v / 100) * (H - PAD * 2);
+  const acPts = ac.map((p) => `${x(p.observed_at).toFixed(1)},${yAc(p.value).toFixed(1)}`).join(" ");
+  const ct = hist.containment.filter((p) => {
+    const ms = new Date(p.observed_at).getTime();
+    return ms >= t0 && ms <= t1;
+  });
+  const ctPts = ct.map((p) => `${x(p.observed_at).toFixed(1)},${yCt(p.value).toFixed(1)}`).join(" ");
+  const first = ac[0], last = ac[ac.length - 1];
+  const grew = last.value - first.value;
+  const spanH = Math.max(1, (t1 - t0) / 3_600_000);
+  return (
+    <div style={{ background: C.bg, border: `1px solid ${C.line}`, borderRadius: 6, padding: "7px 9px" }}>
+      <div style={{ fontFamily: font.mono, fontSize: 8, color: C.faint, letterSpacing: 1, marginBottom: 3 }}>
+        GROWTH · {ac.length} reports over {spanH >= 48 ? `${Math.round(spanH / 24)}d` : `${Math.round(spanH)}h`}
+        {hist.perimeter_count > 1 ? ` · ${hist.perimeter_count} mapped perimeters kept` : ""}
+      </div>
+      <svg width={W} height={H} style={{ display: "block", maxWidth: "100%" }}>
+        <polyline points={acPts} fill="none" stroke={C.emberHot} strokeWidth={1.6} />
+        {ct.length > 1 && <polyline points={ctPts} fill="none" stroke={C.ok} strokeWidth={1.2} strokeDasharray="3 3" />}
+      </svg>
+      <div style={{ fontFamily: font.mono, fontSize: 8.5, color: C.dim, display: "flex", justifyContent: "space-between" }}>
+        <span>
+          <span style={{ color: C.emberHot }}>■</span> {first.value.toLocaleString()} → {last.value.toLocaleString()} ac
+          {grew > 0 ? ` (+${grew.toLocaleString()})` : grew < 0 ? ` (${grew.toLocaleString()} — remapped down)` : ""}
+        </span>
+        {ct.length > 1 && <span><span style={{ color: C.ok }}>■</span> containment</span>}
+      </div>
+    </div>
+  );
+}
+
 function IntelPanel({ sel, toast }: { sel: Incident; toast: (m: string) => void }) {
   const intel = usePolling(() => fetchIntel(sel.id), [sel.id]);
+  const [hist, setHist] = useState<IncidentHistory | null>(null);
+  useEffect(() => {
+    let live = true;
+    setHist(null);
+    fetchHistory(sel.id).then((h) => live && setHist(h)).catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [sel.id]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [noteText, setNoteText] = useState("");
   const [impactOpen, setImpactOpen] = useState<"evac" | "road" | null>(null);
@@ -727,6 +781,8 @@ function IntelPanel({ sel, toast }: { sel: Incident; toast: (m: string) => void 
 
   return (
     <div style={{ padding: "10px 11px", display: "flex", flexDirection: "column", gap: 10 }}>
+      {hist && <Sparkline hist={hist} />}
+
       {/* overview grid */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
         <StatTile label="ACRES" sub={m.acreage.source_name && `${m.acreage.source_name} · ${fmtTime(m.acreage.observed_at)}`}>

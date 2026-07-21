@@ -130,6 +130,46 @@ def _match_incidents(conn: sqlite3.Connection, features: list[dict[str, Any]]) -
     return matched
 
 
+def _archive_snapshots(conn: sqlite3.Connection, features: list[dict[str, Any]]) -> int:
+    """Keep each NEW mapping of a matched fire's outline.
+
+    Which way a fire has run — last night's edge against tonight's — is the
+    story, and history only exists if we keep it. UNIQUE(incident, mapped_at)
+    makes this idempotent: a hundred re-fetches store nothing until the IR
+    flight actually flies again."""
+    stored = 0
+    for feature in features:
+        props = feature.get("properties") or {}
+        iid = props.get("incident_id")
+        if not iid or not feature.get("geometry"):
+            continue
+        raw = props.get("poly_DateCurrent")
+        mapped_at = None
+        if isinstance(raw, int | float) and raw > 0:
+            mapped_at = (
+                datetime.fromtimestamp(raw / 1000.0, tz=UTC)
+                .isoformat(timespec="milliseconds")
+                .replace("+00:00", "Z")
+            )
+        cur = conn.execute(
+            """INSERT OR IGNORE INTO perimeter_history
+               (incident_id, mapped_at, acres, geometry, captured_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (
+                iid,
+                mapped_at,
+                props.get("poly_GISAcres"),
+                json.dumps(feature["geometry"]),
+                utcnow(),
+            ),
+        )
+        stored += cur.rowcount
+    if stored:
+        conn.commit()
+        get_logger("perimeters").info("perimeter_snapshots_stored", new=stored)
+    return stored
+
+
 def get_perimeters(conn: sqlite3.Connection, *, refresh: bool = False) -> dict[str, Any]:
     """Cached CA perimeter GeoJSON, tagged with our incident ids."""
     if not refresh:
@@ -146,6 +186,7 @@ def get_perimeters(conn: sqlite3.Connection, *, refresh: bool = False) -> dict[s
 
     data = fetch_perimeters()
     matched = _match_incidents(conn, data.get("features", []))
+    _archive_snapshots(conn, data.get("features", []))
     now = utcnow()
     data.update(
         {

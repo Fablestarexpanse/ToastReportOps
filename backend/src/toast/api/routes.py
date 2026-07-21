@@ -355,6 +355,49 @@ def air_log(request: Request, incident_id: str) -> dict:
     return activity_log(_conn(request), incident_id)
 
 
+@router.get("/incidents/{incident_id}/history")
+def incident_history(request: Request, incident_id: str, shapes: bool = False) -> dict:
+    """How the fire has moved: every reported acreage and containment value in
+    time order (supersession IS the history), plus archived perimeter
+    snapshots. "How fast is it growing?" is a reporter's first question, and
+    the ledger has always held the answer — this makes it visible."""
+    conn = _conn(request)
+    if conn.execute("SELECT 1 FROM incidents WHERE id = ?", (incident_id,)).fetchone() is None:
+        raise HTTPException(404, "incident not found")
+
+    def series(kind: str, col: str) -> list[dict]:
+        rows = conn.execute(
+            f"""SELECT {col} AS value, observed_at, tier FROM facts
+                WHERE incident_id = ? AND kind = ? AND {col} IS NOT NULL
+                ORDER BY observed_at""",
+            (incident_id, kind),
+        ).fetchall()
+        out: list[dict] = []
+        for r in rows:  # collapse repeats — flat stretches carry no new signal
+            if out and out[-1]["value"] == r["value"]:
+                continue
+            out.append({"value": r["value"], "observed_at": r["observed_at"], "tier": r["tier"]})
+        return out
+
+    perims = conn.execute(
+        """SELECT mapped_at, acres, captured_at{geom} FROM perimeter_history
+           WHERE incident_id = ? ORDER BY mapped_at""".format(
+            geom=", geometry" if shapes else ""
+        ),
+        (incident_id,),
+    ).fetchall()
+    perimeters = [dict(r) for r in perims]
+    if shapes:
+        for pr in perimeters:
+            pr["geometry"] = json.loads(pr["geometry"])
+    return {
+        "acreage": series("acreage", "acreage"),
+        "containment": series("containment", "containment_pct"),
+        "perimeters": perimeters,
+        "perimeter_count": len(perimeters),
+    }
+
+
 @router.get("/incidents/{incident_id}/aqi")
 def incident_aqi(request: Request, incident_id: str, refresh: bool = False) -> dict:
     """Smoke/AQI near this fire from AirNow — the nearest reporting site, named,

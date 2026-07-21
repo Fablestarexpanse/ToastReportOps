@@ -1104,6 +1104,18 @@ export type IncidentAqi = {
   fetched_at?: string;
 };
 
+export type HistoryPoint = { value: number; observed_at: string; tier: number };
+export type PerimeterSnap = { mapped_at: string | null; acres: number | null; captured_at: string };
+export type IncidentHistory = {
+  acreage: HistoryPoint[];
+  containment: HistoryPoint[];
+  perimeters: PerimeterSnap[];
+  perimeter_count: number;
+};
+
+export const fetchHistory = (incidentId: string) =>
+  get<IncidentHistory>(`/incidents/${incidentId}/history`);
+
 export const fetchAqi = (incidentId: string) => get<IncidentAqi>(`/incidents/${incidentId}/aqi`);
 
 export const fetchFireWeather = () => get<FireWeatherSet>("/fire-weather");
