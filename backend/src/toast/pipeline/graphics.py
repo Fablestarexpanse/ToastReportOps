@@ -327,7 +327,7 @@ def generate_state_card(conn: sqlite3.Connection) -> bytes:
     """One card for the whole state: every active fire on a CA map, sized by
     acreage, evac fires in the alarm colour, aggregate tiles up top."""
     rows = conn.execute(
-        """SELECT i.id, i.canonical_name, i.lat, i.lon,
+        """SELECT i.id, i.canonical_name, i.lat, i.lon, i.calfire_id, i.irwin_id,
              (SELECT v.acreage FROM facts v WHERE v.incident_id = i.id AND v.kind='acreage'
                 AND v.id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)
               ORDER BY (v.observed_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')) ASC,
@@ -340,6 +340,38 @@ def generate_state_card(conn: sqlite3.Connection) -> bytes:
            WHERE i.status = 'active' AND COALESCE(i.incident_type, 'WF') != 'RX'"""
     ).fetchall()
     fires = [dict(r) for r in rows]
+
+    # The published number is HARD FACT: only fires an official source lists
+    # active RIGHT NOW — CAL FIRE's live list or NIFC's federal current layer,
+    # checked at render time. Fires the workstation tracks beyond that
+    # (watch-promoted, pending operator close) stay off the public card.
+    # If a live list is unreachable, its half degrades to "carries that
+    # official id" rather than dropping everyone.
+    from toast.pipeline.activity import _calfire_live, _wfigs_live
+
+    calfire = _calfire_live(conn)
+    wfigs = _wfigs_live()
+
+    def officially_listed(f: dict) -> bool:
+        cfid = (f["calfire_id"] or "").lower()
+        iid = (f["irwin_id"] or "").strip("{}").lower()
+        if cfid:
+            if calfire:
+                entry = calfire.get(cfid)
+                if entry and entry["is_active"]:
+                    return True
+            else:  # CAL FIRE unreachable — the id itself is the fallback fact
+                return True
+        if iid:
+            return iid in wfigs if wfigs is not None else True
+        return False
+
+    dropped = [f["canonical_name"] for f in fires if not officially_listed(f)]
+    fires = [f for f in fires if officially_listed(f)]
+    if dropped:
+        get_logger("graphics").info(
+            "state_card_excluded_unlisted", count=len(dropped), names=dropped[:10]
+        )
     evac_n = sum(1 for f in fires if f["evac"] in ("order", "warning", "shelter_in_place"))
     total = sum(int(f["acreage"]) for f in fires if f["acreage"] is not None)
     new24 = conn.execute(
@@ -467,7 +499,7 @@ def generate_state_card(conn: sqlite3.Connection) -> bytes:
     )
     d2.text(
         (46, map_top + map_h - 24),
-        "ring size = mapped acres - pink = evacuation in effect",
+        "ring size = mapped acres - pink = evac in effect - CAL FIRE + NIFC listed fires only",
         font=_font(14), fill=DIM,
     )
 
