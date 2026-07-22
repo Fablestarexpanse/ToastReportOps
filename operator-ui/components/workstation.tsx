@@ -1770,6 +1770,30 @@ function OpsMode({
   // the operator asked — but they see what the point is worth.
   const [activity, setActivity] = useState<import("@/lib/api").ActivityProposal[]>([]);
   const [activityBusy, setActivityBusy] = useState(false);
+  // collapse the proposals panel out of the way; the count stays visible
+  const [activityOpen, setActivityOpen] = useState(
+    () => typeof window === "undefined" || localStorage.getItem("tr-activity-open") !== "0",
+  );
+  const toggleActivityOpen = () => {
+    setActivityOpen((v) => {
+      localStorage.setItem("tr-activity-open", v ? "0" : "1");
+      return !v;
+    });
+  };
+  // HIDE, never delete: this year's fires stay queryable in ARCHIVE
+  const [hideContained, setHideContained] = useState(
+    () => typeof window !== "undefined" && localStorage.getItem("tr-hide-contained") === "1",
+  );
+  const toggleHideContained = () => {
+    setHideContained((v) => {
+      localStorage.setItem("tr-hide-contained", v ? "0" : "1");
+      return !v;
+    });
+  };
+  const isOut = (inc: Incident) =>
+    inc.status !== "active" || inc.containment_pct === 100;
+  const shownIncidents = hideContained ? (incidents ?? []).filter((i) => !isOut(i)) : (incidents ?? []);
+  const hiddenCount = (incidents?.length ?? 0) - shownIncidents.length;
   const loadActivity = useCallback(async () => {
     try {
       const r = await fetchActivityProposals();
@@ -2088,7 +2112,7 @@ function OpsMode({
         )}
         <div style={{ flex: 1, minHeight: 0 }}>
           <MapPanel
-            incidents={incidents ?? []}
+            incidents={shownIncidents}
             selected={selected}
             onSelect={setSelected}
             basemap={basemap}
@@ -2096,11 +2120,15 @@ function OpsMode({
           />
         </div>
         {activity.length > 0 && (
-          <div style={{ flexShrink: 0, borderTop: `1px solid ${C.warn}55`, background: C.warn + "0d", maxHeight: 150, overflowY: "auto", padding: "6px 12px" }}>
-            <div style={{ fontFamily: font.disp, fontSize: 10, letterSpacing: 2, color: C.warn, marginBottom: 4 }}>
-              ✔ ACTIVITY CHECK — {activity.length} {activity.length === 1 ? "FIRE MAY BE" : "FIRES MAY BE"} DONE
+          <div style={{ flexShrink: 0, borderTop: `1px solid ${C.warn}55`, background: C.warn + "0d", maxHeight: activityOpen ? 150 : undefined, overflowY: "auto", padding: activityOpen ? "6px 12px" : "3px 12px" }}>
+            <div
+              onClick={toggleActivityOpen}
+              title={activityOpen ? "collapse — get this out of the way" : "expand the proposals"}
+              style={{ fontFamily: font.disp, fontSize: 10, letterSpacing: 2, color: C.warn, marginBottom: activityOpen ? 4 : 0, cursor: "pointer", userSelect: "none" }}
+            >
+              {activityOpen ? "▾" : "▸"} ACTIVITY CHECK — {activity.length} {activity.length === 1 ? "FIRE MAY BE" : "FIRES MAY BE"} DONE
             </div>
-            {activity.map((pp) => (
+            {activityOpen && activity.map((pp) => (
               <div key={pp.incident_id} style={{ display: "flex", gap: 8, alignItems: "center", fontFamily: font.mono, fontSize: 9, padding: "3px 0" }}>
                 <span style={{ color: pp.verdict === "close" ? C.warn : C.dim, minWidth: 62 }}>
                   {pp.verdict === "close" ? "LIKELY OUT" : "UNCERTAIN"}
@@ -2134,16 +2162,23 @@ function OpsMode({
         )}
         {/* compact incident chip strip below the map */}
         <div style={{ flexShrink: 0, borderTop: `1px solid ${C.line}`, maxHeight: 150, overflowY: "auto", background: C.panel }}>
-          <div style={{ display: "flex", alignItems: "center", padding: "4px 12px 0" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 12px 0" }}>
+            <span
+              onClick={toggleHideContained}
+              title="hide fires that are out (contained, frozen, or 100% containment). Hidden, never deleted — the season's fires stay in ARCHIVE."
+              style={{ marginLeft: "auto", fontFamily: font.mono, fontSize: 8.5, cursor: "pointer", color: hideContained ? C.warn : C.dim, border: `1px solid ${hideContained ? C.warn + "66" : C.line}`, borderRadius: 3, padding: "2px 8px" }}
+            >
+              {hideContained ? `◼ HIDING ${hiddenCount} OUT` : "◻ HIDE 100% CONTAINED"}
+            </span>
             <span
               onClick={() => !activityBusy && runActivityCheck()}
               title="verify every active fire is still burning: CAL FIRE's own list, satellite heat, aircraft, and reporting recency — the AI reads the evidence and proposes; you decide"
-              style={{ marginLeft: "auto", fontFamily: font.mono, fontSize: 8.5, cursor: "pointer", color: activityBusy ? C.faint : C.blue, border: `1px solid ${activityBusy ? C.line : C.blue + "66"}`, borderRadius: 3, padding: "2px 8px" }}
+              style={{ fontFamily: font.mono, fontSize: 8.5, cursor: "pointer", color: activityBusy ? C.faint : C.blue, border: `1px solid ${activityBusy ? C.line : C.blue + "66"}`, borderRadius: 3, padding: "2px 8px" }}
             >
               {activityBusy ? "✔ checking…" : "✔ CHECK ACTIVE FIRES"}
             </span>
           </div>
-          {(incidents ?? []).map((inc) => (
+          {shownIncidents.map((inc) => (
             <div
               key={inc.id}
               onClick={() => setSelected(inc.id)}
