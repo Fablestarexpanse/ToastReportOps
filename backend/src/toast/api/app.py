@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
     conn.close()
 
 
-app = FastAPI(title="Toast Report API", version=__version__, lifespan=lifespan)
+app = FastAPI(title="Toast Report OPs API", version=__version__, lifespan=lifespan)
 
 from toast.api.routes import router  # noqa: E402
 

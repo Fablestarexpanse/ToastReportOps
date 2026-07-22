@@ -21,8 +21,8 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Toast Report — Workstation",
-  description: "Operator workstation for the Toast Report wildfire intelligence system",
+  title: "Toast Report OPs — Workstation",
+  description: "Operator workstation for the Toast Report OPs wildfire intelligence system",
 };
 
 export default function RootLayout({

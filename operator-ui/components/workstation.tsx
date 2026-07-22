@@ -3326,7 +3326,7 @@ export default function Workstation() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo/ops-badge-256.png" alt="" style={{ height: 60, width: 60 }} />
           <div style={{ fontFamily: font.disp, fontWeight: 700, fontSize: 19, letterSpacing: 1, color: C.ember }}>
-            TOAST REPORT
+            TOAST REPORT OPS
           </div>
         </div>
         <div style={{ display: "flex", gap: 2, background: C.bg, borderRadius: 6, padding: 2 }}>

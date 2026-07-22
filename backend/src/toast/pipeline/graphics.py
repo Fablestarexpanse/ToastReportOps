@@ -274,7 +274,7 @@ def generate_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
         badge.thumbnail((46, 46), _Image.LANCZOS)
         img.paste(badge, (40, fy - 4), badge)
         tx = 40 + badge.width + 12
-    d.text((tx, fy + 8), "TOAST REPORT", font=_font(22), fill=EMBER)
+    d.text((tx, fy + 8), "TOAST REPORT OPS", font=_font(22), fill=EMBER)
     from toast.core.appsettings import brand_line
 
     brand = brand_line(conn)
@@ -538,7 +538,7 @@ def generate_state_card(conn: sqlite3.Connection) -> bytes:
         badge.thumbnail((46, 46), _Image.LANCZOS)
         img.paste(badge, (40, fy - 2), badge)
         tx = 40 + badge.width + 12
-    d.text((tx, fy + 8), "TOAST REPORT", font=_font(22), fill=EMBER)
+    d.text((tx, fy + 8), "TOAST REPORT OPS", font=_font(22), fill=EMBER)
     from toast.core.appsettings import brand_line
 
     brand = brand_line(conn)

@@ -20,7 +20,7 @@ import markdown as md
 
 from toast.core.db import utcnow
 
-SITE_TITLE = "Toast Report"
+SITE_TITLE = "Toast Report OPs"
 SITE_TAGLINE = "California wildfire updates — verified, sourced, human-reviewed"
 
 _CSS = """
@@ -77,7 +77,7 @@ and summarizes; officials are authoritative.</div>
 {nav}
 {body}
 </main>
-<footer>Toast Report · generated {utcnow()[:16].replace("T", " ")} UTC ·
+<footer>Toast Report OPs · generated {utcnow()[:16].replace("T", " ")} UTC ·
 static site, no tracking</footer>
 </body></html>"""
 

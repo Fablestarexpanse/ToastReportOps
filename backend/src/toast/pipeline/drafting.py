@@ -92,7 +92,7 @@ def _sources_section(conn: sqlite3.Connection, facts: list[sqlite3.Row]) -> str:
 
     brand = brand_line(conn)
     if brand:
-        lines += ["", f"*Follow Toast Report: {brand}*"]
+        lines += ["", f"*Follow Toast Report OPs: {brand}*"]
     return "\n".join(lines)
 
 
