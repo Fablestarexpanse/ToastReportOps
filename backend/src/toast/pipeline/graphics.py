@@ -120,6 +120,37 @@ def _draw_perimeter(
     return drew
 
 
+def _perimeter_bbox(
+    conn: sqlite3.Connection, incident_id: str
+) -> tuple[float, float, float, float] | None:
+    """(min_lat, min_lon, max_lat, max_lon) of this fire's mapped perimeter."""
+    row = conn.execute("SELECT payload FROM map_cache WHERE key = 'perimeters:ca'").fetchone()
+    if not row:
+        return None
+    lats: list[float] = []
+    lons: list[float] = []
+    try:
+        features = json.loads(row["payload"]).get("features", [])
+    except ValueError:
+        return None
+    for feature in features:
+        if (feature.get("properties") or {}).get("incident_id") != incident_id:
+            continue
+        geom = feature.get("geometry") or {}
+        rings = geom.get("coordinates") or []
+        if geom.get("type") == "Polygon":
+            rings = [rings]
+        for poly in rings:
+            for ring in poly:
+                for p in ring:
+                    if isinstance(p, list) and len(p) >= 2:
+                        lons.append(p[0])
+                        lats.append(p[1])
+    if not lats:
+        return None
+    return min(lats), min(lons), max(lats), max(lons)
+
+
 def _latest(conn: sqlite3.Connection, incident_id: str, kind: str, col: str) -> Any:
     row = conn.execute(
         f"""SELECT {col} AS v FROM facts
@@ -216,10 +247,19 @@ def generate_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
     ).fetchone()
     started = ((srow["m"] if srow else None) or inc["created_at"] or "")[:10]
     started_disp = started[5:].replace("-", "/") if started else "n/a"
+    # how long it has burned — day 1 is the day it started
+    days = None
+    if started:
+        from datetime import UTC, date, datetime
+
+        try:
+            days = (datetime.now(UTC).date() - date.fromisoformat(started)).days + 1
+        except ValueError:
+            days = None
     tiles = [
         ("ACRES", f"{int(acreage):,}" if acreage is not None else "n/a", EMBER),
         ("CONTAINED", f"{int(containment)}%" if containment is not None else "n/a", OK),
-        ("STARTED", started_disp, DIM),
+        (f"STARTED {started_disp}", f"DAY {days}" if days else started_disp, DIM),
         ("STATUS", (inc["status"] or "n/a").upper(), DIM),
     ]
     tw = (W - 80 - 3 * 14) // 4
@@ -236,17 +276,42 @@ def generate_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
     map_top = y
     map_h = H - map_top - footer_band
     if inc["lat"] is not None and inc["lon"] is not None and map_h > 120:
-        zoom = 11
-        strip = _stitch_map(inc["lat"], inc["lon"], zoom=zoom, w=W - 80, h=map_h)
+        # Fit the frame to the FIRE, not the origin point: a 69,000-acre
+        # perimeter overflowed the fixed zoom-11 crop centred on where it
+        # started. With a mapped perimeter, centre on its bounding box and
+        # pick the deepest zoom that holds it with padding; without one,
+        # back the zoom off as the acreage grows.
+        map_w = W - 80
+        c_lat, c_lon, zoom = inc["lat"], inc["lon"], 11
+        bbox = _perimeter_bbox(conn, incident_id)
+        if bbox:
+            min_lat, min_lon, max_lat, max_lon = bbox
+            c_lat, c_lon = (min_lat + max_lat) / 2, (min_lon + max_lon) / 2
+            for z in range(12, 6, -1):
+                x0, y0 = _tile_frac(max_lat, min_lon, z)
+                x1, y1 = _tile_frac(min_lat, max_lon, z)
+                if (x1 - x0) * TILE <= map_w * 0.84 and (y1 - y0) * TILE <= map_h * 0.8:
+                    zoom = z
+                    break
+            else:
+                zoom = 7
+        elif acreage:
+            zoom = 12 if acreage < 300 else 11 if acreage < 3000 else 10 if acreage < 20000 else 9
+        strip = _stitch_map(c_lat, c_lon, zoom=zoom, w=map_w, h=map_h)
         img.paste(strip, (40, map_top))
         d2 = ImageDraw.Draw(img)
         _draw_perimeter(
-            conn, d2, incident_id, inc["lat"], inc["lon"],
-            zoom=zoom, w=W - 80, h=map_h, off_y=map_top,
+            conn, d2, incident_id, c_lat, c_lon,
+            zoom=zoom, w=map_w, h=map_h, off_y=map_top,
         )
-        cxp, cyp = 40 + (W - 80) // 2, map_top + map_h // 2
-        for r, col in ((14, EVAC if evac_active else EMBER), (7, TXT)):
-            d2.ellipse([(cxp - r, cyp - r), (cxp + r, cyp + r)], outline=col, width=3)
+        # origin ring at the fire's true position in this frame
+        ocx, ocy = _tile_frac(c_lat, c_lon, zoom)
+        ofx, ofy = _tile_frac(inc["lat"], inc["lon"], zoom)
+        cxp = 40 + map_w / 2 + (ofx - ocx) * TILE
+        cyp = map_top + map_h / 2 + (ofy - ocy) * TILE
+        if 40 < cxp < W - 40 and map_top < cyp < map_top + map_h:
+            for r, col in ((14, EVAC if evac_active else EMBER), (7, TXT)):
+                d2.ellipse([(cxp - r, cyp - r), (cxp + r, cyp + r)], outline=col, width=3)
         d2.rectangle([(40, map_top), (W - 40, map_top + map_h)], outline=LINE)
         d2.text(
             (W - 46, map_top + map_h - 24), "(c) OpenStreetMap - (c) CARTO",
