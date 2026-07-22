@@ -35,6 +35,7 @@ import {
   fetchIntel,
   fetchOriginCheck,
   fetchAqi,
+  locateIncident,
   fetchHistory,
   fetchWeather,
   fetchNotes,
@@ -2087,6 +2088,25 @@ function OpsMode({
             <div style={{ fontFamily: font.disp, fontSize: 20, fontWeight: 700, flex: 1, minWidth: 0 }}>
               {sel?.canonical_name ?? "—"}
             </div>
+            {sel && (sel.lat == null || sel.lon == null) && (
+              /* a fire the news has named but nobody has pinned must still be
+                 findable — best effort, precision stated out loud */
+              <span
+                onClick={async () => {
+                  try {
+                    const loc = await locateIncident(sel.id);
+                    setFocus({ lat: loc.lat, lon: loc.lon, zoom: loc.zoom, nonce: Date.now() });
+                    toast(loc.label);
+                  } catch {
+                    toast("no location data for this fire yet — not even a county");
+                  }
+                }}
+                title="best available position: GNIS named-feature guess, or the county centre — the map flies there and the label says how precise it is"
+                style={{ fontFamily: font.mono, fontSize: 9, color: C.warn, border: `1px solid ${C.warn}66`, borderRadius: 3, padding: "2px 7px", cursor: "pointer", whiteSpace: "nowrap" }}
+              >
+                ◎ FIND ON MAP
+              </span>
+            )}
             {sel?.lat != null && sel?.lon != null && (
               <span
                 onClick={() => onZoomToOrigin(sel)}

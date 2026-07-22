@@ -179,6 +179,36 @@ def refresh_resources(request: Request, incident_id: str) -> dict:
         raise HTTPException(502, f"could not reach WFIGS: {exc}") from exc
 
 
+@router.get("/incidents/{incident_id}/locate")
+def locate_incident(request: Request, incident_id: str) -> dict:
+    """Best available position for a fire, with its precision stated:
+    origin coordinates > GNIS named-feature guess > county centre. A fire the
+    news has named must still be findable on the map — just honestly."""
+    conn = _conn(request)
+    inc = conn.execute("SELECT * FROM incidents WHERE id = ?", (incident_id,)).fetchone()
+    if inc is None:
+        raise HTTPException(404, "incident not found")
+    if inc["lat"] is not None and inc["lon"] is not None:
+        return {"lat": inc["lat"], "lon": inc["lon"], "method": "origin", "zoom": 13,
+                "label": "reported origin"}
+
+    from toast.pipeline.counties import county_centroid
+    from toast.pipeline.geocode import resolve_fire_name
+
+    county_hit = county_centroid(inc["county"])
+    match = resolve_fire_name(
+        conn, inc["canonical_name"], county=county_hit[0] if county_hit else inc["county"]
+    )
+    if match is not None:
+        return {"lat": match.lat, "lon": match.lon, "method": "named_feature", "zoom": 12,
+                "label": f"named feature: {match.name} (approximate — not a confirmed origin)"}
+    if county_hit is not None:
+        name, lat, lon = county_hit
+        return {"lat": lat, "lon": lon, "method": "county", "zoom": 9,
+                "label": f"{name} County centre — county-level only, no confirmed location"}
+    raise HTTPException(404, "no location data for this fire yet")
+
+
 @router.get("/incidents/{incident_id}/origin-check")
 def check_origin(request: Request, incident_id: str) -> dict:
     """Re-verify an incident's coordinates against CAL FIRE before the operator

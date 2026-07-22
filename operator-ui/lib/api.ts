@@ -1200,6 +1200,17 @@ export type IncidentHistory = {
 export const fetchHistory = (incidentId: string) =>
   get<IncidentHistory>(`/incidents/${incidentId}/history`);
 
+export type LocateResult = {
+  lat: number;
+  lon: number;
+  method: "origin" | "named_feature" | "county";
+  zoom: number;
+  label: string;
+};
+
+export const locateIncident = (incidentId: string) =>
+  get<LocateResult>(`/incidents/${incidentId}/locate`);
+
 export const fetchAqi = (incidentId: string) => get<IncidentAqi>(`/incidents/${incidentId}/aqi`);
 
 export const fetchFireWeather = () => get<FireWeatherSet>("/fire-weather");
