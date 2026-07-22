@@ -168,6 +168,8 @@ export default function MapPanel({
   const firewxLayerRef = useRef<L.GeoJSON | null>(null);
   const closureLayerRef = useRef<L.LayerGroup | null>(null);
   const evacZoneLayerRef = useRef<L.GeoJSON | null>(null);
+  const evacLabelLayerRef = useRef<L.LayerGroup | null>(null);
+  const evacLabelZoomHandler = useRef<(() => void) | null>(null);
   const overlayRefs = useRef<Record<string, L.TileLayer>>({});
   const [overlays, setOverlays] = useState<Record<string, boolean>>({});
   const [perimeters, setPerimeters] = useState<PerimeterCollection | null>(null);
@@ -552,7 +554,16 @@ export default function MapPanel({
       m.removeLayer(evacZoneLayerRef.current);
       evacZoneLayerRef.current = null;
     }
+    if (evacLabelLayerRef.current) {
+      m.removeLayer(evacLabelLayerRef.current);
+      evacLabelLayerRef.current = null;
+    }
+    if (evacLabelZoomHandler.current) {
+      m.off("zoomend", evacLabelZoomHandler.current);
+      evacLabelZoomHandler.current = null;
+    }
     if (!showEvacZones || !evacZones?.features?.length) return;
+    const zoneLabels = L.layerGroup();
     // status colors mirror the official public convention: order = the alarm
     // color, warning = amber, shelter-in-place = blue, anything else dim
     const colorOf = (status: string | null): string => {
@@ -590,10 +601,46 @@ export default function MapPanel({
               `<br/><i>Cal OES · official status, verbatim · verify locally before acting</i>`,
             { sticky: true, opacity: 0.97 },
           );
+          // a label ON the section itself: short zone id, status word, issued age
+          const b = (lyr as L.Polygon).getBounds?.();
+          if (b?.isValid()) {
+            const short = esc((p.ZONE_ID || "").split("-").pop() || p.ZONE_ID || "?");
+            const s = (p.STATUS || "").toLowerCase();
+            const word = s.includes("order") ? "ORDER" : s.includes("warning") ? "WARNING" : esc((p.STATUS || "").toUpperCase().slice(0, 12));
+            const col = colorOf(p.STATUS);
+            zoneLabels.addLayer(
+              L.marker(b.getCenter(), {
+                interactive: false,
+                keyboard: false,
+                icon: L.divIcon({
+                  className: "",
+                  iconSize: [0, 0],
+                  html:
+                    `<div style="transform:translate(-50%,-50%);pointer-events:none;text-align:center;` +
+                    `font-family:ui-monospace,monospace;font-size:9.5px;font-weight:700;color:${col};` +
+                    `text-shadow:0 0 3px #000,0 0 4px #000,0 1px 3px #000;white-space:nowrap;line-height:1.25">` +
+                    `${short}<br/><span style="font-size:8px;font-weight:600">${word}` +
+                    `${p.issued_at ? ` · ${age(p.issued_at)}` : ""}</span></div>`,
+                }),
+              }),
+            );
+          }
         },
       },
     ).addTo(m);
     evacZoneLayerRef.current = layer;
+    // labels only once zoomed in enough to read them — statewide they are noise
+    const syncZoneLabels = () => {
+      if (m.getZoom() >= 10) {
+        if (!m.hasLayer(zoneLabels)) zoneLabels.addTo(m);
+      } else if (m.hasLayer(zoneLabels)) {
+        m.removeLayer(zoneLabels);
+      }
+    };
+    syncZoneLabels();
+    m.on("zoomend", syncZoneLabels);
+    evacLabelLayerRef.current = zoneLabels;
+    evacLabelZoomHandler.current = syncZoneLabels;
   }, [evacZones, showEvacZones, ready]);
 
   useEffect(() => {
