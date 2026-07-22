@@ -16,13 +16,27 @@ from toast.core.ids import ulid
 from toast.core.timestamps import require_iso
 
 
+# THE canonical order for "what is the current number?". Recency alone was
+# wrong twice over: a media article with a future-stamped observed_at owned a
+# fire's acreage for hours, and Google News figures outranked CAL FIRE between
+# official polls. So: facts claiming to be from the future rank last; official
+# sources (tier 1-2) beat media/community (tier 3+); within a group, newest
+# first. Every roundup, graphic, draft and panel number flows through this.
+def value_order(alias: str = "") -> str:
+    p = f"{alias}." if alias else ""
+    return (
+        f"({p}observed_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')) ASC, "
+        f"({p}tier >= 3) ASC, {p}observed_at DESC, {p}ingested_at DESC"
+    )
+
+
 def latest_fact(conn: sqlite3.Connection, incident_id: str, kind: str) -> sqlite3.Row | None:
-    """Newest non-superseded fact of `kind` for the incident."""
+    """The current non-superseded fact of `kind` — official-first, see value_order."""
     return conn.execute(
-        """SELECT * FROM facts
+        f"""SELECT * FROM facts
            WHERE incident_id = ? AND kind = ?
              AND id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)
-           ORDER BY observed_at DESC, ingested_at DESC LIMIT 1""",
+           ORDER BY {value_order()} LIMIT 1""",
         (incident_id, kind),
     ).fetchone()
 

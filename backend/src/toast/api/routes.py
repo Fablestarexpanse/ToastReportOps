@@ -58,7 +58,8 @@ def list_incidents(request: Request, status: str | None = None, include_rx: bool
     # latest non-superseded value fact for a metric on an incident
     latest = """(SELECT {col} FROM facts v WHERE v.incident_id = i.id AND v.kind = '{kind}'
                  AND v.id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)
-                 ORDER BY v.observed_at DESC LIMIT 1)"""
+                 ORDER BY (v.observed_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')) ASC,
+                   (v.tier >= 3) ASC, v.observed_at DESC LIMIT 1)"""
     rows = (
         _conn(request)
         .execute(

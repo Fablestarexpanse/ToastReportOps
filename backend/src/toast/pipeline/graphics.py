@@ -124,7 +124,8 @@ def _latest(conn: sqlite3.Connection, incident_id: str, kind: str, col: str) -> 
         f"""SELECT {col} AS v FROM facts
             WHERE incident_id = ? AND kind = ? AND {col} IS NOT NULL
               AND id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)
-            ORDER BY observed_at DESC LIMIT 1""",
+            ORDER BY (observed_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')) ASC,
+              (tier >= 3) ASC, observed_at DESC LIMIT 1""",
         (incident_id, kind),
     ).fetchone()
     return row["v"] if row else None
@@ -323,10 +324,12 @@ def generate_state_card(conn: sqlite3.Connection) -> bytes:
         """SELECT i.id, i.canonical_name, i.lat, i.lon,
              (SELECT v.acreage FROM facts v WHERE v.incident_id = i.id AND v.kind='acreage'
                 AND v.id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)
-              ORDER BY v.observed_at DESC LIMIT 1) AS acreage,
+              ORDER BY (v.observed_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')) ASC,
+                (v.tier >= 3) ASC, v.observed_at DESC LIMIT 1) AS acreage,
              (SELECT v.evac_status FROM facts v WHERE v.incident_id = i.id AND v.kind='evac'
                 AND v.id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)
-              ORDER BY v.observed_at DESC LIMIT 1) AS evac
+              ORDER BY (v.observed_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')) ASC,
+                (v.tier >= 3) ASC, v.observed_at DESC LIMIT 1) AS evac
            FROM incidents i
            WHERE i.status = 'active' AND COALESCE(i.incident_type, 'WF') != 'RX'"""
     ).fetchall()

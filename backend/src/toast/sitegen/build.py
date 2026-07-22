@@ -154,11 +154,13 @@ def build_site(conn: sqlite3.Connection, out_dir: Path) -> dict[str, int]:
         """SELECT i.canonical_name, i.status, i.county,
                   (SELECT acreage FROM facts v WHERE v.incident_id = i.id AND v.kind='acreage'
                    AND v.id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)
-                   ORDER BY v.observed_at DESC LIMIT 1) AS acreage,
+                   ORDER BY (v.observed_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')) ASC,
+                     (v.tier >= 3) ASC, v.observed_at DESC LIMIT 1) AS acreage,
                   (SELECT containment_pct FROM facts v WHERE v.incident_id = i.id
                    AND v.kind='containment'
                    AND v.id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)
-                   ORDER BY v.observed_at DESC LIMIT 1) AS containment_pct
+                   ORDER BY (v.observed_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')) ASC,
+                     (v.tier >= 3) ASC, v.observed_at DESC LIMIT 1) AS containment_pct
            FROM incidents i
            WHERE i.status IN ('active','contained')
              AND COALESCE(i.incident_type,'WF') != 'RX'

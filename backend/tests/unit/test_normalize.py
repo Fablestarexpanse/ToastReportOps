@@ -212,3 +212,43 @@ class TestWfigsCreationGate:
                      "lat": 35.3, "lon": -118.7})))
         # acreage REVISED DOWN below the gate — still an update, never dropped
         assert facts
+
+
+class TestOfficialFirstValues:
+    """The current number comes from the most trusted tier, not the loudest
+    timestamp — and a fact claiming to be from the future never wins."""
+
+    def _fact(self, db, *, acreage, tier, observed, fid):
+        db.execute(
+            """INSERT INTO facts (id, incident_id, envelope_id, source_id, tier,
+                 kind, content, acreage, confidence, observed_at, ingested_at)
+               VALUES (?, 'i1', 'e1', 's1', ?, 'acreage', ?, ?, 0.9, ?, ?)""",
+            (fid, tier, f"{acreage} acres", acreage, observed, observed),
+        )
+
+    def test_official_beats_newer_media_number(self, seeded):
+        from toast.pipeline.ledger import latest_fact
+
+        self._fact(seeded, acreage=5500, tier=1, observed="2026-07-19T10:00:00.000Z", fid="fa")
+        self._fact(seeded, acreage=9000, tier=3, observed="2026-07-19T12:00:00.000Z", fid="fb")
+        assert latest_fact(seeded, "i1", "acreage")["acreage"] == 5500
+
+    def test_newest_official_wins_within_the_official_group(self, seeded):
+        from toast.pipeline.ledger import latest_fact
+
+        self._fact(seeded, acreage=5500, tier=1, observed="2026-07-19T10:00:00.000Z", fid="fa")
+        self._fact(seeded, acreage=6200, tier=2, observed="2026-07-19T12:00:00.000Z", fid="fb")
+        assert latest_fact(seeded, "i1", "acreage")["acreage"] == 6200
+
+    def test_future_stamped_fact_ranks_last(self, seeded):
+        from toast.pipeline.ledger import latest_fact
+
+        self._fact(seeded, acreage=950, tier=3, observed="2099-01-01T00:00:00.000Z", fid="fa")
+        self._fact(seeded, acreage=700, tier=3, observed="2026-07-19T12:00:00.000Z", fid="fb")
+        assert latest_fact(seeded, "i1", "acreage")["acreage"] == 700
+
+    def test_media_number_stands_when_it_is_all_there_is(self, seeded):
+        from toast.pipeline.ledger import latest_fact
+
+        self._fact(seeded, acreage=300, tier=4, observed="2026-07-19T12:00:00.000Z", fid="fa")
+        assert latest_fact(seeded, "i1", "acreage")["acreage"] == 300

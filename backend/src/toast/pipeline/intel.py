@@ -46,7 +46,8 @@ def _latest(
         f"""SELECT f.*, s.name AS source_name FROM facts f
             JOIN sources s ON s.id = f.source_id
             WHERE f.incident_id = ? AND f.kind = ? AND f.{_NOT_SUPERSEDED}{clause}
-            ORDER BY f.observed_at DESC LIMIT 1""",
+            ORDER BY (f.observed_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')) ASC,
+              (f.tier >= 3) ASC, f.observed_at DESC LIMIT 1""",
         (incident_id, kind),
     ).fetchone()
 

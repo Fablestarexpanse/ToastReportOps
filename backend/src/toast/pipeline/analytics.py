@@ -34,7 +34,8 @@ def overview(conn: sqlite3.Connection, *, days: int = 14) -> dict[str, Any]:
                          WHERE v.incident_id = i.id AND v.kind = 'acreage'
                            AND v.id NOT IN (SELECT supersedes FROM facts
                                             WHERE supersedes IS NOT NULL)
-                         ORDER BY v.observed_at DESC LIMIT 1) AS a
+                         ORDER BY (v.observed_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')) ASC,
+                           (v.tier >= 3) ASC, v.observed_at DESC LIMIT 1) AS a
                  FROM incidents i WHERE i.status = 'active')""",
         ),
     }

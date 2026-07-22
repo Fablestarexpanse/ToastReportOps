@@ -161,7 +161,8 @@ def enrich_incident(conn: sqlite3.Connection, incident_id: str) -> dict[str, Any
                WHERE incident_id = ? AND kind = 'resource' AND source_id = ?
                  AND json_extract(structured, '$.metric') = ?
                  AND id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)
-               ORDER BY observed_at DESC LIMIT 1""",
+               ORDER BY (observed_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')) ASC,
+                 (tier >= 3) ASC, observed_at DESC LIMIT 1""",
             (incident_id, source_id, structured["metric"]),
         ).fetchone()
         fact_id = write_fact(

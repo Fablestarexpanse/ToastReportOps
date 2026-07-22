@@ -99,7 +99,8 @@ def gather_evidence(
         """SELECT containment_pct FROM facts
            WHERE incident_id = ? AND kind = 'containment' AND containment_pct IS NOT NULL
              AND id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)
-           ORDER BY observed_at DESC LIMIT 1""",
+           ORDER BY (observed_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')) ASC,
+             (tier >= 3) ASC, observed_at DESC LIMIT 1""",
         (inc["id"],),
     ).fetchone()
 

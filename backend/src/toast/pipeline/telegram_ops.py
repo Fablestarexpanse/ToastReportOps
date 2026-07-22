@@ -111,7 +111,8 @@ def notify_sweep(
                  (SELECT v.evac_status FROM facts v WHERE v.incident_id = i.id
                     AND v.kind = 'evac'
                     AND v.id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)
-                  ORDER BY v.observed_at DESC LIMIT 1) AS evac
+                  ORDER BY (v.observed_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')) ASC,
+                    (v.tier >= 3) ASC, v.observed_at DESC LIMIT 1) AS evac
                FROM incidents i WHERE i.status = 'active'"""
         ):
             cur = r["evac"] if r["evac"] in (*ACTIVE_EVAC, "lifted") else "none"
