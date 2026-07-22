@@ -1100,6 +1100,18 @@ export type WindSet = { winds: WindPoint[]; count: number; note: string };
 
 export const fetchWind = () => get<WindSet>("/wind");
 
+// the coarse ambient field (Open-Meteo grid) behind the per-fire NWS arrows
+export type WindFieldArrow = { lat: number; lon: number; deg: number; mph: number; gust: number | null };
+export type WindField = {
+  arrows: WindFieldArrow[];
+  count: number;
+  fetched_at?: string;
+  source?: string;
+  unavailable?: boolean;
+};
+
+export const fetchWindField = () => get<WindField>("/wind-field");
+
 export type Camera = {
   id: string;
   name: string;

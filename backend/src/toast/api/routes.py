@@ -667,6 +667,18 @@ def get_wind(request: Request) -> dict:
     }
 
 
+@router.get("/wind-field")
+def get_wind_field_route(request: Request) -> dict:
+    """A coarse ambient wind field over California (Open-Meteo) — the dim grid
+    of arrows behind the per-fire NWS ones, showing regional flow. Refreshes
+    itself on its own 30-min cache; a weather outage degrades to the last
+    field, never a broken map."""
+    from toast.pipeline.windfield import get_wind_field
+
+    refresh = request.query_params.get("refresh") == "1"
+    return get_wind_field(_conn(request), refresh=refresh)
+
+
 @router.get("/aircraft/{hex_id}/photo")
 def aircraft_photo(request: Request, hex_id: str) -> dict:
     """A photo of one aircraft by its ICAO hex — its assigned ID. Found on

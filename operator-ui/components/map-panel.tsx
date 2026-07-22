@@ -15,6 +15,7 @@ import {
   HotspotSet,
   Incident,
   PerimeterCollection,
+  WindField,
   WindSet,
   fetchAircraft,
   fetchCameras,
@@ -24,6 +25,7 @@ import {
   fetchHotspots,
   fetchPerimeters,
   fetchWind,
+  fetchWindField,
   hasActiveEvac,
   saveSettings,
 } from "@/lib/api";
@@ -220,6 +222,7 @@ export default function MapPanel({
   const hotspotLayer = useRef<L.LayerGroup | null>(null);
   const aircraftLayerRef = useRef<L.LayerGroup | null>(null);
   const windLayerRef = useRef<L.LayerGroup | null>(null);
+  const windFieldLayerRef = useRef<L.LayerGroup | null>(null);
   const cameraLayerRef = useRef<L.LayerGroup | null>(null);
   const firewxLayerRef = useRef<L.GeoJSON | null>(null);
   const closureLayerRef = useRef<L.LayerGroup | null>(null);
@@ -242,6 +245,7 @@ export default function MapPanel({
   const [showAircraft, setShowAircraft] = useState(true);
   const [wind, setWind] = useState<WindSet | null>(null);
   const [showWind, setShowWind] = useState(true);
+  const [windField, setWindField] = useState<WindField | null>(null);
   const [cameras, setCameras] = useState<CameraSet | null>(null);
   const [showCameras, setShowCameras] = useState(true);
   const [firewx, setFirewx] = useState<FireWeatherSet | null>(null);
@@ -870,13 +874,18 @@ export default function MapPanel({
     closureLayerRef.current = group;
   }, [closures, showClosures, ready]);
 
-  // wind at each fire: refreshed on the server's own 20-min cadence
+  // wind at each fire (authoritative NWS) + the ambient field (Open-Meteo grid)
+  // — both refreshed on the servers' own caches
   useEffect(() => {
     let live = true;
-    const load = () =>
+    const load = () => {
       fetchWind()
         .then((w) => live && setWind(w))
         .catch(() => undefined);
+      fetchWindField()
+        .then((f) => live && setWindField(f))
+        .catch(() => undefined);
+    };
     load();
     const t = setInterval(load, 5 * 60 * 1000);
     return () => {
@@ -884,6 +893,37 @@ export default function MapPanel({
       clearInterval(t);
     };
   }, []);
+
+  // the ambient wind field: a dim grid of small arrows behind the per-fire
+  // ones, so regional flow reads across the whole map. Same WIND toggle owns
+  // both; non-interactive so it never intercepts a fire pin's hover/click.
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+    if (windFieldLayerRef.current) {
+      m.removeLayer(windFieldLayerRef.current);
+      windFieldLayerRef.current = null;
+    }
+    if (!showWind || !windField?.arrows?.length) return;
+    const group = L.layerGroup();
+    for (const a of windField.arrows) {
+      const toward = (a.deg + 180) % 360; // deg is FROM; arrow points downwind
+      const strong = a.mph >= 20;
+      const color = strong ? C.emberHot : a.mph >= 10 ? C.warn : C.blue;
+      const icon = L.divIcon({
+        className: "",
+        html:
+          `<div style="transform:rotate(${toward}deg);color:${color};opacity:0.5;` +
+          `pointer-events:none;font-size:${Math.min(18, 10 + a.mph * 0.28)}px;` +
+          `line-height:1;text-shadow:0 0 2px #000">↑</div>`,
+        iconSize: [16, 16],
+        iconAnchor: [8, 8],
+      });
+      L.marker([a.lat, a.lon], { icon, interactive: false }).addTo(group);
+    }
+    group.addTo(m);
+    windFieldLayerRef.current = group;
+  }, [windField, showWind, ready]);
 
   useEffect(() => {
     const m = map.current;
@@ -1240,10 +1280,10 @@ export default function MapPanel({
             </span>
           );
         })}
-        {!!wind?.count && (
+        {(!!wind?.count || !!windField?.count) && (
           <span
             onClick={() => setShowWind((v) => !v)}
-            title="surface wind at each fire (NWS). Arrow points where the fire is being pushed."
+            title="bright arrows = official NWS wind at each fire (points where the fire is pushed); dim grid = ambient regional flow (Open-Meteo model, context only)"
             style={{
               pointerEvents: "auto",
               cursor: "pointer",
@@ -1253,7 +1293,7 @@ export default function MapPanel({
               padding: "1px 5px",
             }}
           >
-            {showWind ? "◼" : "◻"} WIND ({wind.count})
+            {showWind ? "◼" : "◻"} WIND ({wind?.count ?? 0})
           </span>
         )}
         {!!evacZones?.count && (
