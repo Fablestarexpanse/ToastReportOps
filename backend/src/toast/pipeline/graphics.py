@@ -16,6 +16,7 @@ generation — a card screenshotted three days later says when it was true.
 from __future__ import annotations
 
 import io
+import json
 import math
 import sqlite3
 from pathlib import Path
@@ -341,6 +342,50 @@ def generate_state_card(conn: sqlite3.Connection) -> bytes:
            AND unixepoch('now') - unixepoch(created_at) < 86400"""
     ).fetchone()[0]
 
+    # ---- the glance panel: what a reporter checks after the headline numbers
+    # 24h growth: current acres minus each fire's newest official-first figure
+    # from before the window; a fire with no prior figure is all new growth
+    growth24 = 0
+    for f in fires:
+        if f["acreage"] is None:
+            continue
+        base = conn.execute(
+            """SELECT acreage FROM facts
+               WHERE incident_id = ? AND kind = 'acreage' AND acreage IS NOT NULL
+                 AND observed_at <= strftime('%Y-%m-%dT%H:%M:%fZ','now','-24 hours')
+               ORDER BY (tier >= 3) ASC, observed_at DESC LIMIT 1""",
+            (f["id"],),
+        ).fetchone()
+        growth24 += int(f["acreage"]) - int(base["acreage"] if base else 0)
+    # containment, weighted by acres — "how contained is the state's fire load"
+    cw = [
+        (int(f["acreage"]), c["containment_pct"])
+        for f in fires
+        if f["acreage"]
+        and (c := conn.execute(
+            """SELECT containment_pct FROM facts
+               WHERE incident_id = ? AND kind='containment' AND containment_pct IS NOT NULL
+                 AND id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)
+               ORDER BY (tier >= 3) ASC, observed_at DESC LIMIT 1""",
+            (f["id"],),
+        ).fetchone())
+    ]
+    contained_pct = round(sum(a * p for a, p in cw) / sum(a for a, _ in cw)) if cw else None
+    aircraft_up = conn.execute(
+        """SELECT COUNT(DISTINCT hex) FROM aircraft_positions
+           WHERE fire_ops = 1 AND unixepoch('now') - unixepoch(seen_at) < 3600"""
+    ).fetchone()[0]
+    redflag = 0
+    fw = conn.execute("SELECT payload FROM map_cache WHERE key='firewx:ca'").fetchone()
+    if fw:
+        try:
+            redflag = len(json.loads(fw["payload"]).get("features") or [])
+        except ValueError:
+            pass
+    top5 = sorted(
+        (f for f in fires if f["acreage"]), key=lambda f: f["acreage"], reverse=True
+    )[:5]
+
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
     y = 30
@@ -381,27 +426,38 @@ def generate_state_card(conn: sqlite3.Connection) -> bytes:
         zoom = 6 if lat_span <= 6.5 else 5
     else:
         (lat_c, lon_c), zoom = CA_CENTER, 6
-    strip = _stitch_map(lat_c, lon_c, zoom=zoom, w=W - 80, h=map_h)
+    # the map gives up its right edge to a glance panel: biggest fires named,
+    # growth, containment, air response and red-flag risk in one look
+    panel_w = 318
+    map_w = W - 80 - panel_w - 12
+    map_r = 40 + map_w
+    strip = _stitch_map(lat_c, lon_c, zoom=zoom, w=map_w, h=map_h)
     img.paste(strip, (40, map_top))
     d2 = ImageDraw.Draw(img)
     cx, cy = _tile_frac(lat_c, lon_c, zoom)
-    px0, py0 = cx * TILE - (W - 80) / 2, cy * TILE - map_h / 2
+    px0, py0 = cx * TILE - map_w / 2, cy * TILE - map_h / 2
     import math as _math
 
+    top3 = {f["id"] for f in top5[:3]}
     for f in fires:
         if f["lat"] is None or f["lon"] is None:
             continue
         fx, fyy = _tile_frac(f["lat"], f["lon"], zoom)
         x, ypix = fx * TILE - px0 + 40, fyy * TILE - py0 + map_top
-        if not (40 < x < W - 40 and map_top < ypix < map_top + map_h):
+        if not (40 < x < map_r and map_top < ypix < map_top + map_h):
             continue
         acres = f["acreage"] or 0
         r = max(4, min(16, 3 + _math.log10(acres + 1) * 2.6))
         col = EVAC if f["evac"] in ("order", "warning", "shelter_in_place") else EMBER
         d2.ellipse([(x - r, ypix - r), (x + r, ypix + r)], outline=col, width=3)
-    d2.rectangle([(40, map_top), (W - 40, map_top + map_h)], outline=LINE)
+        if f["id"] in top3:
+            name = (f["canonical_name"] or "").replace(" Fire", "").upper()[:14]
+            lx = x + r + 5 if x < map_r - 110 else x - r - 5
+            d2.text((lx, ypix - 8), name, font=_font(15), fill=TXT,
+                    anchor="la" if x < map_r - 110 else "ra")
+    d2.rectangle([(40, map_top), (map_r, map_top + map_h)], outline=LINE)
     d2.text(
-        (W - 46, map_top + map_h - 24), "(c) OpenStreetMap - (c) CARTO",
+        (map_r - 6, map_top + map_h - 24), "(c) OpenStreetMap - (c) CARTO",
         font=_font(14), fill=DIM, anchor="ra",
     )
     d2.text(
@@ -409,6 +465,31 @@ def generate_state_card(conn: sqlite3.Connection) -> bytes:
         "ring size = mapped acres - pink = evacuation in effect",
         font=_font(14), fill=DIM,
     )
+
+    # ---- right glance panel
+    gx = map_r + 12
+    d2.rectangle([(gx, map_top), (W - 40, map_top + map_h)], fill=PANEL, outline=LINE)
+    py = map_top + 12
+    d2.text((gx + 16, py), "LARGEST FIRES", font=_font(16), fill=DIM)
+    py += 26
+    for f in top5:
+        nm = (f["canonical_name"] or "?")[:18]
+        col = EVAC if f["evac"] in ("order", "warning", "shelter_in_place") else TXT
+        d2.text((gx + 16, py), nm, font=_font(19), fill=col)
+        d2.text((W - 56, py), f"{int(f['acreage']):,} ac", font=_font(19), fill=EMBER, anchor="ra")
+        py += 28
+    py += 10
+    stat_rows = [
+        ("24H CHANGE", f"{growth24:+,} ac", EMBER if growth24 > 0 else OK),
+        ("CONTAINMENT (ACRE-WTD)", f"{contained_pct}%" if contained_pct is not None else "n/a",
+         OK if (contained_pct or 0) >= 50 else EMBER),
+        ("FIRE AIRCRAFT UP (1H)", str(aircraft_up), TXT),
+        ("RED FLAG ZONES", str(redflag), EVAC if redflag else DIM),
+    ]
+    for label, value, col in stat_rows:
+        d2.text((gx + 16, py), label, font=_font(15), fill=DIM)
+        d2.text((W - 56, py), value, font=_font(21), fill=col, anchor="ra")
+        py += 31
 
     fy = map_top + map_h + 12
     badge_path = Path(__file__).resolve().parents[1] / "assets" / "ops-badge.png"
