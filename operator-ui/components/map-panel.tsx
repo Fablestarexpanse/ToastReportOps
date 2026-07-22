@@ -490,22 +490,43 @@ export default function MapPanel({
     }
     if (!showCameras || !cameras?.cameras?.length) return;
     const group = L.layerGroup();
+    // great-circle destination point — for drawing each camera's view cone
+    const dest = (lat: number, lon: number, brgDeg: number, km: number): [number, number] => {
+      const R = 6371, br = (brgDeg * Math.PI) / 180, la1 = (lat * Math.PI) / 180, lo1 = (lon * Math.PI) / 180, dR = km / R;
+      const la2 = Math.asin(Math.sin(la1) * Math.cos(dR) + Math.cos(la1) * Math.sin(dR) * Math.cos(br));
+      const lo2 = lo1 + Math.atan2(Math.sin(br) * Math.sin(dR) * Math.cos(la1), Math.cos(dR) - Math.sin(la1) * Math.sin(la2));
+      return [(la2 * 180) / Math.PI, (lo2 * 180) / Math.PI];
+    };
     for (const cam of cameras.cameras) {
+      // the view cone: where this lens is looking RIGHT NOW (az drifts as
+      // operators pan PTZ cameras — the index refreshes hourly)
+      if (cam.az != null) {
+        const fov = cam.fov != null && cam.fov > 0 && cam.fov <= 180 ? cam.fov : 60;
+        const ring: [number, number][] = [[cam.lat, cam.lon]];
+        for (let a = cam.az - fov / 2; a <= cam.az + fov / 2; a += 5) {
+          ring.push(dest(cam.lat, cam.lon, a, 4));
+        }
+        L.polygon(ring, {
+          color: "#45d6d0", weight: 1, opacity: 0.5, dashArray: "3 4",
+          fillColor: "#45d6d0", fillOpacity: 0.08, interactive: false,
+        }).addTo(group);
+      }
       const icon = L.divIcon({
         className: "",
         // ◎ = a lens; cyan is unused by any other layer so cameras read as
-        // their own thing at a glance
-        html: `<div style="color:#45d6d0;font-size:13px;line-height:1;text-shadow:0 0 3px #000;font-weight:700">◎</div>`,
-        iconSize: [16, 16],
-        iconAnchor: [8, 8],
+        // their own thing at a glance. The box is the CLICK TARGET — keep it
+        // comfortably larger than the glyph.
+        html: `<div style="color:#45d6d0;font-size:20px;line-height:28px;text-align:center;text-shadow:0 0 4px #000,0 0 6px #000;font-weight:700;cursor:pointer">◎</div>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
       });
       L.marker([cam.lat, cam.lon], { icon, interactive: true })
         .bindTooltip(
           `<b>${cam.name}</b><br/>${cam.distance_km.toFixed(1)} km from the fire` +
-            (cam.az != null ? ` · pointing ${compassOf(cam.az)}` : "") +
+            (cam.az != null ? ` · pointing ${compassOf(cam.az)} (${Math.round(cam.az)}°)` : "") +
             (cam.elev_m != null ? `<br/>elev ${Math.round(cam.elev_m * 3.281).toLocaleString()} ft` : "") +
             `<br/><i>click to view — ALERTCalifornia</i>`,
-          { direction: "top", opacity: 0.95, offset: [0, -6] },
+          { direction: "top", opacity: 0.95, offset: [0, -10] },
         )
         .on("click", () => {
           setFrameErr(false);
