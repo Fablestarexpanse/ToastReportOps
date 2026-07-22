@@ -52,7 +52,8 @@ def fetch_zones() -> dict[str, Any]:
         {
             "where": "1=1",  # the layer carries only elevated zones
             "outFields": "COUNTY,CITY,ZONE_ID,ZONE_NAME,STATUS,EVENT_TYPE,"
-            "CRITICAL_INFO,PUBLIC_INFO,EDIT_DATE,STATEWIDE_LAST_UPDATED",
+            "CRITICAL_INFO,PUBLIC_INFO,NOTES,EDIT_DATE,STATEWIDE_LAST_UPDATED,"
+            "CreationDate,EditDate",
             "returnGeometry": "true",
             "outSR": 4326,
             "f": "geojson",
@@ -117,7 +118,13 @@ def get_evac_zones(conn: sqlite3.Connection, *, refresh: bool = False) -> dict[s
     features = data.get("features", [])
     for f in features:
         p = f.setdefault("properties", {})
-        p["EDIT_DATE"] = _epoch_iso(p.get("EDIT_DATE")) or p.get("EDIT_DATE")
+        for key in ("EDIT_DATE", "STATEWIDE_LAST_UPDATED", "CreationDate", "EditDate"):
+            p[key] = _epoch_iso(p.get(key)) or p.get(key)
+        # CreationDate is when this elevated zone entered the state layer — the
+        # closest thing the feed has to "when it was issued". EditDate is the
+        # county's last touch. Both official, both shown as-is.
+        p["issued_at"] = p.get("CreationDate")
+        p["last_updated_at"] = p.get("EditDate") or p.get("EDIT_DATE")
     matched = _match_incidents(conn, features)
     statuses: dict[str, int] = {}
     for f in features:

@@ -1255,6 +1255,9 @@ export type EvacZoneFeature = {
     CRITICAL_INFO: string | null;
     PUBLIC_INFO: string | null;
     EDIT_DATE: string | null;
+    NOTES?: string | null;
+    issued_at?: string | null;
+    last_updated_at?: string | null;
     incident_id: string | null;
     incident_name?: string;
     distance_km?: number;

@@ -29,7 +29,7 @@ import {
 } from "@/lib/api";
 import { CA_OUTLINE } from "@/lib/california";
 import { C, Z, font } from "@/lib/theme";
-import { age } from "@/lib/time";
+import { age, fmtStamp } from "@/lib/time";
 
 /* Real slippy map (Leaflet, bundled locally — no CDN, no API key).
 
@@ -574,12 +574,19 @@ export default function MapPanel({
           const esc = (s: string | null | undefined) =>
             (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
           // VERBATIM: status and official text exactly as the county issued them
+          const zoneLabel = [p.ZONE_ID, p.ZONE_NAME && p.ZONE_NAME !== p.ZONE_ID ? p.ZONE_NAME : null]
+            .filter(Boolean).map((s) => esc(s)).join(" · ");
           lyr.bindTooltip(
-            `<b style="color:#ff4d8f">${esc(p.STATUS)?.toUpperCase()}</b> — zone ${esc(p.ZONE_ID)}` +
+            `<b style="color:#ff4d8f">${esc(p.STATUS)?.toUpperCase()}</b> — zone ${zoneLabel || "?"}` +
               `${p.COUNTY ? `<br/>${esc(p.COUNTY)} County` : ""}` +
               `${p.incident_name ? ` · nearest fire: ${esc(p.incident_name)}` : ""}` +
+              `${p.issued_at ? `<br/>issued ${fmtStamp(p.issued_at)} (${age(p.issued_at)} ago)` : ""}` +
+              `${p.last_updated_at ? ` · updated ${age(p.last_updated_at)} ago` : ""}` +
+              `<br/><b style="color:#ff4d8f">STILL IN EFFECT</b> as of ${age(evacZones.fetched_at)} ago` +
+              ` <i>(zones leave this layer when lifted)</i>` +
               `${p.CRITICAL_INFO ? `<br/><b>${esc(p.CRITICAL_INFO)}</b>` : ""}` +
               `${p.PUBLIC_INFO ? `<br/>${esc(p.PUBLIC_INFO).slice(0, 300)}` : ""}` +
+              `${p.NOTES ? `<br/>${esc(p.NOTES).slice(0, 200)}` : ""}` +
               `<br/><i>Cal OES · official status, verbatim · verify locally before acting</i>`,
             { sticky: true, opacity: 0.97 },
           );
