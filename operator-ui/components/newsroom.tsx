@@ -51,7 +51,7 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [selId, setSelId] = useState<string | null>(null);
   const [detail, setDetail] = useState<DraftDetail | null>(null);
-  const [genIncident, setGenIncident] = useState<string>("");
+  const [genIncident, setGenIncident] = useState<string | null>(null);
   const [genWindow, setGenWindow] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [socialBusy, setSocialBusy] = useState(false);
@@ -74,16 +74,21 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
       return;
     }
     // defensively dedupe by id — a transient duplicate from overlapping
-    // fetches must never produce duplicate React keys
+    // fetches must never produce duplicate React keys. The incidents list
+    // learned this first; the drafts list re-taught it (operator hit the
+    // duplicate-key crash on a just-restored draft).
     const seen = new Set<string>();
     const unique = inc.filter((i) => !seen.has(i.id) && seen.add(i.id) !== undefined);
-    setDrafts(d.drafts);
+    const seenD = new Set<string>();
+    setDrafts(d.drafts.filter((x) => !seenD.has(x.id) && seenD.add(x.id) !== undefined));
     setResearch(d.research_jobs ?? []);
     setIncidents(unique);
     // functional update: no dependency on genIncident, so refresh keeps a
-    // stable identity and the mount effect runs exactly once (the previous
-    // genIncident dep re-created refresh mid-flight → overlapping fetches)
-    setGenIncident((prev) => prev || (unique.length ? unique[0].id : prev));
+    // stable identity and the mount effect runs exactly once. null means
+    // "not chosen yet" and defaults to the first fire; "" is the operator's
+    // DELIBERATE "All fires" choice and must never be clobbered by a poll —
+    // it was, every 8 seconds, until "" and null were told apart.
+    setGenIncident((prev) => (prev === null && unique.length ? unique[0].id : prev));
   }, []);
 
   useEffect(() => {
@@ -97,7 +102,13 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
   useEffect(() => {
     if (queueFilter !== "archived") return;
     let live = true;
-    fetchDrafts(true).then((r) => live && setArchivedDrafts(r.drafts)).catch(() => undefined);
+    fetchDrafts(true)
+      .then((r) => {
+        if (!live) return;
+        const seen = new Set<string>();
+        setArchivedDrafts(r.drafts.filter((x) => !seen.has(x.id) && seen.add(x.id) !== undefined));
+      })
+      .catch(() => undefined);
     return () => {
       live = false;
     };
@@ -129,7 +140,10 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
     }
   };
 
+  const renderedIds = new Set<string>();
   const visibleDrafts = (queueFilter === "archived" ? archivedDrafts : drafts).filter((dr) => {
+    if (renderedIds.has(dr.id)) return false; // belt AND suspenders at the render boundary
+    renderedIds.add(dr.id);
     // the incident selector doubles as the queue's fire filter — the queue
     // follows the fire you are working; "All fires" shows everything
     if (genIncident && dr.incident_id !== genIncident) return false;
@@ -343,7 +357,7 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
             GENERATE UPDATE
           </div>
           <select
-            value={genIncident}
+            value={genIncident ?? ""}
             onChange={(e) => setGenIncident(e.target.value)}
             style={{ width: "100%", background: C.bg, border: `1px solid ${C.line}`, borderRadius: 5, color: C.txt, fontFamily: font.mono, fontSize: 10.5, padding: "6px 8px", marginBottom: 6 }}
           >
