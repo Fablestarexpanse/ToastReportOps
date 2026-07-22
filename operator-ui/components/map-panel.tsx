@@ -168,6 +168,7 @@ export default function MapPanel({
   const firewxLayerRef = useRef<L.GeoJSON | null>(null);
   const closureLayerRef = useRef<L.LayerGroup | null>(null);
   const evacZoneLayerRef = useRef<L.GeoJSON | null>(null);
+  const pinRenderer = useRef<L.SVG | null>(null);
   const evacLabelLayerRef = useRef<L.LayerGroup | null>(null);
   const evacLabelZoomHandler = useRef<(() => void) | null>(null);
   const overlayRefs = useRef<Record<string, L.TileLayer>>({});
@@ -243,6 +244,12 @@ export default function MapPanel({
     m.createPane("firepins");
     const pinPane = m.getPane("firepins");
     if (pinPane) pinPane.style.zIndex = "650";
+    // The pins MUST render as SVG, not canvas: with preferCanvas, a canvas in
+    // this pane is a full-viewport sheet above the marker pane that swallows
+    // every hover and click on the layers below — cameras, wind arrows, evac
+    // zones all went dead. SVG only captures events on the painted circles;
+    // everywhere else the mouse falls through to whatever is underneath.
+    pinRenderer.current = L.svg({ pane: "firepins" });
     markers.current = L.layerGroup().addTo(m);
     map.current = m;
     setReady(true);
@@ -807,6 +814,7 @@ export default function MapPanel({
           className: "tr-pulse",
           interactive: false,
           pane: "firepins",
+          renderer: pinRenderer.current ?? undefined,
         }).addTo(group);
       }
       const dot = L.circleMarker([inc.lat, inc.lon], {
@@ -816,6 +824,7 @@ export default function MapPanel({
         fillColor: color,
         fillOpacity: 0.8,
         pane: "firepins",
+        renderer: pinRenderer.current ?? undefined,
       })
         .addTo(group)
         .on("click", () => onSelect(inc.id));
