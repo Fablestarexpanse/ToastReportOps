@@ -197,6 +197,9 @@ export type CitedFact = {
   tier: number;
   observed_at: string;
   source_name: string;
+  /** set when a newer fact replaced this one after the draft was written */
+  superseded_by?: string | null;
+  superseded_content?: string | null;
 };
 
 export type Publication = {

@@ -566,6 +566,34 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
               </span>
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "14px 18px" }}>
+              {(() => {
+                const stale = detail?.cited_facts.filter((f) => f.superseded_by) ?? [];
+                if (!stale.length) return null;
+                const published = d.status === "published";
+                return (
+                  /* the doctrine guard: a draft must not be approved on numbers
+                     the ledger has already replaced */
+                  <div style={{ border: `1px solid ${C.evac}`, background: C.evac + "14", borderRadius: 7, padding: "9px 12px", marginBottom: 12 }}>
+                    <div style={{ fontFamily: font.disp, fontSize: 12, fontWeight: 700, letterSpacing: 1, color: C.evac }}>
+                      ⚠ {stale.length} CITED {stale.length === 1 ? "FACT HAS" : "FACTS HAVE"} BEEN SUPERSEDED
+                      {published ? " SINCE PUBLICATION" : " — THE NUMBERS MAY BE STALE"}
+                    </div>
+                    {stale.slice(0, 4).map((f) => (
+                      <div key={f.id} style={{ fontFamily: font.mono, fontSize: 8.5, color: C.dim, marginTop: 4 }}>
+                        <span style={{ textDecoration: "line-through", color: C.faint }}>{f.content.slice(0, 70)}</span>
+                        {f.superseded_content && (
+                          <span style={{ color: C.txt }}> → {f.superseded_content.slice(0, 70)}</span>
+                        )}
+                      </div>
+                    ))}
+                    <div style={{ fontFamily: font.mono, fontSize: 8.5, color: C.evac, marginTop: 5 }}>
+                      {published
+                        ? "consider a follow-up update with the current figures"
+                        : "generate a fresh draft from the ledger before approving"}
+                    </div>
+                  </div>
+                );
+              })()}
               {detail?.draft.graphic_sha && (
                 /* the attached card as the article's hero — how readers will
                    actually see the post, not a thumbnail in a side rail */
@@ -843,9 +871,15 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
             <div key={f.id} style={{ padding: "7px 11px", borderBottom: `1px solid ${C.line}44`, display: "flex", gap: 7 }}>
               <div style={{ width: 3, borderRadius: 2, background: TIER[f.tier], flexShrink: 0 }} />
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 11 }}>{f.content}</div>
+                <div style={{ fontSize: 11, textDecoration: f.superseded_by ? "line-through" : undefined, color: f.superseded_by ? C.faint : undefined }}>
+                  {f.content}
+                </div>
+                {f.superseded_by && f.superseded_content && (
+                  <div style={{ fontSize: 10.5, color: C.warn, marginTop: 1 }}>→ {f.superseded_content}</div>
+                )}
                 <div style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint, marginTop: 2 }}>
                   {f.kind} · T{f.tier} · {f.source_name}
+                  {f.superseded_by && <span style={{ color: C.evac }}> · SUPERSEDED</span>}
                 </div>
               </div>
             </div>

@@ -1345,7 +1345,13 @@ def get_draft(request: Request, draft_id: str) -> dict:
         cited = [
             dict(r)
             for r in conn.execute(
-                f"""SELECT f.id, f.content, f.kind, f.tier, f.observed_at, s.name AS source_name
+                f"""SELECT f.id, f.content, f.kind, f.tier, f.observed_at, s.name AS source_name,
+                    -- staleness: a cited fact overtaken since the draft was
+                    -- written is exactly what must not be approved unseen
+                    (SELECT sup.id FROM facts sup WHERE sup.supersedes = f.id)
+                        AS superseded_by,
+                    (SELECT sup.content FROM facts sup WHERE sup.supersedes = f.id)
+                        AS superseded_content
                     FROM facts f JOIN sources s ON s.id = f.source_id
                     WHERE f.id IN ({placeholders})
                     -- newest observation first: without this, IN() returns
