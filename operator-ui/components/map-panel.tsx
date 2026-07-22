@@ -617,9 +617,9 @@ export default function MapPanel({
                   iconSize: [0, 0],
                   html:
                     `<div style="transform:translate(-50%,-50%);pointer-events:none;text-align:center;` +
-                    `font-family:ui-monospace,monospace;font-size:9.5px;font-weight:700;color:${col};` +
-                    `text-shadow:0 0 3px #000,0 0 4px #000,0 1px 3px #000;white-space:nowrap;line-height:1.25">` +
-                    `${short}<br/><span style="font-size:8px;font-weight:600">${word}` +
+                    `font-family:ui-monospace,monospace;font-size:38px;font-weight:700;color:${col};` +
+                    `text-shadow:0 0 6px #000,0 0 10px #000,0 2px 8px #000;white-space:nowrap;line-height:1.15">` +
+                    `${short}<br/><span style="font-size:20px;font-weight:600">${word}` +
                     `${p.issued_at ? ` · ${age(p.issued_at)}` : ""}</span></div>`,
                 }),
               }),
