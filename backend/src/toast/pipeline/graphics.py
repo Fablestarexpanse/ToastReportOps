@@ -130,6 +130,49 @@ def _latest(conn: sqlite3.Connection, incident_id: str, kind: str, col: str) -> 
     return row["v"] if row else None
 
 
+def _wx_line(conn: sqlite3.Connection, incident_id: str) -> str | None:
+    """Wind now, forecast peak, AQI — the operational context, from caches."""
+    import json as _json
+
+    parts: list[str] = []
+    row = conn.execute(
+        "SELECT payload FROM incident_weather WHERE incident_id = ?", (incident_id,)
+    ).fetchone()
+    if row:
+        try:
+            wx = _json.loads(row["payload"])
+        except ValueError:
+            wx = {}
+        if wx.get("wind_mph") is not None:
+            gust = f" g {int(wx['gust_mph'])}" if wx.get("gust_mph") else ""
+            compass = wx.get("wind_compass") or ""
+            parts.append(f"WIND {compass} {int(wx['wind_mph'])}{gust} MPH".strip())
+        fc = wx.get("forecast") or {}
+        if fc.get("peak_wind_mph") is not None:
+            rising = " RISING" if fc.get("rising") else ""
+            parts.append(f"NEXT 12H PEAK {int(fc['peak_wind_mph'])}{rising}")
+    aqi_row = conn.execute(
+        "SELECT payload FROM map_cache WHERE key = ?", (f"airnow:{incident_id}",)
+    ).fetchone()
+    if aqi_row:
+        try:
+            worst = (_json.loads(aqi_row["payload"]) or {}).get("worst")
+        except ValueError:
+            worst = None
+        if worst:
+            parts.append(f"AQI {worst['aqi']} {(worst.get('category') or '').upper()}".strip())
+    return " | ".join(parts) if parts else None
+
+
+def _newest_observed(conn: sqlite3.Connection, incident_id: str) -> str | None:
+    row = conn.execute(
+        """SELECT MAX(observed_at) AS m FROM facts
+           WHERE incident_id = ? AND kind IN ('acreage', 'containment', 'evac')""",
+        (incident_id,),
+    ).fetchone()
+    return row["m"] if row and row["m"] else None
+
+
 def generate_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
     inc = conn.execute("SELECT * FROM incidents WHERE id = ?", (incident_id,)).fetchone()
     if inc is None:
@@ -142,80 +185,97 @@ def generate_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
 
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
-    y = 34
+    y = 30
 
-    # header
-    d.text((40, y), inc["canonical_name"].upper(), font=_font(54), fill=TXT)
-    y += 74
-    sub = " · ".join(
+    # header (glyph-safe: the bundled font has no emoji or long dashes)
+    d.text((40, y), inc["canonical_name"].upper(), font=_font(50), fill=TXT)
+    y += 66
+    sub = " - ".join(
         s for s in [f"{inc['county']} County" if inc["county"] else None, "California"] if s
     )
-    d.text((40, y), sub, font=_font(22), fill=DIM)
-    y += 44
+    d.text((40, y), sub, font=_font(20), fill=DIM)
+    y += 38
 
-    # evacuation banner — the official status word, verbatim, never paraphrased
+    # evacuation banner: the official status word, verbatim, never paraphrased
     if evac_active:
-        d.rectangle([(40, y), (W - 40, y + 56)], outline=EVAC, width=2)
+        d.rectangle([(40, y), (W - 40, y + 50)], outline=EVAC, width=2)
         label = {
             "order": "EVACUATION ORDER IN EFFECT",
             "warning": "EVACUATION WARNING IN EFFECT",
             "shelter_in_place": "SHELTER IN PLACE IN EFFECT",
         }[evac]
-        d.text((58, y + 12), f"⚠ {label} — SEE OFFICIAL NOTICE", font=_font(26), fill=EVAC)
-        y += 74
+        d.text((58, y + 11), f"! {label} - SEE OFFICIAL NOTICE", font=_font(25), fill=EVAC)
+        y += 64
 
-    # stat tiles
+    # four stat tiles: the numbers plus WHEN it started. started_at is not a
+    # column — it is the first observation, same as the incident list computes.
+    srow = conn.execute(
+        "SELECT MIN(observed_at) AS m FROM facts WHERE incident_id = ?", (incident_id,)
+    ).fetchone()
+    started = ((srow["m"] if srow else None) or inc["created_at"] or "")[:10]
+    started_disp = started[5:].replace("-", "/") if started else "n/a"
     tiles = [
-        ("ACRES", f"{int(acreage):,}" if acreage is not None else "—", EMBER),
-        ("CONTAINED", f"{int(containment)}%" if containment is not None else "—", OK),
-        ("STATUS", (inc["status"] or "").upper() or "—", DIM),
+        ("ACRES", f"{int(acreage):,}" if acreage is not None else "n/a", EMBER),
+        ("CONTAINED", f"{int(containment)}%" if containment is not None else "n/a", OK),
+        ("STARTED", started_disp, DIM),
+        ("STATUS", (inc["status"] or "n/a").upper(), DIM),
     ]
-    tw = (W - 80 - 2 * 16) // 3
+    tw = (W - 80 - 3 * 14) // 4
     for i, (label, value, color) in enumerate(tiles):
-        x0 = 40 + i * (tw + 16)
-        d.rectangle([(x0, y), (x0 + tw, y + 92)], fill=PANEL, outline=LINE)
-        d.text((x0 + 18, y + 12), label, font=_font(17), fill=DIM)
-        d.text((x0 + 18, y + 36), value, font=_font(40), fill=color)
-    y += 108
+        x0 = 40 + i * (tw + 14)
+        d.rectangle([(x0, y), (x0 + tw, y + 84)], fill=PANEL, outline=LINE)
+        d.text((x0 + 16, y + 10), label, font=_font(16), fill=DIM)
+        d.text((x0 + 16, y + 32), value, font=_font(36), fill=color)
+    y += 98
 
-    # map strip
+    # map takes whatever height remains above a fixed footer band — the evac
+    # banner used to push the footer into the map and clip the badge
+    footer_band = 96
     map_top = y
-    if inc["lat"] is not None and inc["lon"] is not None:
+    map_h = H - map_top - footer_band
+    if inc["lat"] is not None and inc["lon"] is not None and map_h > 120:
         zoom = 11
-        strip = _stitch_map(inc["lat"], inc["lon"], zoom=zoom, w=W - 80, h=MAP_H)
+        strip = _stitch_map(inc["lat"], inc["lon"], zoom=zoom, w=W - 80, h=map_h)
         img.paste(strip, (40, map_top))
         d2 = ImageDraw.Draw(img)
         _draw_perimeter(
             conn, d2, incident_id, inc["lat"], inc["lon"],
-            zoom=zoom, w=W - 80, h=MAP_H, off_y=map_top,
+            zoom=zoom, w=W - 80, h=map_h, off_y=map_top,
         )
-        cxp, cyp = 40 + (W - 80) // 2, map_top + MAP_H // 2
+        cxp, cyp = 40 + (W - 80) // 2, map_top + map_h // 2
         for r, col in ((14, EVAC if evac_active else EMBER), (7, TXT)):
             d2.ellipse([(cxp - r, cyp - r), (cxp + r, cyp + r)], outline=col, width=3)
-        d2.rectangle([(40, map_top), (W - 40, map_top + MAP_H)], outline=LINE)
+        d2.rectangle([(40, map_top), (W - 40, map_top + map_h)], outline=LINE)
         d2.text(
-            (W - 46, map_top + MAP_H - 24), "© OpenStreetMap · © CARTO",
-            font=_font(15), fill=DIM, anchor="ra",
+            (W - 46, map_top + map_h - 24), "(c) OpenStreetMap - (c) CARTO",
+            font=_font(14), fill=DIM, anchor="ra",
         )
     else:
-        d.rectangle([(40, map_top), (W - 40, map_top + MAP_H)], fill=PANEL, outline=LINE)
-        d.text((60, map_top + 20), "location not yet confirmed", font=_font(22), fill=DIM)
+        d.rectangle([(40, map_top), (W - 40, map_top + map_h)], fill=PANEL, outline=LINE)
+        d.text((60, map_top + 20), "location not yet confirmed", font=_font(20), fill=DIM)
 
-    # footer: when this was true, badged
-    fy = map_top + MAP_H + 18
+    # context line: wind now, forecast, smoke — then the brand footer
+    fy = map_top + map_h + 10
+    wx = _wx_line(conn, incident_id)
+    if wx:
+        d.text((40, fy), wx, font=_font(17), fill=DIM)
+        fy += 26
     stamp = utcnow()[:16].replace("T", " ")
+    newest = _newest_observed(conn, incident_id)
+    asof = f"data as of {newest[:16].replace('T', ' ')}Z - " if newest else ""
     badge_path = Path(__file__).resolve().parents[1] / "assets" / "ops-badge.png"
     tx = 40
     if badge_path.exists():
         from PIL import Image as _Image
 
         badge = _Image.open(badge_path).convert("RGBA")
-        badge.thumbnail((80, 80), _Image.LANCZOS)
-        img.paste(badge, (40, fy - 36), badge)
+        badge.thumbnail((46, 46), _Image.LANCZOS)
+        img.paste(badge, (40, fy - 4), badge)
         tx = 40 + badge.width + 12
-    d.text((tx, fy), "TOAST REPORT", font=_font(22), fill=EMBER)
+    d.text((tx, fy + 8), "TOAST REPORT", font=_font(22), fill=EMBER)
     d.text(
-        (W - 40, fy + 3), f"ledger data · generated {stamp}Z", font=_font(17), fill=DIM, anchor="ra"
+        (W - 40, fy + 11), f"{asof}generated {stamp}Z",
+        font=_font(15), fill=DIM, anchor="ra",
     )
 
     buf = io.BytesIO()
