@@ -229,6 +229,11 @@ export default function MapPanel({
   const evacLabelZoomHandler = useRef<(() => void) | null>(null);
   const overlayRefs = useRef<Record<string, L.TileLayer>>({});
   const [overlays, setOverlays] = useState<Record<string, boolean>>({});
+  // GOES time-lapse: preloaded frame layers + the play timer + the frame clock
+  const [goesLoop, setGoesLoop] = useState(false);
+  const goesFramesRef = useRef<L.TileLayer[]>([]);
+  const goesTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [goesFrameTime, setGoesFrameTime] = useState<string | null>(null);
   const [perimeters, setPerimeters] = useState<PerimeterCollection | null>(null);
   const [showPerimeters, setShowPerimeters] = useState(true);
   const [hotspots, setHotspots] = useState<HotspotSet | null>(null);
@@ -344,7 +349,9 @@ export default function MapPanel({
     const m = map.current;
     if (!m) return;
     for (const [key, spec] of Object.entries(OVERLAYS)) {
-      const on = !!overlays[key];
+      // while GOES is looping, the time-lapse effect owns the frames — the
+      // static single-frame layer would double-draw underneath it
+      const on = !!overlays[key] && !(key === "goes" && goesLoop);
       const existing = overlayRefs.current[key];
       if (on && !existing) {
         const url =
@@ -369,7 +376,58 @@ export default function MapPanel({
         delete overlayRefs.current[key];
       }
     }
-  }, [overlays, ready]);
+  }, [overlays, ready, goesLoop]);
+
+  // GOES time-lapse — the reason to animate: geostationary frames every 10 min,
+  // so ~2 hours of them played in sequence is the smoke plume in motion. GIBS
+  // publishes each frame ~40 min behind real time, so the window starts ~50 min
+  // back to land only on frames that exist; all preloaded, then cycled by
+  // opacity so playback is instant with no per-frame network stall.
+  useEffect(() => {
+    const m = map.current;
+    const stop = () => {
+      if (goesTimerRef.current) {
+        clearInterval(goesTimerRef.current);
+        goesTimerRef.current = null;
+      }
+      if (m) for (const l of goesFramesRef.current) m.removeLayer(l);
+      goesFramesRef.current = [];
+      setGoesFrameTime(null);
+    };
+    if (!m || !ready || !overlays.goes || !goesLoop) {
+      stop();
+      return;
+    }
+    const FRAMES = 12;
+    const STEP_MS = 10 * 60 * 1000;
+    const LAG_MS = 50 * 60 * 1000; // skip GIBS's publish latency at the leading edge
+    const end = Math.floor((Date.now() - LAG_MS) / STEP_MS) * STEP_MS;
+    const times = Array.from({ length: FRAMES }, (_, i) =>
+      new Date(end - (FRAMES - 1 - i) * STEP_MS).toISOString().slice(0, 19) + "Z",
+    );
+    const layers = times.map((t) =>
+      L.tileLayer(OVERLAYS.goes.url.replace("{time}", t), {
+        attribution: OVERLAYS.goes.attribution,
+        maxZoom: 19,
+        maxNativeZoom: 7,
+        opacity: 0,
+        crossOrigin: true,
+        zIndex: 5,
+      }).addTo(m),
+    );
+    goesFramesRef.current = layers;
+    let idx = 0;
+    const show = (i: number) => {
+      layers.forEach((l, j) => l.setOpacity(j === i ? 1 : 0));
+      setGoesFrameTime(times[i]);
+    };
+    show(0);
+    goesTimerRef.current = setInterval(() => {
+      idx = (idx + 1) % layers.length;
+      show(idx);
+    }, 650);
+    return stop;
+  }, [overlays.goes, goesLoop, ready]);
 
   // perimeters: fetched once, refreshed on the server's own 30-minute cache.
   // A failure here is silent by design — the map is still useful without them.
@@ -1176,6 +1234,24 @@ export default function MapPanel({
             </span>
           );
         })}
+        {overlays.goes && (
+          <span
+            onClick={() => setGoesLoop((v) => !v)}
+            title="time-lapse the last ~2 hours of GOES-West at 10-min steps — watch the smoke plume move"
+            style={{
+              pointerEvents: "auto",
+              cursor: "pointer",
+              color: goesLoop ? C.ok : C.dim,
+              border: `1px solid ${goesLoop ? C.ok + "66" : C.line}`,
+              borderRadius: 3,
+              padding: "1px 5px",
+            }}
+          >
+            {goesLoop
+              ? `❚❚ ${goesFrameTime ? goesFrameTime.slice(11, 16) + "Z" : "…"}`
+              : "▶ LOOP 2H"}
+          </span>
+        )}
         {!!wind?.count && (
           <span
             onClick={() => setShowWind((v) => !v)}
