@@ -21,7 +21,7 @@ import json
 import sqlite3
 from typing import Any
 
-from toast.core.db import utcnow
+from toast.core.db import utc_ago, utcnow
 from toast.core.fetch import fetch
 from toast.core.logging import get_logger
 
@@ -203,8 +203,8 @@ def poll_active(conn: sqlite3.Connection) -> dict[str, Any]:
         except Exception as exc:  # one bad incident must not stop the sweep
             log.warning("aircraft_poll_failed", incident=inc["id"], error=str(exc)[:120])
     conn.execute(
-        "DELETE FROM aircraft_positions WHERE unixepoch('now') - unixepoch(seen_at) > ? * 3600",
-        (RETAIN_HOURS,),
+        "DELETE FROM aircraft_positions WHERE seen_at < ?",
+        (utc_ago(RETAIN_HOURS * 3600),),
     )
     log.info("aircraft_polled", incidents=reached, positions=total)
     return {"incidents_polled": reached, "positions": total}
@@ -219,17 +219,17 @@ def current_aircraft(conn: sqlite3.Connection, *, minutes: int = 10) -> dict[str
     rows = conn.execute(
         """SELECT p.* FROM aircraft_positions p
            JOIN (SELECT hex, MAX(rowid) AS latest FROM aircraft_positions
-                 WHERE unixepoch('now') - unixepoch(seen_at) < ? * 60 GROUP BY hex) last
+                 WHERE seen_at >= ? GROUP BY hex) last
              ON p.rowid = last.latest""",
-        (minutes,),
+        (utc_ago(minutes * 60),),
     ).fetchall()
     craft = []
     for r in rows:
         trail = conn.execute(
             """SELECT lat, lon FROM aircraft_positions
-               WHERE hex = ? AND unixepoch('now') - unixepoch(seen_at) < 3600
+               WHERE hex = ? AND seen_at >= ?
                ORDER BY seen_at""",
-            (r["hex"],),
+            (r["hex"], utc_ago(3600)),
         ).fetchall()
         craft.append(
             {
@@ -267,10 +267,10 @@ def incident_roster(conn: sqlite3.Connection, incident_id: str, *, minutes: int 
     rows = conn.execute(
         """SELECT p.* FROM aircraft_positions p
            JOIN (SELECT hex, MAX(rowid) AS latest FROM aircraft_positions
-                 WHERE incident_id = ? AND unixepoch('now') - unixepoch(seen_at) < ? * 60
+                 WHERE incident_id = ? AND seen_at >= ?
                  GROUP BY hex) last ON p.rowid = last.latest
            ORDER BY p.fire_ops DESC, p.alt_ft ASC""",
-        (incident_id, minutes),
+        (incident_id, utc_ago(minutes * 60)),
     ).fetchall()
     return [
         {
@@ -296,6 +296,6 @@ def observed_over_incident(conn: sqlite3.Connection, incident_id: str, *, hours:
     return conn.execute(
         """SELECT COUNT(DISTINCT hex) AS n FROM aircraft_positions
            WHERE incident_id = ? AND fire_ops = 1
-             AND unixepoch('now') - unixepoch(seen_at) < ? * 3600""",
-        (incident_id, hours),
+             AND seen_at >= ?""",
+        (incident_id, utc_ago(hours * 3600)),
     ).fetchone()["n"]

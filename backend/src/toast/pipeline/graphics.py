@@ -24,7 +24,7 @@ from typing import Any
 
 from PIL import Image, ImageDraw, ImageFont
 
-from toast.core.db import utcnow
+from toast.core.db import utc_ago, utcnow
 from toast.core.fetch import fetch
 from toast.core.logging import get_logger
 
@@ -475,7 +475,8 @@ def generate_state_card(conn: sqlite3.Connection) -> bytes:
     contained_pct = round(sum(a * p for a, p in cw) / sum(a for a, _ in cw)) if cw else None
     aircraft_up = conn.execute(
         """SELECT COUNT(DISTINCT hex) FROM aircraft_positions
-           WHERE fire_ops = 1 AND unixepoch('now') - unixepoch(seen_at) < 3600"""
+           WHERE fire_ops = 1 AND seen_at >= ?""",
+        (utc_ago(3600),),
     ).fetchone()[0]
     redflag = 0
     fw = conn.execute("SELECT payload FROM map_cache WHERE key='firewx:ca'").fetchone()

@@ -19,7 +19,7 @@ import json
 import sqlite3
 from typing import Any
 
-from toast.core.db import utcnow
+from toast.core.db import utc_ago, utcnow
 from toast.core.fetch import FetchError, fetch
 from toast.core.logging import get_logger
 from toast.llm.client import LLMClient, LLMError
@@ -136,8 +136,8 @@ def gather_evidence(
     aircraft = conn.execute(
         """SELECT COUNT(DISTINCT hex) FROM aircraft_positions
            WHERE incident_id = ? AND fire_ops = 1
-             AND unixepoch('now') - unixepoch(seen_at) < ? * 3600""",
-        (inc["id"], AIRCRAFT_HOURS),
+             AND seen_at >= ?""",
+        (inc["id"], utc_ago(AIRCRAFT_HOURS * 3600)),
     ).fetchone()[0]
 
     # The 48h count above sweeps the full 20nm poll radius — over an urban fire
@@ -152,8 +152,8 @@ def gather_evidence(
         for row in conn.execute(
             """SELECT hex, lat, lon FROM aircraft_positions
                WHERE incident_id = ? AND role IN ('tanker', 'air_attack')
-                 AND unixepoch('now') - unixepoch(seen_at) < 6 * 3600""",
-            (inc["id"],),
+                 AND seen_at >= ?""",
+            (inc["id"], utc_ago(6 * 3600)),
         ):
             if haversine_km(inc["lat"], inc["lon"], row["lat"], row["lon"]) <= HOTSPOT_KM:
                 overhead.add(row["hex"])

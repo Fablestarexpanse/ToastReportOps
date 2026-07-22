@@ -59,7 +59,7 @@ def list_incidents(request: Request, status: str | None = None, include_rx: bool
     latest = """(SELECT {col} FROM facts v WHERE v.incident_id = i.id AND v.kind = '{kind}'
                  AND v.id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)
                  ORDER BY (v.observed_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')) ASC,
-                   (v.tier >= 3) ASC, v.observed_at DESC LIMIT 1)"""
+                   (v.tier >= 3) ASC, v.observed_at DESC, v.ingested_at DESC LIMIT 1)"""
     rows = (
         _conn(request)
         .execute(
@@ -1859,8 +1859,17 @@ def create_source(request: Request, body: dict) -> dict:
 
 @router.get("/sources/suggestions")
 def source_suggestions(request: Request) -> dict:
-    """Cross-reference: rescan dossiers/article links and list unknown domains
-    awaiting the operator's APPROVE/DISMISS."""
+    """List unknown domains awaiting the operator's APPROVE/DISMISS. Read-only:
+    a GET must not have side effects (it is reachable by a bare cross-origin
+    request from any page the operator visits) — the rescan is the POST below."""
+    from toast.pipeline.source_discovery import pending_suggestions
+
+    return {"suggestions": pending_suggestions(_conn(request))}
+
+
+@router.post("/sources/suggestions/scan")
+def scan_source_suggestions(request: Request) -> dict:
+    """Rescan dossiers/article links for cited-but-unknown domains, then list."""
     from toast.pipeline.source_discovery import pending_suggestions, scan_for_suggestions
 
     conn = _conn(request)

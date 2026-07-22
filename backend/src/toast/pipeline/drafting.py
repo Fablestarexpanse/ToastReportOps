@@ -175,7 +175,7 @@ def _latest_fact_row(
            WHERE incident_id = ? AND kind = ?
              AND id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)
            ORDER BY (observed_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')) ASC,
-             (tier >= 3) ASC, observed_at DESC LIMIT 1""",
+             (tier >= 3) ASC, observed_at DESC, ingested_at DESC LIMIT 1""",
         (incident_id, kind),
     ).fetchone()
 

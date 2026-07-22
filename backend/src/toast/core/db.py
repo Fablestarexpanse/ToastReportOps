@@ -22,6 +22,16 @@ def utcnow() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
+def utc_ago(seconds: float) -> str:
+    """An ISO cutoff `seconds` in the past, same format as utcnow() — for
+    indexable `seen_at >= ?` comparisons instead of wrapping the column in
+    unixepoch(), which forces a full scan."""
+    from datetime import timedelta
+
+    dt = datetime.now(UTC) - timedelta(seconds=seconds)
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
 def connect(db_path: str | Path, *, check_same_thread: bool = True) -> sqlite3.Connection:
     """check_same_thread=False is for the API service only: FastAPI runs sync
     endpoints in a threadpool, so the startup connection is used cross-thread.

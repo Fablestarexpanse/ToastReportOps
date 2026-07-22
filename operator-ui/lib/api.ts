@@ -1503,7 +1503,9 @@ export type SourceSuggestion = {
 };
 
 export async function fetchSourceSuggestions(): Promise<SourceSuggestion[]> {
-  const d = await get<{ suggestions: SourceSuggestion[] }>("/sources/suggestions");
+  // the rescan is a POST on purpose: a GET with side effects is reachable
+  // cross-origin by any page the operator happens to visit
+  const d = await post<{ suggestions: SourceSuggestion[] }>("/sources/suggestions/scan", {});
   return d.suggestions;
 }
 
