@@ -1265,7 +1265,7 @@ export default function MapPanel({
               {cameras.attribution} · loads direct from their server, nothing stored
             </span>
             <a
-              href={`https://cameras.alertcalifornia.org/?pos=${viewCam.lat.toFixed(4)}_${viewCam.lon.toFixed(4)}_13`}
+              href={`https://cameras.alertcalifornia.org/?id=${encodeURIComponent(viewCam.id)}`}
               target="_blank"
               rel="noopener noreferrer"
               style={{ color: C.blue, textDecoration: "none", whiteSpace: "nowrap" }}
