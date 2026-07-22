@@ -126,3 +126,38 @@ class TestRetry:
         with pytest.raises(ValueError, match="check the account"):
             release.retry_publication(seeded, pub_id)
         assert not _jobs(seeded)
+
+
+class Req:
+    def __init__(self, conn):
+        self.app = type("A", (), {"state": type("S", (), {"conn": conn})()})()
+
+
+class TestUpcoming:
+    def _req(self, conn):
+        return Req(conn)
+
+    def test_upcoming_lists_only_future_scheduled(self, seeded, approved_draft):
+        from toast.api import routes
+
+        release.release_draft(
+            seeded, approved_draft, ["bluesky"], at="2099-01-01T08:00:00.000Z"
+        )
+        out = routes.upcoming_publications(self._req(seeded))
+        assert out["count"] == 1
+        assert out["upcoming"][0]["channel"] == "bluesky"
+        pub_id = out["upcoming"][0]["id"]
+
+        routes.cancel_scheduled(self._req(seeded), pub_id)
+        assert routes.upcoming_publications(self._req(seeded))["count"] == 0
+
+    def test_a_dispatched_release_cannot_be_cancelled(self, seeded, approved_draft):
+        import pytest as _pytest
+        from fastapi import HTTPException
+
+        from toast.api import routes
+
+        release.release_draft(seeded, approved_draft, ["bluesky"])  # immediate: enqueued
+        pub_id = seeded.execute("SELECT id FROM publications").fetchone()["id"]
+        with _pytest.raises(HTTPException):
+            routes.cancel_scheduled(self._req(seeded), pub_id)

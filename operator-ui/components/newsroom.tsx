@@ -11,7 +11,9 @@ import {
   fetchDraft,
   buildSiteNow,
   fetchCredStatuses,
+  cancelScheduled,
   fetchPublishChannels,
+  fetchUpcoming,
   makeGraphic,
   releaseDraft,
   renderMarkdown,
@@ -270,6 +272,18 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
     }
   };
 
+  const [upcoming, setUpcoming] = useState<import("@/lib/api").UpcomingRelease[]>([]);
+  useEffect(() => {
+    let live = true;
+    const tick = () => fetchUpcoming().then((r) => live && setUpcoming(r.upcoming)).catch(() => undefined);
+    tick();
+    const t2 = setInterval(tick, 30000);
+    return () => {
+      live = false;
+      clearInterval(t2);
+    };
+  }, []);
+
   const [previewMode, setPreviewMode] = useState(false);
   const [previewHtml, setPreviewHtml] = useState("");
   const togglePreview = async () => {
@@ -279,7 +293,8 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
     }
     try {
       const r = await renderMarkdown(bodyEdit);
-      setPreviewHtml(r.html);
+      // linkify [#n] so a claim can be checked against its source in one click
+      setPreviewHtml(r.html.replace(/\[#(\d+)\]/g, '<a class="cite-ref" data-cite="$1">[#$1]</a>'));
       setPreviewMode(true);
     } catch (e) {
       toast(`preview failed: ${e instanceof Error ? e.message : e}`);
@@ -300,6 +315,30 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
       toast(`graphic failed: ${e instanceof Error ? e.message : e}`);
     } finally {
       setGraphicBusy(false);
+    }
+  };
+
+  const doRegenerate = async () => {
+    if (!detail) return;
+    const dr = detail.draft;
+    setBusy(true);
+    try {
+      let newId: string;
+      if (dr.incident_id) {
+        const r = await generateDraft(dr.incident_id, {});
+        newId = r.draft_id;
+      } else {
+        const r = await generateStatewide();
+        newId = r.draft_id;
+      }
+      await archiveDraft(dr.id, true); // the stale one leaves the queue, kept
+      toast("regenerated from the live ledger — old draft archived");
+      await refresh();
+      setSelId(newId);
+    } catch (e) {
+      toast(`regenerate failed: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -401,6 +440,41 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
             {busy ? "drafting…" : genIncident ? "✎ DRAFT FROM LEDGER" : "✎ STATEWIDE ROUNDUP"}
           </button>
         </div>
+        {upcoming.length > 0 && (
+          <div style={{ padding: "7px 12px", borderBottom: `1px solid ${C.line}`, background: C.warn + "0d" }}>
+            <div style={{ fontFamily: font.disp, fontSize: 10, letterSpacing: 2, color: C.warn, marginBottom: 4 }}>
+              ⏱ SCHEDULED RELEASES ({upcoming.length})
+            </div>
+            {upcoming.map((u) => (
+              <div key={u.id} style={{ display: "flex", gap: 6, alignItems: "center", fontFamily: font.mono, fontSize: 8.5, color: C.dim, padding: "2px 0" }}>
+                <span style={{ color: C.warn }}>{u.not_before.slice(5, 16).replace("T", " ")}Z</span>
+                <span>→ {u.channel.toUpperCase()}</span>
+                <span
+                  onClick={() => setSelId(u.draft_id)}
+                  style={{ flex: 1, cursor: "pointer", color: C.blue, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                >
+                  {u.title ?? u.draft_id.slice(-6)}
+                </span>
+                <span
+                  onClick={async () => {
+                    try {
+                      await cancelScheduled(u.id);
+                      toast("scheduled release cancelled");
+                      const r = await fetchUpcoming();
+                      setUpcoming(r.upcoming);
+                    } catch (e) {
+                      toast(`${e instanceof Error ? e.message : e}`);
+                    }
+                  }}
+                  title="cancel this scheduled release (it has not gone out)"
+                  style={{ cursor: "pointer", color: C.faint }}
+                >
+                  ✕
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
         <div style={{ padding: "8px 12px 4px", fontFamily: font.disp, fontSize: 12, letterSpacing: 2, color: C.dim }}>
           DRAFT QUEUE
           {fireName && (
@@ -654,6 +728,20 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
               </div>
               {previewMode ? (
                 <div
+                  onClick={(e) => {
+                    const el = (e.target as HTMLElement).closest?.(".cite-ref") as HTMLElement | null;
+                    if (!el || !detail) return;
+                    e.preventDefault();
+                    const n = parseInt(el.dataset.cite ?? "", 10);
+                    const ids: string[] = JSON.parse(detail.draft.cited_fact_ids || "[]");
+                    const id = ids[n - 1];
+                    const target = id ? document.getElementById(`cited-${id}`) : null;
+                    if (target) {
+                      target.scrollIntoView({ behavior: "smooth", block: "center" });
+                      target.style.outline = `1px solid ${C.blue}`;
+                      setTimeout(() => (target.style.outline = "none"), 1600);
+                    }
+                  }}
                   className="md-preview"
                   // our own markdown engine over the operator's own text — the
                   // same HTML the static site publishes
@@ -680,6 +768,17 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
               <button onClick={copyBody} title="copy the full text to clipboard" style={{ background: C.panelUp, color: C.txt, border: `1px solid ${C.line}`, borderRadius: 5, fontFamily: font.disp, fontWeight: 600, fontSize: 12, letterSpacing: 1, padding: "7px 14px", cursor: "pointer" }}>
                 ⧉ COPY
               </button>
+              {(d.status === "draft" || d.status === "needs_review") &&
+                d.kind === "update" &&
+                (d.incident_id || (d.title ?? "").startsWith("CALIFORNIA WILDFIRE ROUNDUP")) && (
+                  <button
+                    onClick={doRegenerate}
+                    title="fresh draft from the current ledger; this stale one is archived, not lost"
+                    style={{ background: C.panelUp, color: C.warn, border: `1px solid ${C.warn}55`, borderRadius: 5, fontFamily: font.disp, fontWeight: 600, fontSize: 12, letterSpacing: 1, padding: "7px 14px", cursor: "pointer" }}
+                  >
+                    ↻ REGENERATE
+                  </button>
+                )}
               {(d.incident_id || (d.title ?? "").startsWith("CALIFORNIA WILDFIRE ROUNDUP")) && (
                 <button
                   onClick={doGraphic}
@@ -911,7 +1010,7 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
         )}
         <div style={{ flex: 1, overflowY: "auto" }}>
           {(detail?.cited_facts ?? []).map((f) => (
-            <div key={f.id} style={{ padding: "7px 11px", borderBottom: `1px solid ${C.line}44`, display: "flex", gap: 7 }}>
+            <div key={f.id} id={`cited-${f.id}`} style={{ padding: "7px 11px", borderBottom: `1px solid ${C.line}44`, display: "flex", gap: 7 }}>
               <div style={{ width: 3, borderRadius: 2, background: TIER[f.tier], flexShrink: 0 }} />
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 11, textDecoration: f.superseded_by ? "line-through" : undefined, color: f.superseded_by ? C.faint : undefined }}>

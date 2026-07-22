@@ -295,6 +295,25 @@ export const generateDraft = (incidentId: string, window?: { window_start?: stri
     window ?? {},
   );
 
+export type UpcomingRelease = {
+  id: string;
+  channel: string;
+  not_before: string;
+  draft_id: string;
+  title: string | null;
+};
+
+export const fetchUpcoming = () =>
+  get<{ upcoming: UpcomingRelease[]; count: number }>("/publications/upcoming");
+
+export async function cancelScheduled(id: string): Promise<void> {
+  const res = await fetch(`/api/publications/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const detail = await res.json().then((d) => d.detail).catch(() => res.status);
+    throw new Error(String(detail));
+  }
+}
+
 export const renderMarkdown = (body_md: string) =>
   post<{ html: string }>("/render/markdown", { body_md });
 

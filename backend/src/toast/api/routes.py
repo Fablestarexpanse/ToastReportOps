@@ -1371,6 +1371,39 @@ def get_draft(request: Request, draft_id: str) -> dict:
     return {"draft": draft, "cited_facts": cited, "publications": pubs}
 
 
+@router.get("/publications/upcoming")
+def upcoming_publications(request: Request) -> dict:
+    """Every scheduled release across all drafts — so a pending post is never
+    a surprise and never double-scheduled."""
+    rows = _conn(request).execute(
+        """SELECT p.id, p.channel, p.not_before, p.draft_id, d.title
+           FROM publications p JOIN drafts d ON d.id = p.draft_id
+           WHERE p.status = 'queued' AND p.enqueued = 0
+             AND p.not_before IS NOT NULL
+             AND unixepoch(p.not_before) > unixepoch('now')
+           ORDER BY p.not_before"""
+    ).fetchall()
+    return {"upcoming": [dict(r) for r in rows], "count": len(rows)}
+
+
+@router.delete("/publications/{publication_id}")
+def cancel_scheduled(request: Request, publication_id: str) -> dict:
+    """Cancel a SCHEDULED publication — one still waiting for its time, with
+    no publish job created. Anything past that point is not cancellable here:
+    a queued job may already be delivering."""
+    conn = _conn(request)
+    row = conn.execute(
+        "SELECT status, enqueued FROM publications WHERE id = ?", (publication_id,)
+    ).fetchone()
+    if row is None:
+        raise HTTPException(404, "publication not found")
+    if row["status"] != "queued" or row["enqueued"]:
+        raise HTTPException(409, "only scheduled (not yet dispatched) releases can be cancelled")
+    conn.execute("DELETE FROM publications WHERE id = ?", (publication_id,))
+    conn.commit()
+    return {"ok": True, "cancelled": publication_id}
+
+
 @router.post("/render/markdown")
 def render_markdown(request: Request, body: dict) -> dict:
     """Render draft markdown EXACTLY as the site will publish it — same
@@ -1418,6 +1451,14 @@ def delete_draft(request: Request, draft_id: str) -> dict:
     ).fetchone()["n"]
     if pubs:
         raise HTTPException(409, "this draft has delivery records — archive instead")
+    kids = conn.execute(
+        "SELECT COUNT(*) AS n FROM drafts WHERE parent_id = ?", (draft_id,)
+    ).fetchone()["n"]
+    if kids:
+        # surfaced as a decision, not a foreign-key 500
+        raise HTTPException(
+            409, "this draft has a social version — delete that first, or archive both"
+        )
     conn.execute("DELETE FROM drafts WHERE id = ?", (draft_id,))
     conn.commit()
     return {"ok": True, "deleted": draft_id}
