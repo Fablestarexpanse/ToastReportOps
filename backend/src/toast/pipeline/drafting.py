@@ -86,6 +86,13 @@ def _sources_section(conn: sqlite3.Connection, facts: list[sqlite3.Row]) -> str:
         url = urls.get(f["raw_ref"] or "")
         link = f" — {url}" if url else ""
         lines.append(f"{i}. {name} (T{tier}) — {f['content']} — observed {observed} UTC{link}")
+    # the operator's links ride at the very end of every article, so the
+    # byline follows the report wherever it is pasted or rewritten
+    from toast.core.appsettings import brand_line
+
+    brand = brand_line(conn)
+    if brand:
+        lines += ["", f"*Follow Toast Report: {brand}*"]
     return "\n".join(lines)
 
 

@@ -458,6 +458,30 @@ export default function SettingsPanel({
               </div>
             )}
 
+            <div style={{ fontFamily: font.disp, fontSize: 11, letterSpacing: 2, color: C.ember, marginTop: 14 }}>
+              BRANDING — YOUR LINKS
+            </div>
+            {row(
+              "brand_web",
+              <input
+                value={draft.brand_web ?? ""}
+                onChange={(e) => set("brand_web", e.target.value)}
+                placeholder="toastreport.example.com"
+                style={{ width: "100%", background: C.bg, border: `1px solid ${C.line}`, borderRadius: 4, color: C.txt, fontFamily: font.mono, fontSize: 11, padding: "6px 8px", outline: "none" }}
+              />,
+              "stamped on every generated graphic and appended to articles + social posts",
+            )}
+            {row(
+              "brand_social",
+              <input
+                value={draft.brand_social ?? ""}
+                onChange={(e) => set("brand_social", e.target.value)}
+                placeholder="@toastreport.bsky.social · @ToastReport"
+                style={{ width: "100%", background: C.bg, border: `1px solid ${C.line}`, borderRadius: 4, color: C.txt, fontFamily: font.mono, fontSize: 11, padding: "6px 8px", outline: "none" }}
+              />,
+              "your handles, any format — shown exactly as typed; leave blank for none",
+            )}
+
             <div style={{ fontFamily: font.disp, fontSize: 11, letterSpacing: 2, color: C.ember, marginTop: 16 }}>
               WRITING (AI PROMPTS)
             </div>

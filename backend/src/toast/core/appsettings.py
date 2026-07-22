@@ -26,6 +26,10 @@ ALLOWED: dict[str, tuple[str | None, str, str]] = {
     "map_basemap": (None, "Map basemap", "choice"),  # 'offline' | 'osm' | 'dark'
     "timeline_order": (None, "Timeline order", "choice"),  # 'newest' | 'oldest'
     "ui_poll_interval_s": (None, "UI refresh interval (s)", "number"),
+    # branding: stamped on generated graphics and appended to articles/posts —
+    # where a shared card travels, the byline travels with it
+    "brand_web": (None, "Website link (on graphics + posts)", "text"),
+    "brand_social": (None, "Social handles (on graphics + posts)", "text"),
 }
 
 UI_DEFAULTS = {
@@ -34,7 +38,16 @@ UI_DEFAULTS = {
     "map_basemap": "dark",
     "timeline_order": "newest",
     "ui_poll_interval_s": "10",
+    "brand_web": "",
+    "brand_social": "",
 }
+
+
+def brand_line(conn: sqlite3.Connection) -> str | None:
+    """The operator's links, one line, or None when nothing is configured."""
+    parts = [get_setting(conn, k) for k in ("brand_web", "brand_social")]
+    parts = [p.strip() for p in parts if p and p.strip()]
+    return " - ".join(parts) if parts else None
 
 
 def get_setting(conn: sqlite3.Connection, key: str) -> str | None:
