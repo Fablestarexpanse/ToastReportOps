@@ -27,6 +27,13 @@ from toast.llm.prompts import load_prompt
 from toast.pipeline.incidents import haversine_km
 
 CALFIRE_LIST = "https://incidents.fire.ca.gov/umbraco/api/IncidentApi/List?inactive=true"
+# NIFC's current interagency incident layer — USFS and every other federal
+# agency's fires live here. A fire that leaves this layer is officially over.
+WFIGS_CURRENT = (
+    "https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/"
+    "WFIGS_Incident_Locations_Current/FeatureServer/0/query"
+    "?where=POOState%3D%27US-CA%27&outFields=IrwinID,PercentContained&f=json"
+)
 HOTSPOT_KM = 8.0
 AIRCRAFT_HOURS = 48
 
@@ -54,8 +61,34 @@ def _calfire_live(conn: sqlite3.Connection) -> dict[str, dict[str, Any]]:
     return out
 
 
+def _wfigs_live() -> dict[str, Any] | None:
+    """Current federal/interagency incidents in CA, keyed by IrwinID.
+    None (not {}) when the fetch fails — absence must never be invented."""
+    try:
+        body, _ct = fetch(
+            WFIGS_CURRENT,
+            accept_types=("application/json", "text/plain"),
+            max_bytes=8 * 1024 * 1024,
+        )
+        feats = json.loads(body).get("features")
+        if feats is None:
+            return None
+    except (FetchError, ValueError):
+        return None
+    out = {}
+    for f in feats if isinstance(feats, list) else []:
+        a = f.get("attributes") or {}
+        iid = str(a.get("IrwinID") or "").strip("{}").lower()
+        if iid:
+            out[iid] = {"containment": a.get("PercentContained")}
+    return out
+
+
 def gather_evidence(
-    conn: sqlite3.Connection, inc: sqlite3.Row, calfire: dict[str, dict[str, Any]]
+    conn: sqlite3.Connection,
+    inc: sqlite3.Row,
+    calfire: dict[str, dict[str, Any]],
+    wfigs: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     days_quiet = conn.execute(
         """SELECT CAST((unixepoch('now') - unixepoch(MAX(observed_at))) / 86400.0 AS REAL)
@@ -74,6 +107,19 @@ def gather_evidence(
     cfid = (inc["calfire_id"] or "").lower()
     if cfid and cfid in calfire:
         official = calfire[cfid]
+
+    # Federal word (USFS et al., via NIFC): a fire with an IRWIN id that has
+    # left the national current-incident layer is officially over. Only judged
+    # when the layer actually answered — a failed fetch says nothing.
+    iid = (inc["irwin_id"] or "").strip("{}").lower()
+    fed_status = None
+    fed_containment = None
+    if iid and wfigs is not None:
+        if iid in wfigs:
+            fed_status = "current"
+            fed_containment = wfigs[iid]["containment"]
+        else:
+            fed_status = "off the national current-fire list"
 
     hotspots_near = 0
     if inc["lat"] is not None:
@@ -117,10 +163,14 @@ def gather_evidence(
         "official_status": (
             "active" if official and official["is_active"]
             else "inactive" if official
+            else "active (federal)" if fed_status == "current"
+            else "inactive (federal — off the national current-fire list)" if fed_status
             else "not on CAL FIRE list" if cfid
             else "never had a CAL FIRE id"
         ),
-        "official_containment": official["containment"] if official else None,
+        "official_containment": (
+            official["containment"] if official else fed_containment
+        ),
         "hotspots_within_8km": hotspots_near,
         "fire_aircraft_last_48h": aircraft,
         "aircraft_overhead_6h": len(overhead),
@@ -133,7 +183,7 @@ def _rules_verdict(ev: dict[str, Any]) -> tuple[str, str]:
     quiet = ev["days_since_last_fact"] or 0
     cont = ev["official_containment"] or ev["containment_pct"] or 0
     signals_out = (
-        ev["official_status"] == "inactive"
+        ev["official_status"].startswith("inactive")
         or (cont >= 95 and quiet >= 2)
     )
     signals_alive = ev["hotspots_within_8km"] > 0 or ev["aircraft_overhead_6h"] > 0
@@ -163,6 +213,7 @@ def check_active(
         "SELECT * FROM incidents WHERE status = 'active'"
     ).fetchall()
     calfire = _calfire_live(conn)
+    wfigs = _wfigs_live()
     llm = client
     prompt = None
     try:
@@ -175,29 +226,35 @@ def check_active(
     log = get_logger("activity")
     auto_closed = 0
     for inc in incidents:
-        ev = gather_evidence(conn, inc, calfire)
+        ev = gather_evidence(conn, inc, calfire, wfigs)
 
         # THE official source saying "inactive" is not a judgment call — it is
-        # authority, relayed. Auto-close, logged as such — UNLESS live signals
-        # disagree (heat or aircraft on scene), which drops to a proposal for
-        # human eyes instead.
+        # authority, relayed, whether the authority is CAL FIRE or the federal
+        # side (USFS et al. via NIFC). Auto-close, logged as such — UNLESS live
+        # signals disagree (heat or aircraft on scene), which drops to a
+        # proposal for human eyes instead.
         if (
-            ev["official_status"] == "inactive"
+            ev["official_status"].startswith("inactive")
             and ev["hotspots_within_8km"] == 0
             and ev["aircraft_overhead_6h"] == 0
         ):
             from toast.core.ids import ulid as _ulid
 
+            federal = "federal" in ev["official_status"]
             conn.execute(
                 "UPDATE incidents SET status = 'contained', updated_at = ? WHERE id = ?",
                 (utcnow(), inc["id"]),
             )
             conn.execute(
                 """INSERT INTO incident_events (id, incident_id, event, detail, actor, at)
-                   VALUES (?, ?, 'status_change', ?, 'calfire-official', ?)""",
+                   VALUES (?, ?, 'status_change', ?, ?, ?)""",
                 (_ulid(), inc["id"],
                  json.dumps({"from": "active", "to": "contained",
-                             "why": "CAL FIRE lists this fire inactive"}), utcnow()),
+                             "why": (
+                                 "no longer on NIFC's national current-fire list"
+                                 if federal else "CAL FIRE lists this fire inactive"
+                             )}),
+                 "nifc-official" if federal else "calfire-official", utcnow()),
             )
             conn.execute(
                 "DELETE FROM activity_proposals WHERE incident_id = ?", (inc["id"],)

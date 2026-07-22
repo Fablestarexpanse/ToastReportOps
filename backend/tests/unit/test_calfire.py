@@ -1,6 +1,5 @@
 """CAL FIRE adapter + active-status derivation through the normalize pipeline."""
 
-import json
 
 from toast.core.envelope import insert_envelope
 from toast.pipeline.normalize import normalize_envelope
@@ -47,16 +46,17 @@ def _ingest(conn, item):
     return normalize_envelope(conn, env_id)
 
 
-def test_active_fire_creates_active_incident(seeded):
+def test_active_fire_adopts_the_seeded_same_name_incident(seeded):
+    """CAL FIRE's Flume Fire is the fixture's FLUME FIRE — one incident,
+    now carrying the official id, not a duplicate."""
     facts = _ingest(seeded, ACTIVE)
     assert len(facts) >= 1
     inc = seeded.execute("SELECT * FROM incidents WHERE calfire_id='cf-flume-1'").fetchone()
-    assert inc is not None and inc["status"] == "active"
-    assert inc["canonical_name"] == "Flume Fire"
-    start = seeded.execute(
-        "SELECT structured FROM facts WHERE id=?", (inc["first_detected_fact_id"],)
-    ).fetchone()
-    assert json.loads(start["structured"])["ref_type"] == "calfire"
+    assert inc is not None and inc["id"] == "i1" and inc["status"] == "active"
+    only = seeded.execute(
+        "SELECT COUNT(*) FROM incidents WHERE canonical_name LIKE '%lume%'"
+    ).fetchone()[0]
+    assert only == 1
 
 
 def test_inactive_fire_creates_contained_incident(seeded):

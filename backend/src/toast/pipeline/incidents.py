@@ -25,6 +25,35 @@ REF_COLUMNS = {"irwin_id", "calfire_id"}
 STATUS_RANK = {"candidate": 0, "active": 1, "contained": 2, "frozen": 3}
 
 
+def _norm_name(name: str) -> str:
+    """'PARK Fire' == 'Park fire' == 'Park' — the noise words and case out."""
+    out = "".join(c for c in name.lower() if c.isalnum() or c == " ").split()
+    return " ".join(w for w in out if w not in ("fire", "incident", "complex")) or name.lower()
+
+
+ADOPT_RADIUS_KM = 30.0  # CAL FIRE origin vs IRWIN point of origin can differ by miles
+
+
+def _adopt_cross_ref(
+    conn: sqlite3.Connection, *, ref_col: str, name: str, lat: float | None, lon: float | None
+) -> str | None:
+    """An existing incident that is the same fire under another identity, or None."""
+    target = _norm_name(name)
+    for row in conn.execute(
+        f"SELECT id, canonical_name, lat, lon FROM incidents WHERE {ref_col} IS NULL"
+    ):
+        if _norm_name(row["canonical_name"]) != target:
+            continue
+        if (
+            lat is not None
+            and row["lat"] is not None
+            and haversine_km(lat, lon, row["lat"], row["lon"]) > ADOPT_RADIUS_KM
+        ):
+            continue  # same name, different fire — Creek Fires abound
+        return row["id"]
+    return None
+
+
 def upsert_incident(
     conn: sqlite3.Connection,
     *,
@@ -65,6 +94,28 @@ def upsert_incident(
             (name, lat, lon, county, incident_type, new_status, now, row["id"]),
         )
         return row["id"], False
+    # Cross-source adoption: the same fire arrives from BOTH CAL FIRE and
+    # WFIGS/IRWIN (CAL FIRE lists major federal fires; IRWIN lists everything
+    # interagency). Before creating a second incident for it, look for the
+    # same fire under the OTHER identity — same normalized name, and close by
+    # when both sides know where they are — and attach this reference to it.
+    adopted = _adopt_cross_ref(conn, ref_col=ref_col, name=name, lat=lat, lon=lon)
+    if adopted is not None:
+        # attach the new identity AND let it fill in what the first source
+        # never knew — WFIGS often brings the coordinates CAL FIRE lacked
+        conn.execute(
+            f"""UPDATE incidents SET {ref_col} = ?, lat = COALESCE(lat, ?),
+               lon = COALESCE(lon, ?), county = COALESCE(county, ?),
+               incident_type = COALESCE(incident_type, ?), updated_at = ?
+               WHERE id = ?""",
+            (ref_id, lat, lon, county, incident_type, now, adopted),
+        )
+        conn.execute(
+            """INSERT INTO incident_events (id, incident_id, event, detail, actor, at)
+               VALUES (?, ?, 'alias_added', ?, 'system', ?)""",
+            (ulid(), adopted, f'{{"{ref_col}": "{ref_id}", "via": "{via}"}}', now),
+        )
+        return adopted, False
     incident_id = ulid()
     conn.execute(
         f"""INSERT INTO incidents (id, canonical_name, status, lat, lon, county, {ref_col},
