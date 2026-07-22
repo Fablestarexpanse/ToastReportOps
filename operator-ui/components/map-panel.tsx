@@ -86,8 +86,27 @@ const BASEMAPS: Record<string, BaseSpec | null> = {
 };
 
 // Transparent overlays that ride on top of any basemap — the "enable the items
-// you want" half. Place labels for a clean terrain base; water features.
-const OVERLAYS: Record<string, { url: string; label: string; attribution: string }> = {
+// you want" half. Place labels for a clean terrain base; water features; and
+// the satellite layers below. All require network — in a PSPS outage on the
+// OFFLINE basemap they simply fail to tiles and the vector outline stands.
+type OverlaySpec = {
+  url: string;
+  label: string;
+  attribution: string;
+  // NASA GIBS layers bake a date/time into the path. "day" = yesterday UTC
+  // (today's global mosaic is often incomplete); "latest" = the literal token
+  // GIBS resolves to the most recent frame (GOES, ~10-min cadence).
+  time?: "day" | "latest";
+  maxNativeZoom?: number; // GIBS caps native zoom per layer; upscale past it
+  opacity?: number;
+  note?: string; // hover explanation on the toggle chip
+};
+
+// GIBS WMTS REST, EPSG:3857. Note the {z}/{y}/{x} order (GIBS puts row before
+// column) — Leaflet fills by name, so the template controls it.
+const GIBS = "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best";
+
+const OVERLAYS: Record<string, OverlaySpec> = {
   labels: {
     url: "https://{s}.basemaps.cartocdn.com/rastertiles/light_only_labels/{z}/{x}/{y}{r}.png",
     label: "LABELS",
@@ -98,7 +117,43 @@ const OVERLAYS: Record<string, { url: string; label: string; attribution: string
     label: "WATER",
     attribution: "USGS The National Map (public domain)",
   },
+  // GOES-West geostationary GeoColor: the smoke plume in motion, refreshed
+  // every ~10 minutes. Full-opacity background — fire pins ride on top.
+  goes: {
+    url: `${GIBS}/GOES-West_ABI_GeoColor/default/{time}/GoogleMapsCompatible_Level7/{z}/{y}/{x}.png`,
+    label: "GOES-WEST",
+    attribution: "NASA GIBS · NOAA GOES-West ABI GeoColor",
+    time: "latest",
+    maxNativeZoom: 7,
+    note: "GOES-West geostationary imagery, ~10-min refresh — watch smoke move. Network required.",
+  },
+  // VIIRS true colour: yesterday's polar overpass — burn scars and thick smoke
+  // as the eye would see them.
+  viirs: {
+    url: `${GIBS}/VIIRS_SNPP_CorrectedReflectance_TrueColor/default/{time}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`,
+    label: "SATELLITE",
+    attribution: "NASA GIBS · VIIRS SNPP true colour (prev. day)",
+    time: "day",
+    maxNativeZoom: 9,
+    note: "VIIRS true-colour satellite, previous-day overpass — burn scars and smoke. Network required.",
+  },
+  // Aerosol optical depth: a coarse "smoke over this area" density wash.
+  // Translucent so it reads on top of imagery or the basemap.
+  smoke: {
+    url: `${GIBS}/MODIS_Combined_Value_Added_AOD/default/{time}/GoogleMapsCompatible_Level6/{z}/{y}/{x}.png`,
+    label: "SMOKE (AOD)",
+    attribution: "NASA GIBS · MODIS aerosol optical depth (prev. day)",
+    time: "day",
+    maxNativeZoom: 6,
+    opacity: 0.55,
+    note: "MODIS aerosol optical depth — coarse smoke-density signal, previous day. Network required.",
+  },
 };
+
+// yesterday UTC as YYYY-MM-DD — the safe date for GIBS daily mosaics
+function gibsDay(): string {
+  return new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 10);
+}
 
 const CA_CENTER: [number, number] = [37.4, -119.6];
 const DEFAULT_ZOOM = 6; // whole state in view
@@ -292,9 +347,19 @@ export default function MapPanel({
       const on = !!overlays[key];
       const existing = overlayRefs.current[key];
       if (on && !existing) {
-        const ol = L.tileLayer(spec.url, {
+        const url =
+          spec.time === "day"
+            ? spec.url.replace("{time}", gibsDay())
+            : spec.time === "latest"
+              ? spec.url.replace("{time}", "default")
+              : spec.url;
+        const ol = L.tileLayer(url, {
           attribution: spec.attribution,
           maxZoom: 19,
+          // GIBS caps native zoom per layer; beyond it Leaflet upscales the
+          // last real tiles instead of requesting non-existent ones (404s)
+          maxNativeZoom: spec.maxNativeZoom ?? 19,
+          opacity: spec.opacity ?? 1,
           crossOrigin: true,
           zIndex: 5, // above the basemap tiles, below markers (their own pane)
         }).addTo(m);
@@ -1082,27 +1147,35 @@ export default function MapPanel({
             {hotspots.latest_pass ? ` · last pass ${age(hotspots.latest_pass)} ago` : ""}
           </span>
         )}
-        {(["labels", "water"] as const).map((key) => (
-          <span
-            key={key}
-            onClick={() => setOverlays((o) => ({ ...o, [key]: !o[key] }))}
-            title={
-              key === "labels"
-                ? "place names on top of any basemap — turn on for a clean terrain base"
-                : "USGS water features (streams, lakes)"
-            }
-            style={{
-              pointerEvents: "auto",
-              cursor: "pointer",
-              color: overlays[key] ? C.txt : C.dim,
-              border: `1px solid ${overlays[key] ? C.txt + "66" : C.line}`,
-              borderRadius: 3,
-              padding: "1px 5px",
-            }}
-          >
-            {overlays[key] ? "◼" : "◻"} {OVERLAYS[key].label}
-          </span>
-        ))}
+        {(["labels", "water", "goes", "viirs", "smoke"] as const).map((key) => {
+          const spec = OVERLAYS[key];
+          // satellite layers get their own accent so the network-heavy imagery
+          // reads distinct from the lightweight vector overlays
+          const sat = key === "goes" || key === "viirs" || key === "smoke";
+          const accent = sat ? C.ok : C.txt;
+          const title =
+            spec.note ??
+            (key === "labels"
+              ? "place names on top of any basemap — turn on for a clean terrain base"
+              : "USGS water features (streams, lakes)");
+          return (
+            <span
+              key={key}
+              onClick={() => setOverlays((o) => ({ ...o, [key]: !o[key] }))}
+              title={title}
+              style={{
+                pointerEvents: "auto",
+                cursor: "pointer",
+                color: overlays[key] ? accent : C.dim,
+                border: `1px solid ${overlays[key] ? accent + "66" : C.line}`,
+                borderRadius: 3,
+                padding: "1px 5px",
+              }}
+            >
+              {overlays[key] ? "◼" : "◻"} {spec.label}
+            </span>
+          );
+        })}
         {!!wind?.count && (
           <span
             onClick={() => setShowWind((v) => !v)}
