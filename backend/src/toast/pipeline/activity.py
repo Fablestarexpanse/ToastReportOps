@@ -93,6 +93,24 @@ def gather_evidence(
         (inc["id"], AIRCRAFT_HOURS),
     ).fetchone()[0]
 
+    # The 48h count above sweeps the full 20nm poll radius — over an urban fire
+    # that is every news/police/medevac helo in the basin, and it kept vetoing
+    # closures of fires CAL FIRE itself calls out. The CLOSE gate instead wants
+    # aircraft actually over the fire, recently: within 8km in the last 6h.
+    # Role matters too: in a city, "helicopter" is LAPD, news and medevac —
+    # only a confirmed fire signature (tanker / air attack, i.e. a fire callsign,
+    # a fire-only airframe, or a fire operator) can overrule officials.
+    overhead: set[str] = set()
+    if inc["lat"] is not None:
+        for row in conn.execute(
+            """SELECT hex, lat, lon FROM aircraft_positions
+               WHERE incident_id = ? AND role IN ('tanker', 'air_attack')
+                 AND unixepoch('now') - unixepoch(seen_at) < 6 * 3600""",
+            (inc["id"],),
+        ):
+            if haversine_km(inc["lat"], inc["lon"], row["lat"], row["lon"]) <= HOTSPOT_KM:
+                overhead.add(row["hex"])
+
     return {
         "days_since_last_fact": round(days_quiet, 1) if days_quiet is not None else None,
         "containment_pct": containment["containment_pct"] if containment else None,
@@ -105,6 +123,7 @@ def gather_evidence(
         "official_containment": official["containment"] if official else None,
         "hotspots_within_8km": hotspots_near,
         "fire_aircraft_last_48h": aircraft,
+        "aircraft_overhead_6h": len(overhead),
     }
 
 
@@ -117,16 +136,22 @@ def _rules_verdict(ev: dict[str, Any]) -> tuple[str, str]:
         ev["official_status"] == "inactive"
         or (cont >= 95 and quiet >= 2)
     )
-    signals_alive = ev["hotspots_within_8km"] > 0 or ev["fire_aircraft_last_48h"] > 0
+    signals_alive = ev["hotspots_within_8km"] > 0 or ev["aircraft_overhead_6h"] > 0
     if signals_out and not signals_alive:
         return "close", (
             f"officials list it {ev['official_status']}, "
             f"{int(cont)}% contained, quiet {quiet:.0f}d, no heat or aircraft"
         )
+    if signals_out and signals_alive:
+        return "uncertain", (
+            f"officials list it {ev['official_status']} yet "
+            f"{ev['hotspots_within_8km']} hotspots / {ev['aircraft_overhead_6h']} "
+            f"fire aircraft say otherwise — needs eyes"
+        )
     if signals_alive:
         return "keep", (
             f"{ev['hotspots_within_8km']} hotspots / "
-            f"{ev['fire_aircraft_last_48h']} fire aircraft still present"
+            f"{ev['aircraft_overhead_6h']} fire aircraft overhead in the last 6h"
         )
     return "uncertain", "signals are mixed — needs eyes"
 
@@ -148,8 +173,39 @@ def check_active(
 
     proposed = 0
     log = get_logger("activity")
+    auto_closed = 0
     for inc in incidents:
         ev = gather_evidence(conn, inc, calfire)
+
+        # THE official source saying "inactive" is not a judgment call — it is
+        # authority, relayed. Auto-close, logged as such — UNLESS live signals
+        # disagree (heat or aircraft on scene), which drops to a proposal for
+        # human eyes instead.
+        if (
+            ev["official_status"] == "inactive"
+            and ev["hotspots_within_8km"] == 0
+            and ev["aircraft_overhead_6h"] == 0
+        ):
+            from toast.core.ids import ulid as _ulid
+
+            conn.execute(
+                "UPDATE incidents SET status = 'contained', updated_at = ? WHERE id = ?",
+                (utcnow(), inc["id"]),
+            )
+            conn.execute(
+                """INSERT INTO incident_events (id, incident_id, event, detail, actor, at)
+                   VALUES (?, ?, 'status_change', ?, 'calfire-official', ?)""",
+                (_ulid(), inc["id"],
+                 json.dumps({"from": "active", "to": "contained",
+                             "why": "CAL FIRE lists this fire inactive"}), utcnow()),
+            )
+            conn.execute(
+                "DELETE FROM activity_proposals WHERE incident_id = ?", (inc["id"],)
+            )
+            auto_closed += 1
+            log.info("auto_closed_official", incident=inc["canonical_name"])
+            continue
+
         verdict, reasoning = _rules_verdict(ev)
         confidence = 0.7
         version = "rules-v1"
@@ -193,5 +249,7 @@ def check_active(
     closable = conn.execute(
         "SELECT COUNT(*) FROM activity_proposals WHERE verdict = 'close'"
     ).fetchone()[0]
-    log.info("activity_check_done", checked=proposed, closable=closable)
-    return {"checked": proposed, "closable": closable}
+    log.info(
+        "activity_check_done", checked=proposed, closable=closable, auto_closed=auto_closed
+    )
+    return {"checked": proposed, "closable": closable, "auto_closed": auto_closed}

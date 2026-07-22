@@ -83,7 +83,35 @@ def write_fact(
             prompt_version,
         ),
     )
+    if kind == "evac" and evac_status in ("order", "warning", "shelter_in_place"):
+        # a new evacuation instruction means the Cal OES zone polygons may be
+        # changing RIGHT NOW — resync immediately and re-check shortly after,
+        # instead of waiting out the cache TTL
+        _queue_evac_zone_sync(conn, incident_id)
     return fact_id
+
+
+def _queue_evac_zone_sync(conn: sqlite3.Connection, incident_id: str | None) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from toast.queue import jobs
+
+    try:
+        jobs.enqueue(conn, "evac_zone_sync", {"incident_id": incident_id}, priority=2)
+        # zones often lag the first news of an order — check again in 5 minutes
+        later = (
+            (datetime.now(tz=UTC) + timedelta(minutes=5))
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z")
+        )
+        jobs.enqueue(
+            conn, "evac_zone_sync", {"incident_id": incident_id, "followup": True},
+            priority=2, run_after=later,
+        )
+    except Exception:
+        # the fact write must never fail because a convenience sync could not
+        # be queued
+        pass
 
 
 def write_value_fact(

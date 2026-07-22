@@ -359,6 +359,20 @@ def weather_refresh_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -
     get_logger("weather").info("weather_refresh_done", incidents=done)
 
 
+@register("evac_zone_sync")
+def evac_zone_sync_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """An evacuation instruction just landed: pull the Cal OES zone layer NOW
+    (cache bypassed) so the polygons on the map track the order, not the TTL."""
+    from toast.pipeline.evaczones import get_evac_zones
+
+    result = get_evac_zones(conn, refresh=True)
+    get_logger("evaczones").info(
+        "evac_zone_sync", trigger_incident=payload.get("incident_id"),
+        followup=bool(payload.get("followup")), zones=result.get("count"),
+        matched=result.get("matched"),
+    )
+
+
 @register("activity_check")
 def activity_check_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     """Is every active fire actually still burning? Proposals, never actions."""

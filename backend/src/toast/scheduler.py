@@ -73,6 +73,9 @@ DAILY_STAGES = {
     "radio_ingest": 30,
     # scheduled releases: a minute of slack on a scheduled post is fine
     "release_due": 60,
+    # is every active fire still burning? official-inactive auto-closes;
+    # everything else becomes an operator proposal
+    "activity_check": 1800,
     # the phone hub: alerts out every 30 s, button presses picked up every 15 s
     "telegram_notify": 30,
     "telegram_poll": 15,
