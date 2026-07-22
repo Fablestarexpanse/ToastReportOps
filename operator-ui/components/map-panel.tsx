@@ -148,6 +148,56 @@ function gibsDay(): string {
   return new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
+// The CLOUDS layer, made genuinely transparent. GOES GeoColor is a full image
+// (clouds ON a coloured land/ocean surface), so as a plain tile it covers the
+// map. This tile layer redraws each tile on a canvas and keys the surface out
+// by alpha: white clouds have a high minimum-channel value, any coloured or
+// dark surface has a low one — so alpha ∝ min(R,G,B) leaves only the clouds,
+// everything else fully clear, over whatever layers are beneath. GIBS sends
+// Access-Control-Allow-Origin:* so the pixel readback is not tainted.
+const CloudTileLayer = L.TileLayer.extend({
+  createTile(this: L.TileLayer, coords: L.Coords, done: L.DoneCallback): HTMLElement {
+    const size = this.getTileSize();
+    const tile = document.createElement("canvas");
+    tile.width = size.x;
+    tile.height = size.y;
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const ctx = tile.getContext("2d");
+      if (!ctx) {
+        done(undefined, tile);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, size.x, size.y);
+      try {
+        const d = ctx.getImageData(0, 0, size.x, size.y);
+        const p = d.data;
+        for (let i = 0; i < p.length; i += 4) {
+          const mn = Math.min(p[i], p[i + 1], p[i + 2]); // whiteness of the pixel
+          // only genuine cloud-white survives: haze, bright land and dark
+          // surface all sit below ~135 and go fully clear; above it ramps
+          // steeply to opaque so real clouds stay solid
+          const a = mn < 135 ? 0 : Math.min(255, (mn - 135) * 2.6);
+          p[i + 3] = a;
+        }
+        ctx.putImageData(d, 0, 0);
+      } catch {
+        // if readback ever fails, the drawn tile still shows — never blank
+      }
+      done(undefined, tile);
+    };
+    img.onerror = (e) => done(e instanceof Error ? e : new Error("tile load failed"), tile);
+    img.src = this.getTileUrl(coords);
+    return tile;
+  },
+});
+
+function cloudLayer(url: string, opts: L.TileLayerOptions): L.TileLayer {
+  const Ctor = CloudTileLayer as unknown as new (u: string, o: L.TileLayerOptions) => L.TileLayer;
+  return new Ctor(url, opts);
+}
+
 const CA_CENTER: [number, number] = [37.4, -119.6];
 const DEFAULT_ZOOM = 6; // whole state in view
 // Below this zoom the operator is looking at the state, not a street corner,
@@ -404,17 +454,13 @@ export default function MapPanel({
       new Date(end - (FRAMES - 1 - i) * STEP_MS).toISOString().slice(0, 19) + "Z",
     );
     const layers = times.map((t) =>
-      L.tileLayer(OVERLAYS.clouds.url.replace("{time}", t), {
+      cloudLayer(OVERLAYS.clouds.url.replace("{time}", t), {
         attribution: OVERLAYS.clouds.attribution,
         maxZoom: 19,
         maxNativeZoom: 7,
         opacity: 0,
-        crossOrigin: true,
+        crossOrigin: "anonymous", // required so the canvas pixel readback is clean
         zIndex: 5,
-        // "screen" blend drops GeoColor's dark ocean/night background out and
-        // composites only the bright clouds over the basemap and its layers —
-        // so it reads as a cloud veil, not an opaque satellite sheet
-        className: "tr-clouds-screen",
       }).addTo(m),
     );
     goesFramesRef.current = layers;

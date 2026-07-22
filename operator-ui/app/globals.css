@@ -142,10 +142,3 @@ textarea::placeholder {
 .md-preview hr { border: none; border-top: 1px solid #2c343e; margin: 1.1em 0; }
 .md-preview strong { color: #ffd9c7; }
 
-/* CLOUDS layer (GOES-West GeoColor): "screen" blends the tiles with the map
-   beneath so the image's dark ocean/night background drops out and only the
-   bright clouds show — a cloud veil over our layers, not an opaque sheet.
-   Scoped to the layer's own container so nothing else on the map is affected. */
-.tr-clouds-screen {
-  mix-blend-mode: screen;
-}
