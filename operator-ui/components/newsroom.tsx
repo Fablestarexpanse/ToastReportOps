@@ -129,11 +129,22 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
   };
 
   const visibleDrafts = (queueFilter === "archived" ? archivedDrafts : drafts).filter((dr) => {
+    // the incident selector doubles as the queue's fire filter — the queue
+    // follows the fire you are working; "All fires" shows everything
+    if (genIncident && dr.incident_id !== genIncident) return false;
     if (queueFilter === "all" || queueFilter === "archived") return true;
     if (queueFilter === "published") return dr.status === "published";
     if (queueFilter === "research") return dr.kind === "analysis";
     return dr.kind === queueFilter;
   });
+
+  const visibleResearch = research.filter(
+    (r) => !genIncident || r.incident_id === genIncident,
+  );
+
+  const fireName = genIncident
+    ? incidents.find((i) => i.id === genIncident)?.canonical_name
+    : null;
 
   useEffect(() => {
     if (!selId) {
@@ -327,6 +338,7 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
             onChange={(e) => setGenIncident(e.target.value)}
             style={{ width: "100%", background: C.bg, border: `1px solid ${C.line}`, borderRadius: 5, color: C.txt, fontFamily: font.mono, fontSize: 10.5, padding: "6px 8px", marginBottom: 6 }}
           >
+            <option value="">All fires — full queue</option>
             {incidents.map((i) => (
               <option key={i.id} value={i.id}>
                 {i.canonical_name} · {i.fact_count} facts
@@ -350,6 +362,9 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
         </div>
         <div style={{ padding: "8px 12px 4px", fontFamily: font.disp, fontSize: 12, letterSpacing: 2, color: C.dim }}>
           DRAFT QUEUE
+          {fireName && (
+            <span style={{ color: C.ember, letterSpacing: 0.5, fontSize: 10 }}> · {fireName}</span>
+          )}
         </div>
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap", padding: "0 12px 6px" }}>
           {([
@@ -370,7 +385,7 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
           ))}
         </div>
         <div style={{ flex: 1, overflowY: "auto" }}>
-          {research.map((r) => {
+          {visibleResearch.map((r) => {
             const cfg =
               r.state === "failed"
                 ? { color: C.evac, icon: "✕", label: "RESEARCH FAILED" }
@@ -430,6 +445,15 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
               </div>
             );
           })}
+          {visibleDrafts.length === 0 && visibleResearch.length === 0 && (
+            <div style={{ padding: "14px 12px", fontFamily: font.mono, fontSize: 9.5, color: C.faint, lineHeight: 1.6 }}>
+              {fireName
+                ? `no drafts for the ${fireName} yet — generate one above, or switch to "All fires"`
+                : queueFilter === "archived"
+                  ? "nothing archived"
+                  : "no drafts match this filter"}
+            </div>
+          )}
           {visibleDrafts.map((dr) => (
             <div
               key={dr.id}
