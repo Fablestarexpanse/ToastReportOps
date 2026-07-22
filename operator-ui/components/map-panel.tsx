@@ -505,6 +505,9 @@ export default function MapPanel({
       return [(la2 * 180) / Math.PI, (lo2 * 180) / Math.PI];
     };
     for (const cam of cameras.cameras) {
+      // while its frame is up in the viewer, the camera on the map blinks —
+      // so the eye can connect the picture to the lens that took it
+      const viewing = viewCam?.id === cam.id;
       // the view cone: where this lens is looking RIGHT NOW (az drifts as
       // operators pan PTZ cameras — the index refreshes hourly)
       if (cam.az != null) {
@@ -523,7 +526,11 @@ export default function MapPanel({
         // ◎ = a lens; cyan is unused by any other layer so cameras read as
         // their own thing at a glance. The box is the CLICK TARGET — keep it
         // comfortably larger than the glyph.
-        html: `<div style="color:#45d6d0;font-size:20px;line-height:28px;text-align:center;text-shadow:0 0 4px #000,0 0 6px #000;font-weight:700;cursor:pointer">◎</div>`,
+        html:
+          `<div class="${viewing ? "tr-blink" : ""}" style="color:${viewing ? "#7ef5ef" : "#45d6d0"};` +
+          `font-size:${viewing ? 26 : 20}px;line-height:28px;text-align:center;` +
+          `text-shadow:0 0 4px #000,0 0 6px #000${viewing ? ",0 0 10px #45d6d0" : ""};` +
+          `font-weight:700;cursor:pointer">◎</div>`,
         iconSize: [28, 28],
         iconAnchor: [14, 14],
       });
@@ -544,7 +551,9 @@ export default function MapPanel({
     }
     group.addTo(m);
     cameraLayerRef.current = group;
-  }, [cameras, showCameras, ready]);
+    // viewCam in the deps: opening/closing the viewer redraws the icons so
+    // the one being watched blinks and stops blinking at the right moments
+  }, [cameras, showCameras, ready, viewCam]);
 
   // fire-weather (red flag) zones + Caltrans closures: slow-moving layers,
   // refreshed on the server's own ~10-min cache cadence
