@@ -119,25 +119,16 @@ const OVERLAYS: Record<string, OverlaySpec> = {
     label: "WATER",
     attribution: "USGS The National Map (public domain)",
   },
-  // GOES-West geostationary GeoColor: the smoke plume in motion, refreshed
-  // every ~10 minutes. Full-opacity background — fire pins ride on top.
-  goes: {
+  // CLOUDS = GOES-West geostationary GeoColor: live cloud/smoke imagery,
+  // refreshed every ~10 minutes. Enabling it auto-plays a looping time-lapse.
+  // (VIIRS true-colour was dropped — same picture, once a day instead of live.)
+  clouds: {
     url: `${GIBS}/GOES-West_ABI_GeoColor/default/{time}/GoogleMapsCompatible_Level7/{z}/{y}/{x}.png`,
-    label: "GOES-WEST",
+    label: "CLOUDS",
     attribution: "NASA GIBS · NOAA GOES-West ABI GeoColor",
     time: "latest",
     maxNativeZoom: 7,
-    note: "GOES-West geostationary — enable to auto-play a looping ~2-hour time-lapse of the smoke moving. Network required.",
-  },
-  // VIIRS true colour: yesterday's polar overpass — burn scars and thick smoke
-  // as the eye would see them.
-  viirs: {
-    url: `${GIBS}/VIIRS_SNPP_CorrectedReflectance_TrueColor/default/{time}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`,
-    label: "SATELLITE",
-    attribution: "NASA GIBS · VIIRS SNPP true colour (prev. day)",
-    time: "day",
-    maxNativeZoom: 9,
-    note: "VIIRS true-colour satellite, previous-day overpass — burn scars and smoke. Network required.",
+    note: "GOES-West geostationary cloud + smoke imagery — enable to auto-play a looping ~2-hour time-lapse. Network required.",
   },
   // Aerosol optical depth: a coarse "smoke over this area" density wash.
   // Translucent so it reads on top of imagery or the basemap.
@@ -355,7 +346,7 @@ export default function MapPanel({
     for (const [key, spec] of Object.entries(OVERLAYS)) {
       // GOES is handled entirely by the time-lapse effect below (it animates,
       // never draws a single static frame), so skip it here
-      if (key === "goes") continue;
+      if (key === "clouds") continue;
       const on = !!overlays[key];
       const existing = overlayRefs.current[key];
       if (on && !existing) {
@@ -401,7 +392,7 @@ export default function MapPanel({
       goesFramesRef.current = [];
       setGoesFrameTime(null);
     };
-    if (!m || !ready || !overlays.goes) {
+    if (!m || !ready || !overlays.clouds) {
       stop();
       return;
     }
@@ -413,8 +404,8 @@ export default function MapPanel({
       new Date(end - (FRAMES - 1 - i) * STEP_MS).toISOString().slice(0, 19) + "Z",
     );
     const layers = times.map((t) =>
-      L.tileLayer(OVERLAYS.goes.url.replace("{time}", t), {
-        attribution: OVERLAYS.goes.attribution,
+      L.tileLayer(OVERLAYS.clouds.url.replace("{time}", t), {
+        attribution: OVERLAYS.clouds.attribution,
         maxZoom: 19,
         maxNativeZoom: 7,
         opacity: 0,
@@ -434,7 +425,7 @@ export default function MapPanel({
       show(idx);
     }, 650);
     return stop;
-  }, [overlays.goes, ready]);
+  }, [overlays.clouds, ready]);
 
   // perimeters: fetched once, refreshed on the server's own 30-minute cache.
   // A failure here is silent by design — the map is still useful without them.
@@ -1248,11 +1239,11 @@ export default function MapPanel({
             {hotspots.latest_pass ? ` · last pass ${age(hotspots.latest_pass)} ago` : ""}
           </span>
         )}
-        {(["labels", "water", "goes", "viirs", "smoke"] as const).map((key) => {
+        {(["labels", "water", "clouds", "smoke"] as const).map((key) => {
           const spec = OVERLAYS[key];
           // satellite layers get their own accent so the network-heavy imagery
           // reads distinct from the lightweight vector overlays
-          const sat = key === "goes" || key === "viirs" || key === "smoke";
+          const sat = key === "clouds" || key === "smoke";
           const accent = sat ? C.ok : C.txt;
           const title =
             spec.note ??
@@ -1274,7 +1265,7 @@ export default function MapPanel({
               }}
             >
               {overlays[key] ? "◼" : "◻"} {spec.label}
-              {key === "goes" && overlays.goes && goesFrameTime
+              {key === "clouds" && overlays.clouds && goesFrameTime
                 ? ` ${goesFrameTime.slice(11, 16)}Z`
                 : ""}
             </span>
