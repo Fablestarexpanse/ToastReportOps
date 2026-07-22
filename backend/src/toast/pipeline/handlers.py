@@ -359,6 +359,15 @@ def weather_refresh_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -
     get_logger("weather").info("weather_refresh_done", incidents=done)
 
 
+@register("activity_check")
+def activity_check_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Is every active fire actually still burning? Proposals, never actions."""
+    from toast.pipeline.activity import check_active
+
+    result = check_active(conn)
+    get_logger("activity").info("activity_check_job", **result)
+
+
 @register("autotriage")
 def autotriage_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     """Draft dispositions for the adjudication queue. Proposals only — the

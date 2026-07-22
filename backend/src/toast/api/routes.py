@@ -179,6 +179,77 @@ def refresh_resources(request: Request, incident_id: str) -> dict:
         raise HTTPException(502, f"could not reach WFIGS: {exc}") from exc
 
 
+@router.post("/incidents/activity-check")
+def activity_check_now(request: Request) -> dict:
+    """Queue a sweep asking whether each active fire is actually still
+    burning. Proposals only; closing is the operator's click."""
+    from toast.queue import jobs
+
+    return {"ok": True, "job_id": jobs.enqueue(_conn(request), "activity_check", {}, priority=5)}
+
+
+# NOT under /incidents/… — the parametrized GET /incidents/{id} is registered
+# first and would swallow the literal path as an id
+@router.get("/activity/proposals")
+def activity_proposals(request: Request) -> dict:
+    rows = _conn(request).execute(
+        """SELECT p.*, i.canonical_name, i.county FROM activity_proposals p
+           JOIN incidents i ON i.id = p.incident_id
+           WHERE i.status = 'active'
+           ORDER BY CASE p.verdict WHEN 'close' THEN 0 WHEN 'uncertain' THEN 1 ELSE 2 END,
+                    p.confidence DESC"""
+    ).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["evidence"] = json.loads(d["evidence"] or "{}")
+        out.append(d)
+    return {"proposals": out}
+
+
+@router.delete("/incidents/{incident_id}/activity-proposal")
+def dismiss_activity_proposal(request: Request, incident_id: str) -> dict:
+    """Operator says 'keep it' — the proposal is dismissed, nothing changes."""
+    conn = _conn(request)
+    conn.execute("DELETE FROM activity_proposals WHERE incident_id = ?", (incident_id,))
+    conn.commit()
+    return {"ok": True}
+
+
+@router.post("/incidents/{incident_id}/status")
+def set_incident_status(request: Request, incident_id: str, body: dict) -> dict:
+    """Operator-only lifecycle moves. contained -> active exists because fires
+    re-flare; every change lands in incident_events for the record."""
+    allowed = {
+        "active": {"contained", "frozen"},
+        "contained": {"active", "frozen"},
+        "candidate": {"active", "frozen"},
+    }
+    target = str(body.get("status") or "")
+    conn = _conn(request)
+    row = conn.execute("SELECT status FROM incidents WHERE id = ?", (incident_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "incident not found")
+    if target not in allowed.get(row["status"], set()):
+        raise HTTPException(409, f"cannot go {row['status']} -> {target}")
+    from toast.core.db import utcnow as _now
+    from toast.core.ids import ulid as _ulid
+
+    conn.execute(
+        "UPDATE incidents SET status = ?, updated_at = ? WHERE id = ?",
+        (target, _now(), incident_id),
+    )
+    conn.execute(
+        """INSERT INTO incident_events (id, incident_id, event, detail, actor, at)
+           VALUES (?, ?, 'status_change', ?, 'operator', ?)""",
+        (_ulid(), incident_id,
+         json.dumps({"from": row["status"], "to": target}), _now()),
+    )
+    conn.execute("DELETE FROM activity_proposals WHERE incident_id = ?", (incident_id,))
+    conn.commit()
+    return {"ok": True, "incident_id": incident_id, "status": target}
+
+
 @router.get("/incidents/{incident_id}/locate")
 def locate_incident(request: Request, incident_id: str) -> dict:
     """Best available position for a fire, with its precision stated:

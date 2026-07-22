@@ -35,7 +35,11 @@ import {
   fetchIntel,
   fetchOriginCheck,
   fetchAqi,
+  activityCheckNow,
+  dismissActivityProposal,
+  fetchActivityProposals,
   locateIncident,
+  setIncidentStatus,
   fetchHistory,
   fetchWeather,
   fetchNotes,
@@ -1764,6 +1768,52 @@ function OpsMode({
   // Zooming to street level makes a coordinate look authoritative, so it is
   // re-verified against CAL FIRE at that exact moment. We still fly there —
   // the operator asked — but they see what the point is worth.
+  const [activity, setActivity] = useState<import("@/lib/api").ActivityProposal[]>([]);
+  const [activityBusy, setActivityBusy] = useState(false);
+  const loadActivity = useCallback(async () => {
+    try {
+      const r = await fetchActivityProposals();
+      setActivity(r.proposals.filter((pp) => pp.verdict !== "keep"));
+    } catch {}
+  }, []);
+  useEffect(() => {
+    loadActivity();
+  }, [loadActivity]);
+
+  const runActivityCheck = async () => {
+    setActivityBusy(true);
+    try {
+      await activityCheckNow();
+      toast("checking every active fire — official list, heat, aircraft, recency");
+      // the job takes seconds (rules) to a minute (AI on the flagged ones)
+      for (let i = 0; i < 12; i++) {
+        await new Promise((r) => setTimeout(r, 6000));
+        await loadActivity();
+      }
+    } catch (e) {
+      toast(`check failed: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setActivityBusy(false);
+    }
+  };
+
+  const closeFire = async (id: string, name: string) => {
+    try {
+      await setIncidentStatus(id, "contained");
+      toast(`${name} marked contained (reversible — fires re-flare)`);
+      loadActivity();
+    } catch (e) {
+      toast(`${e instanceof Error ? e.message : e}`);
+    }
+  };
+
+  const keepFire = async (id: string) => {
+    try {
+      await dismissActivityProposal(id);
+      loadActivity();
+    } catch {}
+  };
+
   const onZoomToOrigin = async (inc: Incident) => {
     if (inc.lat == null || inc.lon == null) return;
     setChecking(inc.id);
@@ -2045,8 +2095,54 @@ function OpsMode({
             focus={focus}
           />
         </div>
+        {activity.length > 0 && (
+          <div style={{ flexShrink: 0, borderTop: `1px solid ${C.warn}55`, background: C.warn + "0d", maxHeight: 150, overflowY: "auto", padding: "6px 12px" }}>
+            <div style={{ fontFamily: font.disp, fontSize: 10, letterSpacing: 2, color: C.warn, marginBottom: 4 }}>
+              ✔ ACTIVITY CHECK — {activity.length} {activity.length === 1 ? "FIRE MAY BE" : "FIRES MAY BE"} DONE
+            </div>
+            {activity.map((pp) => (
+              <div key={pp.incident_id} style={{ display: "flex", gap: 8, alignItems: "center", fontFamily: font.mono, fontSize: 9, padding: "3px 0" }}>
+                <span style={{ color: pp.verdict === "close" ? C.warn : C.dim, minWidth: 62 }}>
+                  {pp.verdict === "close" ? "LIKELY OUT" : "UNCERTAIN"}
+                </span>
+                <span
+                  onClick={() => setSelected(pp.incident_id)}
+                  style={{ color: C.txt, fontWeight: 700, cursor: "pointer" }}
+                >
+                  {pp.canonical_name}
+                </span>
+                <span style={{ color: C.faint, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={JSON.stringify(pp.evidence)}>
+                  {pp.reasoning}
+                </span>
+                <span
+                  onClick={() => closeFire(pp.incident_id, pp.canonical_name)}
+                  title="mark contained — reversible; every change is logged"
+                  style={{ cursor: "pointer", color: C.ok, border: `1px solid ${C.ok}66`, borderRadius: 3, padding: "1px 7px" }}
+                >
+                  ✓ MARK CONTAINED
+                </span>
+                <span
+                  onClick={() => keepFire(pp.incident_id)}
+                  title="dismiss — keep this fire active"
+                  style={{ cursor: "pointer", color: C.dim, border: `1px solid ${C.line}`, borderRadius: 3, padding: "1px 7px" }}
+                >
+                  KEEP
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
         {/* compact incident chip strip below the map */}
         <div style={{ flexShrink: 0, borderTop: `1px solid ${C.line}`, maxHeight: 150, overflowY: "auto", background: C.panel }}>
+          <div style={{ display: "flex", alignItems: "center", padding: "4px 12px 0" }}>
+            <span
+              onClick={() => !activityBusy && runActivityCheck()}
+              title="verify every active fire is still burning: CAL FIRE's own list, satellite heat, aircraft, and reporting recency — the AI reads the evidence and proposes; you decide"
+              style={{ marginLeft: "auto", fontFamily: font.mono, fontSize: 8.5, cursor: "pointer", color: activityBusy ? C.faint : C.blue, border: `1px solid ${activityBusy ? C.line : C.blue + "66"}`, borderRadius: 3, padding: "2px 8px" }}
+            >
+              {activityBusy ? "✔ checking…" : "✔ CHECK ACTIVE FIRES"}
+            </span>
+          </div>
           {(incidents ?? []).map((inc) => (
             <div
               key={inc.id}

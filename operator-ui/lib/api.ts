@@ -1208,6 +1208,32 @@ export type LocateResult = {
   label: string;
 };
 
+export type ActivityProposal = {
+  incident_id: string;
+  canonical_name: string;
+  county: string | null;
+  verdict: "close" | "keep" | "uncertain";
+  evidence: Record<string, unknown>;
+  reasoning: string | null;
+  confidence: number | null;
+  prompt_version: string;
+  proposed_at: string;
+};
+
+export const activityCheckNow = () =>
+  post<{ job_id: string }>("/incidents/activity-check", {});
+
+export const fetchActivityProposals = () =>
+  get<{ proposals: ActivityProposal[] }>("/activity/proposals");
+
+export const setIncidentStatus = (incidentId: string, status: string) =>
+  post<{ status: string }>(`/incidents/${incidentId}/status`, { status });
+
+export async function dismissActivityProposal(incidentId: string): Promise<void> {
+  const res = await fetch(`/api/incidents/${incidentId}/activity-proposal`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`dismiss failed (${res.status})`);
+}
+
 export const locateIncident = (incidentId: string) =>
   get<LocateResult>(`/incidents/${incidentId}/locate`);
 
