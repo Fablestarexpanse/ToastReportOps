@@ -294,14 +294,136 @@ def attach_card(conn: sqlite3.Connection, draft_id: str) -> dict[str, Any]:
     from toast.core.rawstore import store_raw
 
     draft = conn.execute(
-        "SELECT incident_id, status FROM drafts WHERE id = ?", (draft_id,)
+        "SELECT incident_id, status, title FROM drafts WHERE id = ?", (draft_id,)
     ).fetchone()
     if draft is None:
         raise ValueError("draft not found")
-    if draft["incident_id"] is None:
+    if draft["incident_id"] is not None:
+        png = generate_card(conn, draft["incident_id"])
+    elif (draft["title"] or "").startswith("CALIFORNIA WILDFIRE ROUNDUP"):
+        # the statewide roundup gets the statewide card
+        png = generate_state_card(conn)
+    else:
         raise ValueError("draft has no incident — nothing to draw")
-    png = generate_card(conn, draft["incident_id"])
     sha = store_raw(conn, Path(Settings().toast_data_dir), png, "image/png", url=None)
     conn.execute("UPDATE drafts SET graphic_sha = ? WHERE id = ?", (sha, draft_id))
     conn.commit()
     return {"draft_id": draft_id, "graphic_sha": sha, "bytes": len(png)}
+
+
+# ------------------------------------------------------------- statewide card
+
+CA_CENTER = (37.3, -119.6)
+
+
+def generate_state_card(conn: sqlite3.Connection) -> bytes:
+    """One card for the whole state: every active fire on a CA map, sized by
+    acreage, evac fires in the alarm colour, aggregate tiles up top."""
+    rows = conn.execute(
+        """SELECT i.id, i.canonical_name, i.lat, i.lon,
+             (SELECT v.acreage FROM facts v WHERE v.incident_id = i.id AND v.kind='acreage'
+                AND v.id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)
+              ORDER BY v.observed_at DESC LIMIT 1) AS acreage,
+             (SELECT v.evac_status FROM facts v WHERE v.incident_id = i.id AND v.kind='evac'
+                AND v.id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)
+              ORDER BY v.observed_at DESC LIMIT 1) AS evac
+           FROM incidents i
+           WHERE i.status = 'active' AND COALESCE(i.incident_type, 'WF') != 'RX'"""
+    ).fetchall()
+    fires = [dict(r) for r in rows]
+    evac_n = sum(1 for f in fires if f["evac"] in ("order", "warning", "shelter_in_place"))
+    total = sum(int(f["acreage"]) for f in fires if f["acreage"] is not None)
+    new24 = conn.execute(
+        """SELECT COUNT(*) FROM incidents WHERE status='active'
+           AND unixepoch('now') - unixepoch(created_at) < 86400"""
+    ).fetchone()[0]
+
+    img = Image.new("RGB", (W, H), BG)
+    d = ImageDraw.Draw(img)
+    y = 30
+    d.text((40, y), "CALIFORNIA WILDFIRE SITUATION", font=_font(46), fill=TXT)
+    y += 60
+    d.text((40, y), utcnow()[:10], font=_font(20), fill=DIM)
+    y += 36
+
+    tiles = [
+        ("ACTIVE FIRES", str(len(fires)), EMBER),
+        ("TOTAL ACRES", f"{total:,}", EMBER),
+        ("UNDER EVAC", str(evac_n), EVAC if evac_n else DIM),
+        ("NEW IN 24H", str(new24), DIM),
+    ]
+    tw = (W - 80 - 3 * 14) // 4
+    for i, (label, value, color) in enumerate(tiles):
+        x0 = 40 + i * (tw + 14)
+        d.rectangle([(x0, y), (x0 + tw, y + 84)], fill=PANEL, outline=LINE)
+        d.text((x0 + 16, y + 10), label, font=_font(16), fill=DIM)
+        d.text((x0 + 16, y + 32), value, font=_font(36), fill=color)
+    y += 98
+
+    footer_band = 78
+    map_top = y
+    map_h = H - map_top - footer_band
+    # fit the view to where the fires actually are: a fixed statewide frame
+    # cropped San Diego whenever NorCal was busy
+    # fit only over plausible-CA positions: one bad geocode dragged the whole
+    # frame to Mexico
+    placed = [
+        f for f in fires
+        if f["lat"] is not None and 32.0 <= f["lat"] <= 42.5 and -125.0 <= f["lon"] <= -113.5
+    ]
+    if placed:
+        lat_c = (max(f["lat"] for f in placed) + min(f["lat"] for f in placed)) / 2
+        lon_c = (max(f["lon"] for f in placed) + min(f["lon"] for f in placed)) / 2
+        lat_span = max(f["lat"] for f in placed) - min(f["lat"] for f in placed)
+        zoom = 6 if lat_span <= 6.5 else 5
+    else:
+        (lat_c, lon_c), zoom = CA_CENTER, 6
+    strip = _stitch_map(lat_c, lon_c, zoom=zoom, w=W - 80, h=map_h)
+    img.paste(strip, (40, map_top))
+    d2 = ImageDraw.Draw(img)
+    cx, cy = _tile_frac(lat_c, lon_c, zoom)
+    px0, py0 = cx * TILE - (W - 80) / 2, cy * TILE - map_h / 2
+    import math as _math
+
+    for f in fires:
+        if f["lat"] is None or f["lon"] is None:
+            continue
+        fx, fyy = _tile_frac(f["lat"], f["lon"], zoom)
+        x, ypix = fx * TILE - px0 + 40, fyy * TILE - py0 + map_top
+        if not (40 < x < W - 40 and map_top < ypix < map_top + map_h):
+            continue
+        acres = f["acreage"] or 0
+        r = max(4, min(16, 3 + _math.log10(acres + 1) * 2.6))
+        col = EVAC if f["evac"] in ("order", "warning", "shelter_in_place") else EMBER
+        d2.ellipse([(x - r, ypix - r), (x + r, ypix + r)], outline=col, width=3)
+    d2.rectangle([(40, map_top), (W - 40, map_top + map_h)], outline=LINE)
+    d2.text(
+        (W - 46, map_top + map_h - 24), "(c) OpenStreetMap - (c) CARTO",
+        font=_font(14), fill=DIM, anchor="ra",
+    )
+    d2.text(
+        (46, map_top + map_h - 24),
+        "ring size = mapped acres - pink = evacuation in effect",
+        font=_font(14), fill=DIM,
+    )
+
+    fy = map_top + map_h + 12
+    badge_path = Path(__file__).resolve().parents[1] / "assets" / "ops-badge.png"
+    tx = 40
+    if badge_path.exists():
+        from PIL import Image as _Image
+
+        badge = _Image.open(badge_path).convert("RGBA")
+        badge.thumbnail((46, 46), _Image.LANCZOS)
+        img.paste(badge, (40, fy - 2), badge)
+        tx = 40 + badge.width + 12
+    d.text((tx, fy + 8), "TOAST REPORT", font=_font(22), fill=EMBER)
+    d.text(
+        (W - 40, fy + 11), f"ledger data - generated {utcnow()[:16].replace('T', ' ')}Z",
+        font=_font(15), fill=DIM, anchor="ra",
+    )
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    get_logger("graphics").info("state_card_rendered", fires=len(fires), bytes=buf.tell())
+    return buf.getvalue()

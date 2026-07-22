@@ -20,6 +20,7 @@ import {
   fetchDrafts,
   fetchIncidents,
   generateDraft,
+  generateStatewide,
   saveDraft,
   transitionDraft,
 } from "@/lib/api";
@@ -159,15 +160,23 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
   }, [selId]);
 
   const generate = async () => {
-    if (!genIncident || busy) return;
+    if (busy) return;
     setBusy(true);
     try {
-      const w: { window_start?: string } = {};
-      if (genWindow) w.window_start = new Date(Date.now() - genWindow * 3600_000).toISOString();
-      const r = await generateDraft(genIncident, w);
-      toast(`draft generated — ${r.facts_used} facts, ${r.cited} cited`);
-      await refresh();
-      setSelId(r.draft_id);
+      if (!genIncident) {
+        // "All fires" selected: the statewide roundup — mechanical, cited
+        const r = await generateStatewide();
+        toast(`statewide roundup — ${r.fires} fires, ${r.under_evac} under evac, ${r.cited} cited`);
+        await refresh();
+        setSelId(r.draft_id);
+      } else {
+        const w: { window_start?: string } = {};
+        if (genWindow) w.window_start = new Date(Date.now() - genWindow * 3600_000).toISOString();
+        const r = await generateDraft(genIncident, w);
+        toast(`draft generated — ${r.facts_used} facts, ${r.cited} cited`);
+        await refresh();
+        setSelId(r.draft_id);
+      }
     } catch (e) {
       toast(`draft failed: ${e instanceof Error ? e.message : e}`);
     } finally {
@@ -357,7 +366,7 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
             ))}
           </div>
           <button onClick={generate} style={{ width: "100%", background: busy ? C.faint : C.ember, color: C.bg, border: "none", borderRadius: 5, fontFamily: font.disp, fontWeight: 700, fontSize: 12, letterSpacing: 1, padding: "7px 0", cursor: "pointer" }}>
-            {busy ? "drafting…" : "✎ DRAFT FROM LEDGER"}
+            {busy ? "drafting…" : genIncident ? "✎ DRAFT FROM LEDGER" : "✎ STATEWIDE ROUNDUP"}
           </button>
         </div>
         <div style={{ padding: "8px 12px 4px", fontFamily: font.disp, fontSize: 12, letterSpacing: 2, color: C.dim }}>
@@ -577,7 +586,7 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
               <button onClick={copyBody} title="copy the full text to clipboard" style={{ background: C.panelUp, color: C.txt, border: `1px solid ${C.line}`, borderRadius: 5, fontFamily: font.disp, fontWeight: 600, fontSize: 12, letterSpacing: 1, padding: "7px 14px", cursor: "pointer" }}>
                 ⧉ COPY
               </button>
-              {d.incident_id && (
+              {(d.incident_id || (d.title ?? "").startsWith("CALIFORNIA WILDFIRE ROUNDUP")) && (
                 <button
                   onClick={doGraphic}
                   title="render a map + stats card from the ledger; rides along on image-capable channels"

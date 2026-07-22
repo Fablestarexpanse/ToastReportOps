@@ -292,6 +292,12 @@ export const generateDraft = (incidentId: string, window?: { window_start?: stri
     window ?? {},
   );
 
+export const generateStatewide = () =>
+  post<{ draft_id: string; title: string; fires: number; under_evac: number; cited: number }>(
+    "/drafts/statewide",
+    {},
+  );
+
 export const transitionDraft = (id: string, status: string) =>
   post<{ status: string }>(`/drafts/${id}/status`, { status });
 

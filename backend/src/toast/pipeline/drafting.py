@@ -155,3 +155,131 @@ def generate_draft(
         "cited": len(cited_real),
         "body_md": body_md,
     }
+
+
+STATEWIDE_TITLE = "CALIFORNIA WILDFIRE ROUNDUP"
+
+
+def _latest_fact_row(
+    conn: sqlite3.Connection, incident_id: str, kind: str
+) -> sqlite3.Row | None:
+    return conn.execute(
+        """SELECT * FROM facts
+           WHERE incident_id = ? AND kind = ?
+             AND id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)
+           ORDER BY observed_at DESC LIMIT 1""",
+        (incident_id, kind),
+    ).fetchone()
+
+
+def generate_statewide_roundup(conn: sqlite3.Connection) -> dict[str, Any]:
+    """One draft covering every active fire — deterministic, not LLM-written.
+
+    A roundup is a table of numbers; the ledger already holds them exactly,
+    so composing it mechanically means zero invention risk and every figure
+    cited. The SOCIAL VERSION button rewrites it in a human voice afterwards,
+    through the same human-approval gate as everything else. Evacuation
+    entries carry the official status WORD only — the full official text
+    stays in the workstation, per doctrine.
+    """
+    incidents = conn.execute(
+        """SELECT id, canonical_name, county FROM incidents
+           WHERE status = 'active' AND COALESCE(incident_type, 'WF') != 'RX'"""
+    ).fetchall()
+
+    entries = []
+    for inc in incidents:
+        ac = _latest_fact_row(conn, inc["id"], "acreage")
+        ct = _latest_fact_row(conn, inc["id"], "containment")
+        ev = _latest_fact_row(conn, inc["id"], "evac")
+        evac_status = ev["evac_status"] if ev else None
+        entries.append(
+            {
+                "inc": inc,
+                "acreage": ac["acreage"] if ac else None,
+                "containment": ct["containment_pct"] if ct else None,
+                "evac": evac_status
+                if evac_status in ("order", "warning", "shelter_in_place")
+                else None,
+                "facts": [f for f in (ac, ct, ev) if f is not None],
+            }
+        )
+    entries.sort(key=lambda e: (e["acreage"] or 0), reverse=True)
+
+    cited: list[sqlite3.Row] = []
+    index: dict[str, int] = {}
+
+    def cite(entry) -> str:
+        marks = []
+        for f in entry["facts"]:
+            if f["id"] not in index:
+                cited.append(f)
+                index[f["id"]] = len(cited)
+            marks.append(f"[#{index[f['id']]}]")
+        return "".join(marks)
+
+    def line(entry) -> str:
+        inc = entry["inc"]
+        county = f" ({inc['county']} County)" if inc["county"] else ""
+        ac = (
+            f"{int(entry['acreage']):,} acres"
+            if entry["acreage"] is not None
+            else "size unconfirmed"
+        )
+        ct = f", {int(entry['containment'])}% contained" if entry["containment"] is not None else ""
+        evac_label = {
+            "order": " — **EVACUATION ORDER in effect**",
+            "warning": " — **EVACUATION WARNING in effect**",
+            "shelter_in_place": " — **SHELTER IN PLACE in effect**",
+        }.get(entry["evac"] or "", "")
+        text = f"- **{inc['canonical_name']}**{county} — {ac}{ct}{evac_label} {cite(entry)}"
+        return text.rstrip()
+
+    evac_entries = [e for e in entries if e["evac"]]
+    sized = [e for e in entries if not e["evac"] and e["acreage"] is not None]
+    unsized = [e for e in entries if not e["evac"] and e["acreage"] is None]
+
+    total_acres = sum(int(e["acreage"]) for e in entries if e["acreage"] is not None)
+    now = utcnow()
+    datestr = now[:10]
+
+    lines = [
+        f"{len(entries)} active fires are burning across California, totalling "
+        f"{total_acres:,} mapped acres. {len(evac_entries)} "
+        f"{'fire has' if len(evac_entries) == 1 else 'fires have'} active evacuation "
+        "instructions.",
+        "",
+    ]
+    if evac_entries:
+        lines += ["## Under evacuation", ""]
+        lines += [line(e) for e in evac_entries]
+        lines += ["", "Evacuation boundaries and instructions are issued by county "
+                  "officials — always follow the official notice, not this summary.", ""]
+    if sized:
+        lines += ["## Largest active fires", ""]
+        lines += [line(e) for e in sized[:12]]
+        lines += [""]
+    if unsized:
+        names = ", ".join(e["inc"]["canonical_name"] for e in unsized)
+        lines += [f"Also active (size not yet confirmed): {names}.", ""]
+
+    body_md = chr(10).join(lines) + _sources_section(conn, cited)
+
+    from toast.core.ids import ulid
+
+    draft_id = ulid()
+    title = f"{STATEWIDE_TITLE} — {datestr}"
+    conn.execute(
+        """INSERT INTO drafts (id, incident_id, kind, status, title, body_md,
+                               cited_fact_ids, created_at, updated_at)
+           VALUES (?, NULL, 'update', 'draft', ?, ?, ?, ?, ?)""",
+        (draft_id, title, body_md, json.dumps([f["id"] for f in cited]), now, now),
+    )
+    conn.commit()
+    return {
+        "draft_id": draft_id,
+        "title": title,
+        "fires": len(entries),
+        "under_evac": len(evac_entries),
+        "cited": len(cited),
+    }

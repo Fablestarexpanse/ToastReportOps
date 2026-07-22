@@ -1365,6 +1365,16 @@ def get_draft(request: Request, draft_id: str) -> dict:
     return {"draft": draft, "cited_facts": cited, "publications": pubs}
 
 
+@router.post("/drafts/statewide")
+def statewide_draft(request: Request) -> dict:
+    """One roundup draft covering every active fire — composed mechanically
+    from the ledger (zero invention risk), every figure cited. The statewide
+    graphic attaches via the normal GRAPHIC button."""
+    from toast.pipeline.drafting import generate_statewide_roundup
+
+    return generate_statewide_roundup(_conn(request))
+
+
 @router.post("/drafts/{draft_id}/archive")
 def archive_draft(request: Request, draft_id: str, body: dict) -> dict:
     """Move a draft out of (or back into) the working queue. Orthogonal to
