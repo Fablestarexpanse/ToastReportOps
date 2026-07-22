@@ -1260,11 +1260,14 @@ def create_draft(request: Request, incident_id: str, body: dict) -> dict:
 
 
 @router.get("/drafts")
-def list_drafts(request: Request, status: str | None = None) -> dict:
-    where, params = "", []
+def list_drafts(
+    request: Request, status: str | None = None, archived: bool = False
+) -> dict:
+    clauses, params = [f"d.archived = {1 if archived else 0}"], []
     if status:
-        where = "WHERE d.status = ?"
+        clauses.append("d.status = ?")
         params.append(status)
+    where = "WHERE " + " AND ".join(clauses)
     conn = _conn(request)
     rows = conn.execute(
         f"""SELECT d.id, d.incident_id, d.kind, d.status, d.title, d.window_start,
@@ -1360,6 +1363,39 @@ def get_draft(request: Request, draft_id: str) -> dict:
         )
     ]
     return {"draft": draft, "cited_facts": cited, "publications": pubs}
+
+
+@router.post("/drafts/{draft_id}/archive")
+def archive_draft(request: Request, draft_id: str, body: dict) -> dict:
+    """Move a draft out of (or back into) the working queue. Orthogonal to
+    status: nothing about the state machine or immutability changes."""
+    conn = _conn(request)
+    val = 1 if body.get("archived", True) else 0
+    cur = conn.execute("UPDATE drafts SET archived = ? WHERE id = ?", (val, draft_id))
+    if cur.rowcount == 0:
+        raise HTTPException(404, "draft not found")
+    return {"ok": True, "draft_id": draft_id, "archived": bool(val)}
+
+
+@router.delete("/drafts/{draft_id}")
+def delete_draft(request: Request, draft_id: str) -> dict:
+    """Hard-delete a draft that never mattered: never published, no delivery
+    attempts. Anything with a public footprint archives instead — the record
+    of what went out is not deletable."""
+    conn = _conn(request)
+    row = conn.execute("SELECT status FROM drafts WHERE id = ?", (draft_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "draft not found")
+    if row["status"] == "published":
+        raise HTTPException(409, "published drafts cannot be deleted — archive instead")
+    pubs = conn.execute(
+        "SELECT COUNT(*) AS n FROM publications WHERE draft_id = ?", (draft_id,)
+    ).fetchone()["n"]
+    if pubs:
+        raise HTTPException(409, "this draft has delivery records — archive instead")
+    conn.execute("DELETE FROM drafts WHERE id = ?", (draft_id,))
+    conn.commit()
+    return {"ok": True, "deleted": draft_id}
 
 
 @router.post("/drafts/{draft_id}/social")

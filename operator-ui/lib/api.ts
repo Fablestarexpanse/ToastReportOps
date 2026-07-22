@@ -187,6 +187,7 @@ export type Draft = {
   created_at: string;
   updated_at: string;
   cited_count: number;
+  archived?: number;
 };
 
 export type CitedFact = {
@@ -248,8 +249,21 @@ export const releaseDraft = (draftId: string, channels: string[], at?: string) =
 export const retryPublication = (publicationId: string) =>
   post<{ state: string; channel: string }>(`/publications/${publicationId}/retry`, {});
 
-export const fetchDrafts = () =>
-  get<{ drafts: Draft[]; research_jobs: ResearchJob[] }>("/drafts");
+export const fetchDrafts = (archived = false) =>
+  get<{ drafts: Draft[]; research_jobs: ResearchJob[] }>(
+    archived ? "/drafts?archived=true" : "/drafts",
+  );
+
+export const archiveDraft = (id: string, archived: boolean) =>
+  post<{ archived: boolean }>(`/drafts/${id}/archive`, { archived });
+
+export async function deleteDraft(id: string): Promise<void> {
+  const res = await fetch(`/api/drafts/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const detail = await res.json().then((d) => d.detail).catch(() => res.status);
+    throw new Error(String(detail));
+  }
+}
 export const fetchDraft = (id: string) => get<DraftDetail>(`/drafts/${id}`);
 
 async function post<T>(path: string, body: unknown): Promise<T> {

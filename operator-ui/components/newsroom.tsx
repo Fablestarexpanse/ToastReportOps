@@ -15,6 +15,8 @@ import {
   makeGraphic,
   releaseDraft,
   retryPublication,
+  archiveDraft,
+  deleteDraft,
   fetchDrafts,
   fetchIncidents,
   generateDraft,
@@ -53,6 +55,10 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
   const [busy, setBusy] = useState(false);
   const [socialBusy, setSocialBusy] = useState(false);
   const [bodyEdit, setBodyEdit] = useState("");
+  const [queueFilter, setQueueFilter] = useState<
+    "all" | "update" | "social" | "research" | "published" | "archived"
+  >("all");
+  const [archivedDrafts, setArchivedDrafts] = useState<Draft[]>([]);
   const [titleEdit, setTitleEdit] = useState("");
 
   const refresh = useCallback(async () => {
@@ -86,6 +92,48 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
     const id = setInterval(refresh, 8000);
     return () => clearInterval(id);
   }, [refresh]);
+
+  useEffect(() => {
+    if (queueFilter !== "archived") return;
+    let live = true;
+    fetchDrafts(true).then((r) => live && setArchivedDrafts(r.drafts)).catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [queueFilter, drafts.length]);
+
+  const doArchive = async (id: string, archived: boolean) => {
+    try {
+      await archiveDraft(id, archived);
+      toast(archived ? "sent to archive" : "restored to queue");
+      if (selId === id && archived) setSelId(null);
+      refresh();
+      if (queueFilter === "archived") {
+        const r = await fetchDrafts(true);
+        setArchivedDrafts(r.drafts);
+      }
+    } catch (e) {
+      toast(`${e instanceof Error ? e.message : e}`);
+    }
+  };
+
+  const doDelete = async (id: string) => {
+    try {
+      await deleteDraft(id);
+      toast("draft deleted");
+      if (selId === id) setSelId(null);
+      refresh();
+    } catch (e) {
+      toast(`${e instanceof Error ? e.message : e}`); // published/delivered → "archive instead"
+    }
+  };
+
+  const visibleDrafts = (queueFilter === "archived" ? archivedDrafts : drafts).filter((dr) => {
+    if (queueFilter === "all" || queueFilter === "archived") return true;
+    if (queueFilter === "published") return dr.status === "published";
+    if (queueFilter === "research") return dr.kind === "analysis";
+    return dr.kind === queueFilter;
+  });
 
   useEffect(() => {
     if (!selId) {
@@ -303,6 +351,24 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
         <div style={{ padding: "8px 12px 4px", fontFamily: font.disp, fontSize: 12, letterSpacing: 2, color: C.dim }}>
           DRAFT QUEUE
         </div>
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", padding: "0 12px 6px" }}>
+          {([
+            ["all", "ALL"],
+            ["update", "UPDATE"],
+            ["social", "SOCIAL"],
+            ["research", "RESEARCH"],
+            ["published", "PUBLISHED"],
+            ["archived", "ARCHIVED"],
+          ] as const).map(([k, label]) => (
+            <span
+              key={k}
+              onClick={() => setQueueFilter(k)}
+              style={{ fontFamily: font.mono, fontSize: 8, padding: "2px 7px", borderRadius: 3, cursor: "pointer", letterSpacing: 0.5, border: `1px solid ${queueFilter === k ? C.ember : C.line}`, color: queueFilter === k ? C.ember : C.dim }}
+            >
+              {label}
+            </span>
+          ))}
+        </div>
         <div style={{ flex: 1, overflowY: "auto" }}>
           {research.map((r) => {
             const cfg =
@@ -364,13 +430,37 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
               </div>
             );
           })}
-          {drafts.map((dr) => (
+          {visibleDrafts.map((dr) => (
             <div
               key={dr.id}
               onClick={() => setSelId(dr.id)}
               className="tr-row"
-              style={{ padding: "9px 12px", borderLeft: `3px solid ${dr.id === selId ? C.ember : "transparent"}`, background: dr.id === selId ? C.panelUp : undefined, cursor: "pointer", borderBottom: `1px solid ${C.line}55` }}
+              style={{ position: "relative", padding: "9px 12px", borderLeft: `3px solid ${dr.id === selId ? C.ember : "transparent"}`, background: dr.id === selId ? C.panelUp : undefined, cursor: "pointer", borderBottom: `1px solid ${C.line}55` }}
             >
+              <span style={{ position: "absolute", top: 7, right: 9, display: "flex", gap: 6 }}>
+                <span
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    doArchive(dr.id, queueFilter !== "archived");
+                  }}
+                  title={queueFilter === "archived" ? "restore to the queue" : "send to archive (nothing is lost — the ARCHIVED filter shows it)"}
+                  style={{ fontFamily: font.mono, fontSize: 9, color: C.faint, cursor: "pointer" }}
+                >
+                  {queueFilter === "archived" ? "↩" : "⌸"}
+                </span>
+                {dr.status !== "published" && queueFilter !== "archived" && (
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      doDelete(dr.id);
+                    }}
+                    title="delete (only drafts that never published and never attempted delivery)"
+                    style={{ fontFamily: font.mono, fontSize: 9, color: C.faint, cursor: "pointer" }}
+                  >
+                    ✕
+                  </span>
+                )}
+              </span>
               <div style={{ display: "flex", gap: 6, alignItems: "baseline" }}>
                 <span
                   style={{
