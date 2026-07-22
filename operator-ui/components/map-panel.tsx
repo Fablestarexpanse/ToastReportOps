@@ -411,6 +411,10 @@ export default function MapPanel({
         opacity: 0,
         crossOrigin: true,
         zIndex: 5,
+        // "screen" blend drops GeoColor's dark ocean/night background out and
+        // composites only the bright clouds over the basemap and its layers —
+        // so it reads as a cloud veil, not an opaque satellite sheet
+        className: "tr-clouds-screen",
       }).addTo(m),
     );
     goesFramesRef.current = layers;
