@@ -15,6 +15,17 @@ from toast.core.db import utcnow
 from toast.core.ids import ulid
 from toast.core.timestamps import require_iso
 
+# The two canonical fact-currency predicates live here, next to the ledger
+# that writes facts, so every reader spells them the same way. Both take an
+# optional table alias for use in JOINed queries.
+
+
+def not_superseded(alias: str = "") -> str:
+    """A fact is current iff nothing supersedes it. This is the WHERE half of
+    'the current value of X' — correctness-sensitive, so exactly one definition."""
+    p = f"{alias}." if alias else ""
+    return f"{p}id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)"
+
 
 # THE canonical order for "what is the current number?". Recency alone was
 # wrong twice over: a media article with a future-stamped observed_at owned a
@@ -35,7 +46,7 @@ def latest_fact(conn: sqlite3.Connection, incident_id: str, kind: str) -> sqlite
     return conn.execute(
         f"""SELECT * FROM facts
            WHERE incident_id = ? AND kind = ?
-             AND id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)
+             AND {not_superseded()}
            ORDER BY {value_order()} LIMIT 1""",
         (incident_id, kind),
     ).fetchone()

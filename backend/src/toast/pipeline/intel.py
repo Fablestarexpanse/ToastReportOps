@@ -11,6 +11,8 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from toast.pipeline.ledger import not_superseded
+
 # metric kinds shown in the header grid; value column per kind
 _METRICS = {"acreage": "acreage", "containment": "containment_pct"}
 
@@ -20,8 +22,6 @@ _METRICS = {"acreage": "acreage", "containment": "containment_pct"}
 # DEPLOYED tiles and 'cause' has a header tile; repeating them as bullets makes
 # one fact look like two independent reports.
 _SITUATION_KINDS = ("damage", "weather", "other")
-
-_NOT_SUPERSEDED = "id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)"
 
 
 OFFICIAL_MAX_TIER = 2  # T1-T2 = agency record; T3+ = press, social, scraped
@@ -45,7 +45,7 @@ def _latest(
     return conn.execute(
         f"""SELECT f.*, s.name AS source_name FROM facts f
             JOIN sources s ON s.id = f.source_id
-            WHERE f.incident_id = ? AND f.kind = ? AND f.{_NOT_SUPERSEDED}{clause}
+            WHERE f.incident_id = ? AND f.kind = ? AND {not_superseded('f')}{clause}
             ORDER BY (f.observed_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')) ASC,
               (f.tier >= 3) ASC, f.observed_at DESC, f.ingested_at DESC LIMIT 1""",
         (incident_id, kind),
@@ -166,7 +166,7 @@ def incident_intel(conn: sqlite3.Connection, incident_id: str) -> dict[str, Any]
                                         json_extract(e.payload, '$.link'))
                           FROM envelopes e WHERE e.id = f.envelope_id) AS source_url
                 FROM facts f JOIN sources s ON s.id = f.source_id
-                WHERE f.incident_id = ? AND f.kind = ? AND f.{_NOT_SUPERSEDED}
+                WHERE f.incident_id = ? AND f.kind = ? AND {not_superseded('f')}
                 ORDER BY f.observed_at DESC""",
             (incident_id, kind),
         ).fetchall()
