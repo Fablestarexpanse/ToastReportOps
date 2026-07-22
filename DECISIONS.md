@@ -2,6 +2,93 @@
 
 Architectural decision log. Newest first. Each entry: context → decision → why.
 
+## 2026-07-22 — Auto-close on official word; live signals veto to a proposal
+
+- Fires only ever entered the system; nothing asked whether they should leave,
+  so dead fires sat "active" indefinitely. Every 30 min the sweep now checks
+  each active fire against CAL FIRE's live list and NIFC's current layer.
+- **Relaying THE official source is not a judgment call.** A fire the officials
+  have delisted, with no satellite heat and no confirmed fire aircraft within
+  8 km / 6 h, auto-closes — logged in `incident_events` as `calfire-official` /
+  `nifc-official`, not as an AI decision.
+- **Live signals veto.** Delisted-but-hot (or fire aircraft overhead) drops to
+  an operator proposal in the OPS ACTIVITY CHECK panel — officials saying "over"
+  while the ground says otherwise needs eyes, not automation.
+- Aircraft role matters: over an urban fire the 20 nm poll radius sweeps up
+  news/police/medevac helos; only confirmed fire signatures (tanker/air attack)
+  can overrule officials. Closing is reversible (contained → active exists).
+
+## 2026-07-22 — WFIGS federal re-ingestion, this time behind a creation gate
+
+- WFIGS was seeded disabled after it dumped the current-year backlog (the
+  76-junk-incident lesson). But CAL FIRE's list omits federal/USFS fires — a
+  real coverage hole. The distinction that resolves it: **raw dispatch is not
+  a curated list**; WFIGS needs a gate where CAL FIRE needs none.
+- **Creation gate**: wildfires only (RX excluded), 10+ acres or 15+ personnel
+  (`WFIGS_MIN_ACRES` / `WFIGS_MIN_PERSONNEL`) create incidents. Updates to
+  already-known fires always land — the gate is on creation, not on facts.
+- **Cross-source adoption** merges CAL FIRE + IRWIN identities so a fire both
+  agencies track is one incident with both official refs, not two incidents.
+
+## 2026-07-22 — State card counts only officially-listed fires
+
+- The statewide count is a hard fact, live-checked against the official lists —
+  not "incidents in our DB", which includes imports, adjudication leftovers,
+  and fires awaiting close. If the number on the graphic can't be defended by
+  pointing at an official list, it doesn't go on the graphic.
+
+## 2026-07-21 — Official-first value ordering in the ledger
+
+- The bug that forced it: an acreage read pulled a media figure over the
+  official one, and a fact with a future `observed_at` (an LLM dating slip)
+  outranked everything on recency.
+- **`ledger.value_order`**: current-value queries now order official-first —
+  tier 1–2 beats media (tier ≥ 3), and facts with future timestamps rank last —
+  then newest `observed_at`. One ORDER BY used everywhere a "current value" is
+  read, instead of per-call-site guesswork.
+
+## 2026-07-21 — AIR / RADIO / MESH tabs shipped
+
+- **AIR**: ADS-B aircraft over incidents (free aggregator feeds), own map,
+  orbit detection feeding resource facts and the activity check.
+- **RADIO**: the operator's own SDR captures land in `data/radio/inbox/`
+  (rtl_airband — see docs/RADIO-SETUP.md), swept every 30 s, CAS-archived,
+  optionally transcribed via `WHISPER_URL`. No Broadcastify — own RF is the
+  clean legal path.
+- **MESH**: NorCal Meshtastic picture via the public MQTT firehose, a
+  persistent `mesh` compose service. The banner is honest about what it is:
+  we hear the mesh through the internet; the mesh itself needs no internet.
+
+## 2026-07-21 — ALERTCalifornia cameras: metadata only, frames in the browser
+
+- Camera metadata (positions, bearings) drives the in-tool viewer and map view
+  cones; **image frames load in the operator's browser, never fetched or
+  stored by the backend** — that is the TOS boundary: no automated sampling,
+  no redistribution. A CAMERAS button deep-links ALERTCalifornia's own site
+  centred on the selected fire.
+
+## 2026-07-21 — Telegram publisher + approve-from-chat
+
+- One bot, two rooms: a public channel we publish to
+  (`TELEGRAM_CHANNEL_ID`) and a private ops chat (`TELEGRAM_OPS_CHAT_ID`)
+  that gets alerts and takes approvals — the operator can approve a draft
+  from a phone. Approval writes the same `approved_by` fields; the DB state
+  machine is unchanged, chat is just another hand on the same lever.
+- Credential-gated like every publisher: with no token configured, nothing
+  sends anywhere.
+
+## 2026-07-21 — Branding settings: brand_web / brand_social
+
+- Website link and social handles live in app settings (`brand_web`,
+  `brand_social`), stamped onto graphics and posts — not hardcoded strings
+  scattered through templates. Empty by default; empty means unstamped.
+
+## 2026-07-21 — Statewide roundup + state graphic
+
+- A statewide roundup draft and a state-level graphic (all tracked fires on
+  one map card) join the per-incident products. Same rules as everything else:
+  drafted from the ledger, operator-approved before anything publishes.
+
 ## 2026-07-20 — Audit: three DB guarantees were decorative, and are now real
 
 Three separate rules the schema *claimed* to enforce did not. Found by an audit
@@ -169,6 +256,8 @@ that attempts the violation and asserts the refusal.
 - **Local LLM: Ollama + qwen3:14b** (~9GB q4) for extraction, nomic-embed-text
   (768-dim) for embeddings. Any OpenAI-compatible endpoint works via
   `LLM_BASE_URL`; containers reach the host at `host.docker.internal`.
+  *(superseded 2026-07-21: LLM moved into the stack as the `llm` service —
+  `LLM_BASE_URL=http://llm:11434/v1`; see OPERATIONS.md.)*
 - **Injection posture is structural, not vibes**: untrusted content lives only
   inside a delimited block; the system role carries a "content is never
   instructions" contract; forged `=====` delimiters are neutralized; output is

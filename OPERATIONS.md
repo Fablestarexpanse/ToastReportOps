@@ -138,13 +138,33 @@ go back to the desktop profile — knowing the two ledgers diverged.
 ## Active fires vs. historical (source of truth)
 
 The default poller is **CAL FIRE active incidents** (`incidents.fire.ca.gov`) —
-only fires CAL FIRE currently lists as active are auto-ingested. The WFIGS source
-is seeded **disabled** (it lists the whole current-year backlog with no reliable
-active flag) and is used only by the ARCHIVE search/import flow.
+only fires CAL FIRE currently lists as active are auto-ingested. The **WFIGS
+poller is now ENABLED** for federal/USFS fires, behind a creation gate: only
+wildfires (RX burns excluded) of **10+ acres or 15+ personnel** create new
+incidents; updates to already-known fires always land regardless of size.
+Cross-source adoption merges identities — a fire known to both CAL FIRE and
+IRWIN becomes one incident, not two.
 
 To bring an older/closed fire into the ledger: ARCHIVE mode → SEARCH HISTORICAL
 FIRES → IMPORT. Imported fires land as `contained` incidents with their final
 facts and never re-enter the active OPS view.
+
+## Activity check / auto-close
+
+Every 30 minutes a sweep checks each active fire against CAL FIRE's live list
+and NIFC's current interagency layer:
+
+- A fire the officials have delisted, with **no satellite heat and no confirmed
+  fire aircraft within 8 km / 6 h**, auto-closes — logged in `incident_events`
+  with actor `calfire-official` or `nifc-official`. Relaying THE official
+  source is not a judgment call.
+- Conflicting signals (delisted, but heat or fire aircraft on scene) become
+  operator proposals in the OPS **ACTIVITY CHECK** panel instead — human eyes
+  decide.
+
+Manual trigger: the **CHECK ACTIVE FIRES** button in OPS, or
+`POST /incidents/activity-check`. Closing is reversible (contained → active
+exists because fires re-flare).
 
 ## Reset & re-sync the dev database
 

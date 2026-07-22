@@ -111,3 +111,24 @@ class TestSnapshotScrubbing:
         assert any("[REDACTED]" in (e or "") for e in errors)
         assert conn.execute("SELECT COUNT(*) FROM credentials").fetchone()[0] == 0
         conn.close()
+
+
+class TestSanitizedMarkdown:
+    """Raw HTML in a draft body must never reach a browser un-neutered."""
+
+    def test_script_and_event_handlers_stripped(self):
+        import markdown as md
+
+        from toast.core.sanitize import clean_html
+
+        hostile = 'Fire update <script>alert(1)</script> <img src=x onerror="fetch()">'
+        out = clean_html(md.markdown(hostile, extensions=["extra"]))
+        assert "<script" not in out and "onerror" not in out
+
+    def test_honest_markup_survives(self):
+        import markdown as md
+
+        from toast.core.sanitize import clean_html
+
+        out = clean_html(md.markdown("# Title\n\n**bold** and [a link](https://example.com)"))
+        assert "<strong>" in out and "example.com" in out

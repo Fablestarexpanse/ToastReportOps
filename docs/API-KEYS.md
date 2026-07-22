@@ -2,7 +2,8 @@
 
 Every key is free-tier unless marked. Add each to `.env` (never commit it),
 then restart the stack (`docker compose --profile desktop up -d`). Sorted by
-value-per-minute-of-signup.
+value-per-minute-of-signup. The `.env.example` template now includes commented
+slots for the Telegram / MapTiler / OWM / Whisper variables below.
 
 ## Do these first (minutes each)
 

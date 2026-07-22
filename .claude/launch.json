@@ -2,23 +2,55 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "operator-ui-3010",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "operator-ui",
+        "--",
+        "-p",
+        "3010"
+      ],
+      "port": 3010,
+      "autoPort": false
+    },
+    {
       "name": "operator-ui",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "operator-ui"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "operator-ui"
+      ],
       "port": 3000,
       "autoPort": true
     },
     {
       "name": "api",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "--project", "backend", "python", "-m", "toast.api.app"],
+      "runtimeArgs": [
+        "run",
+        "--project",
+        "backend",
+        "python",
+        "-m",
+        "toast.api.app"
+      ],
       "port": 8400,
       "autoPort": false
     },
     {
       "name": "stack",
       "runtimeExecutable": "docker",
-      "runtimeArgs": ["compose", "--profile", "desktop", "up"],
+      "runtimeArgs": [
+        "compose",
+        "--profile",
+        "desktop",
+        "up"
+      ],
       "port": 8400,
       "autoPort": false
     }

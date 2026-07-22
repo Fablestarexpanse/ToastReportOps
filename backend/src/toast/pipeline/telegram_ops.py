@@ -18,6 +18,7 @@ Two loops, both scheduler-driven and both silent when no bot is configured:
 
 from __future__ import annotations
 
+import html
 import json
 import sqlite3
 from typing import Any
@@ -101,8 +102,9 @@ def notify_sweep(
             seen_inc.add(r["id"])
             if first_run:
                 continue  # baseline silently, like the bell
-            county = f" ({r['county']} Co.)" if r["county"] else ""
-            if _send(client, token, chat, f"🔥 NEW FIRE: <b>{r['canonical_name']}</b>{county}"):
+            county = f" ({html.escape(r['county'])} Co.)" if r["county"] else ""
+            name = html.escape(r["canonical_name"])
+            if _send(client, token, chat, f"🔥 NEW FIRE: <b>{name}</b>{county}"):
                 sent += 1
 
         # evacuation transitions — persisted baseline, alerts even after restarts
@@ -122,7 +124,7 @@ def notify_sweep(
                 continue
             if cur in ACTIVE_EVAC or (cur == "lifted" and prev in ACTIVE_EVAC):
                 text = (
-                    f"{EVAC_LABEL[cur]}: <b>{r['canonical_name']}</b>\n"
+                    f"{EVAC_LABEL[cur]}: <b>{html.escape(r['canonical_name'])}</b>\n"
                     "Official text is in the workstation — verify before repeating."
                 )
                 if _send(client, token, chat, text):
@@ -143,7 +145,7 @@ def notify_sweep(
             ]]
             if _send(
                 client, token, chat,
-                f"📝 DRAFT FOR REVIEW: <b>{r['title'] or r['id'][-6:]}</b>\n"
+                f"📝 DRAFT FOR REVIEW: <b>{html.escape(r['title'] or r['id'][-6:])}</b>\n"
                 "Approving here is the same human approval as the newsroom click; "
                 "releasing to channels stays a separate step.",
                 buttons,

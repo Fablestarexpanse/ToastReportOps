@@ -143,20 +143,25 @@ def write_value_fact(
     the value changed. Returns the new fact id, or None if unchanged."""
     if value is None:
         return None
-    prev = latest_fact(conn, incident_id, kind)
-    if prev is not None:
-        if prev[value_column] == value:
-            return None
-        # never supersede with older information
-        if prev["observed_at"] >= observed_at:
-            return None
-    merged: dict[str, Any] = {value_column: value, **fact_kwargs}
-    return write_fact(
-        conn,
-        incident_id=incident_id,
-        kind=kind,
-        content=content,
-        observed_at=observed_at,
-        supersedes=prev["id"] if prev is not None else None,
-        **merged,
+    from toast.core.db import transaction
+
+    # read-prev + write-superseding must be one unit: two writers racing the
+    # same chain could otherwise both supersede the same prev fact
+    with transaction(conn):
+        prev = latest_fact(conn, incident_id, kind)
+        if prev is not None:
+            if prev[value_column] == value:
+                return None
+            # never supersede with older information
+            if prev["observed_at"] >= observed_at:
+                return None
+        merged: dict[str, Any] = {value_column: value, **fact_kwargs}
+        return write_fact(
+            conn,
+            incident_id=incident_id,
+            kind=kind,
+            content=content,
+            observed_at=observed_at,
+            supersedes=prev["id"] if prev is not None else None,
+            **merged,
     )

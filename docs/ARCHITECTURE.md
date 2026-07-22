@@ -1,6 +1,6 @@
 # Architecture
 
-Toast Report Workstation — system design. Companion docs: [ROADMAP.md](ROADMAP.md),
+Toast Report OPs — system design. Companion docs: [ROADMAP.md](ROADMAP.md),
 [SECURITY.md](SECURITY.md), schema in
 [`backend/src/toast/migrations/0001_init.sql`](../backend/src/toast/migrations/0001_init.sql).
 
@@ -13,7 +13,8 @@ power during a fire is expected, not hypothetical.
 
 Docker Compose from day one. Every service is separately restartable; all state lives
 in SQLite (WAL) plus a content-addressed raw archive on disk. GPU-hungry work is
-serialized through one gpu-worker that owns the 4090.
+serialized through the job queue inside `worker`, calling the in-stack `llm`
+service (see §8 — the once-planned dedicated gpu-worker was never built).
 
 ```
                          ┌────────────────────────────────────────────────┐
@@ -51,13 +52,16 @@ frontend framework total.
 |---|---|---|
 | `scheduler` | plain scan loop (10 s); enqueues polls per `sources.schedule` — APScheduler was dropped, the loop is ~40 lines | reads sources table; does no work itself |
 | `worker` | generic pipeline worker pool (CPU stages) | scale by replica count |
-| ~~`gpu-worker`~~ | **not built.** Embeddings run inside `worker` against the host Ollama; Whisper/VLM/smoke are unstarted |
+| ~~`gpu-worker`~~ | **not built.** Embeddings run inside `worker` against the in-stack `llm` container; VLM/smoke are unstarted (Whisper is optional via `WHISPER_URL`) |
 | `api` | FastAPI: REST + SSE for operator UI; health endpoints | binds 127.0.0.1 by default |
 | `operator-ui` | Next.js — **runs on the host, not in compose** (`scripts/launch.ps1`, port 3005) | localhost only; auth required if ever exposed |
 | ~~`publisher`~~ | **not built as a service.** Publishing runs inside `worker` via the `publish` job — so social credentials are NOT isolated to a separate process, contrary to what this table used to claim |
 | ~~`site-builder`~~ | **not built.** Site generation runs in `worker` via the `build_site` job, triggered on demand from ARCHIVE — never by publishing |
 | `litestream` | replication — **local disk only today**; the B2 replica is commented out pending keys | desktop profile only; nightly snapshot is a `backup` job in `worker` |
-| (external) | Ollama/LM Studio OpenAI-compatible endpoint | reached via `LLM_BASE_URL` |
+| `llm` | Ollama in a container, GPU passthrough; auto-pulls `LLM_PULL_MODEL` / `LLM_EMBED_PULL_MODEL` on first boot | the stack's own model server — extraction AND embeddings; `LLM_BASE_URL=http://llm:11434/v1` (a cloud key still overrides) |
+| `mesh` | Meshtastic listener: public MQTT firehose filtered to a NorCal picture | persistent subscription, so a service rather than a job; feeds the MESH tab |
+| `searxng` | self-hosted metasearch backing LDR | desktop profile only |
+| `ldr` | Local Deep Research: on-demand agentic web research | reports land as `kind='analysis'` NEWSROOM drafts, never ledger facts |
 
 Compose **profiles**: `desktop` (everything) and `degraded` (PSPS sentinel:
 `api` + `worker` + `scheduler` — official-API polling with a usable UI, on a
@@ -151,10 +155,17 @@ Design reference: [`docs/mockups/toast-report-workstation.jsx`](mockups/toast-re
 - Motifs: slide-in animation for fresh intake rows, pulse rings for hotspots,
   color-coded confidence (>80 ok / >60 warn / else pink), sticky group headers,
   toast notifications, `prefers-reduced-motion` respected.
-- Top bar: TOAST REPORT wordmark, mode nav with badge counts, clock, service health
-  dots (GPU / FEEDS / SOCIAL / BUILD — wired to real `/healthz`), Red Flag chip.
+- Top bar: TOAST REPORT OPS wordmark, mode nav with badge counts, clock, service
+  health dots (**API** and **FEEDS** only — wired to real `/healthz` and recent
+  dead-job counts; the mockup's GPU/SOCIAL/BUILD dots were never built), Red Flag
+  chip.
 
-**Five modes → build phases:**
+**Modes** (nine as built): OPS, AIR, RADIO, MESH, NEWSROOM, WATCH, ARCHIVE,
+SOURCES, ANALYTICS. The original five-mode plan below is kept for the phase
+mapping; AIR (ADS-B aircraft), RADIO (scanner inbox), MESH (Meshtastic), and
+ANALYTICS (ledger self-reporting) were added after it was written.
+
+**Five modes → build phases (original plan):**
 
 | Mode | Function | Phase |
 |---|---|---|
@@ -166,8 +177,10 @@ Design reference: [`docs/mockups/toast-report-workstation.jsx`](mockups/toast-re
 
 ## 8. GPU scheduling
 
-One `gpu-worker` process owns the 4090. Work arrives via the jobs table with
-priorities; transcription of active-incident scanner audio preempts batch work
-(embeddings backfill, VLM triage of old media). Models are loaded/unloaded to fit
-24 GB VRAM alongside the external Ollama instance; the scheduler tracks which model
-is resident and batches same-model jobs to avoid thrash.
+**The dedicated `gpu-worker` was a plan that got dropped — it was never built.**
+GPU scheduling as it exists is cooperative, inside `worker`, via the job queue:
+priorities on the jobs table decide order (live extraction preempts low-priority
+research/backfill), and all model calls go through the in-stack `llm` service
+(Ollama container with GPU passthrough), which handles model residency itself
+(`OLLAMA_KEEP_ALIVE`). There is no VRAM-tracking scheduler and no model
+load/unload orchestration; nothing has needed one.

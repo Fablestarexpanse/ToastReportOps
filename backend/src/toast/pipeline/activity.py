@@ -239,27 +239,31 @@ def check_active(
             and ev["hotspots_within_8km"] == 0
             and ev["aircraft_overhead_6h"] == 0
         ):
+            from toast.core.db import transaction
             from toast.core.ids import ulid as _ulid
 
             federal = "federal" in ev["official_status"]
-            conn.execute(
-                "UPDATE incidents SET status = 'contained', updated_at = ? WHERE id = ?",
-                (utcnow(), inc["id"]),
-            )
-            conn.execute(
-                """INSERT INTO incident_events (id, incident_id, event, detail, actor, at)
-                   VALUES (?, ?, 'status_change', ?, ?, ?)""",
-                (_ulid(), inc["id"],
-                 json.dumps({"from": "active", "to": "contained",
-                             "why": (
-                                 "no longer on NIFC's national current-fire list"
-                                 if federal else "CAL FIRE lists this fire inactive"
-                             )}),
-                 "nifc-official" if federal else "calfire-official", utcnow()),
-            )
-            conn.execute(
-                "DELETE FROM activity_proposals WHERE incident_id = ?", (inc["id"],)
-            )
+            # one atomic unit: a crash mid-close must never leave a contained
+            # incident with no lifecycle event (or the reverse)
+            with transaction(conn):
+                conn.execute(
+                    "UPDATE incidents SET status = 'contained', updated_at = ? WHERE id = ?",
+                    (utcnow(), inc["id"]),
+                )
+                conn.execute(
+                    """INSERT INTO incident_events (id, incident_id, event, detail, actor, at)
+                       VALUES (?, ?, 'status_change', ?, ?, ?)""",
+                    (_ulid(), inc["id"],
+                     json.dumps({"from": "active", "to": "contained",
+                                 "why": (
+                                     "no longer on NIFC's national current-fire list"
+                                     if federal else "CAL FIRE lists this fire inactive"
+                                 )}),
+                     "nifc-official" if federal else "calfire-official", utcnow()),
+                )
+                conn.execute(
+                    "DELETE FROM activity_proposals WHERE incident_id = ?", (inc["id"],)
+                )
             auto_closed += 1
             log.info("auto_closed_official", incident=inc["canonical_name"])
             continue

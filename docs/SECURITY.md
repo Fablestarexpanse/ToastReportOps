@@ -12,7 +12,7 @@ Non-negotiable requirements. Anything here that conflicts with convenience wins.
 | SSRF | attacker-controlled URLs in feeds/posts pointing at private services | resolve DNS then check IP against private/link-local/loopback ranges before connecting; re-check on redirects; allowlist/denylist per fetcher |
 | Resource exhaustion | huge/slow downloads, decompression bombs, malformed media | size caps, timeouts, content-type validation, parsing of untrusted files (images, PDFs) in a resource-limited subprocess |
 | Stored XSS | ingested text rendered in operator UI or public site | sanitize before storage AND escape at render; React default escaping, no `dangerouslySetInnerHTML` for ingested content |
-| Credential theft | secrets in logs, in git, on the public site | `.env` git-ignored; structlog scrubber; only the `publisher` service holds social credentials; public site is static with zero secrets |
+| Credential theft | secrets in logs, in git, on the public site | `.env` git-ignored; structlog scrubber; social credentials are held locally (credentials table + env) and used only by worker-side publisher adapters — there is no separate `publisher` service, so the real boundary is that publishing requires operator approval via the draft state machine, not process isolation; public site is static with zero secrets |
 | Unauthorized publish | anything reaching the public without operator approval | approval state machine enforced by SQLite triggers — `published` requires `approved_by`/`approved_at`; publish actions are operator-initiated only |
 | Data loss (incl. house fire) | disk failure, theft, wildfire | Litestream → B2 continuous replication, nightly `VACUUM INTO` snapshots, raw-archive sync, drilled restore procedure |
 

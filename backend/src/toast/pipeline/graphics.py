@@ -480,10 +480,10 @@ def generate_state_card(conn: sqlite3.Connection) -> bytes:
     redflag = 0
     fw = conn.execute("SELECT payload FROM map_cache WHERE key='firewx:ca'").fetchone()
     if fw:
-        try:
+        import contextlib
+
+        with contextlib.suppress(ValueError):
             redflag = len(json.loads(fw["payload"]).get("features") or [])
-        except ValueError:
-            pass
     top5 = sorted(
         (f for f in fires if f["acreage"]), key=lambda f: f["acreage"], reverse=True
     )[:5]

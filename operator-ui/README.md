@@ -1,36 +1,27 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# operator-ui
 
-## Getting Started
+The operator workstation for Toast Report OPs — the single-human control room
+over the wildfire ledger: OPS, AIR, RADIO, MESH, NEWSROOM, WATCH, ARCHIVE,
+SOURCES, ANALYTICS.
 
-First, run the development server:
+## Running it
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+Normal path: double-click `ToastReport.cmd` in the repo root — it starts the
+Docker backend and this UI on **port 3005** in an Edge app window. Dev path:
+`npm run dev` in this directory.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The API lives at `http://127.0.0.1:8400` (Docker stack; the base URL comes from
+`TOAST_API_URL`, read by `next.config.ts`).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## House style
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Single-file modes: each mode is one component under `components/`
+  (`workstation.tsx` holds the shell + OPS).
+- Inline styles, dark ops theme (palette as constants) — no CSS framework churn.
+- Fonts: JetBrains Mono (data), Barlow / Barlow Condensed (body/display),
+  self-hosted so the UI works offline during a PSPS outage.
 
-## Learn More
+## Boundary
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Localhost only, never deployed. The public site is generated separately by the
+backend (`toast/sitegen/`); this UI is for the operator's eyes only.

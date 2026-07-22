@@ -44,6 +44,8 @@ def robots_allows(url: str, *, user_agent: str = USER_AGENT) -> bool:
             resp = client.get(robots_url)
         if resp.status_code >= 400:
             return True  # no robots or error → allowed
+        if len(resp.content) > 512 * 1024:
+            return True  # a half-megabyte robots.txt is not a robots.txt
         rp = RobotFileParser()
         rp.parse(resp.text.splitlines())
         return rp.can_fetch(user_agent, url)
@@ -73,6 +75,35 @@ def _assert_public_host(url: str) -> None:
             or addr.is_unspecified
         ):
             raise BlockedURLError(f"{host!r} resolves to non-public address {addr}")
+
+
+def _assert_connected_public(resp: httpx.Response) -> None:
+    """Post-connect half of the SSRF guard: check the peer address of the
+    socket httpx actually opened. Closes the DNS-rebinding TOCTOU window
+    between our resolution check and httpx's own resolution. Best-effort —
+    if the transport does not expose the stream, the pre-check stands alone."""
+    stream = getattr(resp, "extensions", {}).get("network_stream")
+    if stream is None:
+        return
+    try:
+        peer = stream.get_extra_info("server_addr")
+    except Exception:
+        return
+    if not peer:
+        return
+    try:
+        addr = ipaddress.ip_address(peer[0])
+    except ValueError:
+        return
+    if (
+        addr.is_private
+        or addr.is_loopback
+        or addr.is_link_local
+        or addr.is_reserved
+        or addr.is_multicast
+        or addr.is_unspecified
+    ):
+        raise BlockedURLError(f"connection reached non-public address {addr}")
 
 
 # Query parameter names that carry credentials in the wild. Values are masked
@@ -131,6 +162,12 @@ def fetch(
         for _hop in range(5):
             _assert_public_host(current)
             with client.stream("GET", current) as resp:
+                # DNS-rebinding guard: _assert_public_host resolved the name
+                # itself, but httpx resolved it AGAIN to open this socket — an
+                # attacker's DNS can answer public for the check and private
+                # for the connect. Verify the address actually connected to,
+                # before a single body byte is read.
+                _assert_connected_public(resp)
                 if resp.is_redirect:
                     location = resp.headers.get("location")
                     if not location:

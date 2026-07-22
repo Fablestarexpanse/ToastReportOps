@@ -1512,7 +1512,9 @@ def render_markdown(request: Request, body: dict) -> dict:
     library, same extensions. A preview that lies is worse than none."""
     import markdown as md
 
-    return {"html": md.markdown(str(body.get("body_md") or ""), extensions=["extra"])}
+    from toast.core.sanitize import clean_html
+
+    return {"html": clean_html(md.markdown(str(body.get("body_md") or ""), extensions=["extra"]))}
 
 
 @router.post("/drafts/statewide")

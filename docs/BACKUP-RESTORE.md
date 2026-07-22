@@ -50,6 +50,9 @@ Assume the desktop is gone. On a clean machine:
 git clone https://github.com/Fablestarexpanse/ToastReportOps
 cd ToastReportOps
 cp .env.example .env          # fill in keys
+#    note: this now yields a working LLM config out of the box (the in-stack
+#    llm container at http://llm:11434/v1) — but credentials are stripped from
+#    snapshots, so the operator must re-enter them in OPTIONS after restore.
 
 # 2. get the newest snapshot
 #    from B2:    b2 file download b2://<bucket>/toast/<file> .

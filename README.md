@@ -1,4 +1,4 @@
-# Toast Report Workstation
+# Toast Report OPs
 
 Local-first California wildfire intelligence system. Ingests official APIs, satellite
 hotspots, scanner audio, news, social, video, images, ADS-B aircraft data, and weather;
@@ -6,7 +6,12 @@ uses local AI to sift, verify, and attribute facts to specific fires; a single h
 operator reviews AI-drafted reports and publishes them to a static public site and
 social channels. Every incident is permanently archived.
 
-**Status: planning approved — Phase 0 (foundation) not yet started.**
+**Status: built and operating** — the full loop runs (ingest → ledger → AI sift →
+newsroom → publish), with a 9-mode operator UI, a Docker stack, and 440 passing tests.
+
+**Quick start:** double-click `ToastReport.cmd` — it starts the Docker stack and the
+operator UI (port 3005) in its own app window. Alternative:
+`docker compose --profile desktop up`.
 
 ## Core principles
 
@@ -33,6 +38,14 @@ social channels. Every incident is permanently archived.
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design, services, interfaces, operator UI |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Phases 0–5 with tasks, acceptance criteria, demos |
 | [docs/SECURITY.md](docs/SECURITY.md) | Threat model, prompt-injection posture, SSRF rules |
+| [docs/API-KEYS.md](docs/API-KEYS.md) | Every key/credential to register and what each unlocks |
+| [docs/AUDIT-2026-07-20.md](docs/AUDIT-2026-07-20.md) | Audit findings (partly superseded — its header says which) |
+| [docs/BACKUP-RESTORE.md](docs/BACKUP-RESTORE.md) | Backup layers + the executed restore drill, output recorded |
+| [docs/CORROBORATION.md](docs/CORROBORATION.md) | Corroboration model tuning notes (audit R6) |
+| [docs/OPS-PANEL-SPEC.md](docs/OPS-PANEL-SPEC.md) | OPS incident panel build spec (from concept review) |
+| [docs/RADIO-SETUP.md](docs/RADIO-SETUP.md) | SDR scanner hardware setup feeding the RADIO tab |
+| [docs/SATELLITE-MEDIA-GNIS-PLAN.md](docs/SATELLITE-MEDIA-GNIS-PLAN.md) | Plan: satellite layers, media/video, GNIS place names |
+| [docs/UI-GAP-ANALYSIS.md](docs/UI-GAP-ANALYSIS.md) | Concept vs. built, panel by panel (2026-07-20 snapshot) |
 | [backend/src/toast/migrations/0001_init.sql](backend/src/toast/migrations/0001_init.sql) | Full SQLite schema |
 | [DECISIONS.md](DECISIONS.md) | Architectural decision log |
 | [OPERATIONS.md](OPERATIONS.md) | Runbook (start/stop, backup/restore, PSPS mode) |

@@ -28,6 +28,7 @@ import {
   saveSettings,
 } from "@/lib/api";
 import { CA_OUTLINE } from "@/lib/california";
+import { escHtml } from "@/lib/html";
 import { C, Z, font } from "@/lib/theme";
 import { age, fmtStamp } from "@/lib/time";
 
@@ -342,7 +343,7 @@ export default function MapPanel({
         const p = feature.properties ?? {};
         const acres = typeof p.poly_GISAcres === "number" ? Math.round(p.poly_GISAcres) : null;
         lyr.bindTooltip(
-          `<b>${p.incident_name ?? p.poly_IncidentName ?? "perimeter"}</b><br/>` +
+          `<b>${escHtml(p.incident_name ?? p.poly_IncidentName ?? "perimeter")}</b><br/>` +
             `${acres != null ? acres.toLocaleString() + " ac mapped<br/>" : ""}` +
             `<i>mapped perimeter — hours old, not a live fire edge</i>`,
           { direction: "top", opacity: 0.95 },
@@ -451,7 +452,7 @@ export default function MapPanel({
         iconAnchor: [13, 13],
       });
       const label =
-        `${a.flight || a.type || "aircraft"}${a.descr ? ` — ${a.descr}` : ""}` +
+        `${escHtml(a.flight || a.type || "aircraft")}${a.descr ? ` — ${escHtml(a.descr)}` : ""}` +
         `<br/>${a.alt_ft != null ? `${a.alt_ft.toLocaleString()} ft` : "alt n/a"}` +
         `${a.gs != null ? ` · ${Math.round(a.gs)} kt` : ""}` +
         `<br/>seen ${age(a.seen_at)} ago` +
@@ -536,7 +537,7 @@ export default function MapPanel({
       });
       L.marker([cam.lat, cam.lon], { icon, interactive: true })
         .bindTooltip(
-          `<b>${cam.name}</b><br/>${cam.distance_km.toFixed(1)} km from the fire` +
+          `<b>${escHtml(cam.name)}</b><br/>${cam.distance_km.toFixed(1)} km from the fire` +
             (cam.az != null ? ` · pointing ${compassOf(cam.az)} (${Math.round(cam.az)}°)` : "") +
             (cam.elev_m != null ? `<br/>elev ${Math.round(cam.elev_m * 3.281).toLocaleString()} ft` : "") +
             `<br/><i>click to view — ALERTCalifornia</i>`,
@@ -619,8 +620,7 @@ export default function MapPanel({
         },
         onEachFeature: (feature, lyr) => {
           const p = feature.properties as EvacZoneSet["features"][number]["properties"];
-          const esc = (s: string | null | undefined) =>
-            (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+          const esc = escHtml;
           // VERBATIM: status and official text exactly as the county issued them
           const zoneLabel = [p.ZONE_ID, p.ZONE_NAME && p.ZONE_NAME !== p.ZONE_ID ? p.ZONE_NAME : null]
             .filter(Boolean).map((s) => esc(s)).join(" · ");
@@ -704,7 +704,7 @@ export default function MapPanel({
         onEachFeature: (feature, lyr) => {
           const p = feature.properties as FireWeatherSet["features"][number]["properties"];
           lyr.bindTooltip(
-            `<b>${p.event}</b> — FORECAST, not a fire<br/>${p.headline}` +
+            `<b>${escHtml(p.event)}</b> — FORECAST, not a fire<br/>${escHtml(p.headline)}` +
               `${p.ends ? `<br/>until ${p.ends.slice(0, 16).replace("T", " ")}` : ""}`,
             { sticky: true, opacity: 0.95 },
           );
@@ -732,9 +732,9 @@ export default function MapPanel({
       });
       L.marker([c.lat, c.lon], { icon, interactive: true })
         .bindTooltip(
-          `<b>${c.route ?? "highway"} CLOSED</b>${c.place ? ` near ${c.place}` : ""}` +
-            `${c.type_of_work ? `<br/>${c.type_of_work}` : ""}` +
-            `${c.near ? `<br/>${c.near.km} km from ${c.near.name}` : ""}` +
+          `<b>${escHtml(c.route ?? "highway")} CLOSED</b>${c.place ? ` near ${escHtml(c.place)}` : ""}` +
+            `${c.type_of_work ? `<br/>${escHtml(c.type_of_work)}` : ""}` +
+            `${c.near ? `<br/>${c.near.km} km from ${escHtml(c.near.name)}` : ""}` +
             `<br/><i>Caltrans — state highways only</i>`,
           { direction: "top", opacity: 0.95, offset: [0, -6] },
         )
@@ -787,7 +787,7 @@ export default function MapPanel({
       });
       L.marker([w.lat, w.lon], { icon, interactive: true })
         .bindTooltip(
-          `wind ${w.wind_mph != null ? Math.round(w.wind_mph) : "?"} mph from ${w.wind_compass ?? "?"}` +
+          `wind ${w.wind_mph != null ? Math.round(w.wind_mph) : "?"} mph from ${escHtml(w.wind_compass ?? "?")}` +
             `${w.gust_mph ? ` · gusts ${Math.round(w.gust_mph)}` : ""}` +
             `<br/>pushing the fire toward the ${compassOf(toward)}` +
             (w.forecast
@@ -838,7 +838,7 @@ export default function MapPanel({
         .addTo(group)
         .on("click", () => onSelect(inc.id));
       dot.bindTooltip(
-        `<b>${inc.canonical_name}</b><br/>${inc.county ? inc.county + " County · " : ""}` +
+        `<b>${escHtml(inc.canonical_name)}</b><br/>${inc.county ? escHtml(inc.county) + " County · " : ""}` +
           `${inc.acreage != null ? Math.round(inc.acreage).toLocaleString() + " ac" : "size unknown"}` +
           `${inc.containment_pct != null ? " · " + inc.containment_pct + "% contained" : ""}` +
           `${evac ? '<br/><b style="color:#ff4d8f">EVACUATION IN EFFECT</b>' : ""}`,

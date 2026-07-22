@@ -662,3 +662,17 @@ def deep_research_poll_handler(conn: sqlite3.Connection, payload: dict[str, Any]
         research_id=payload["research_id"],
         progress=status.get("progress"),
     )
+
+
+@register("jobs_prune")
+def jobs_prune_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Retention for the queue itself: terminal jobs older than the window go.
+    Without this, done/dead rows accumulate all season (every poll enqueues)
+    and the claim query's scan grows with them. Live/queued jobs untouched."""
+    cur = conn.execute(
+        """DELETE FROM jobs WHERE state IN ('done', 'dead')
+           AND unixepoch('now') - unixepoch(created_at) > 7 * 86400"""
+    )
+    conn.commit()
+    if cur.rowcount:
+        get_logger("jobs").info("jobs_pruned", removed=cur.rowcount)

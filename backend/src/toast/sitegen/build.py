@@ -19,6 +19,7 @@ from pathlib import Path
 import markdown as md
 
 from toast.core.db import utcnow
+from toast.core.sanitize import clean_html
 
 SITE_TITLE = "Toast Report OPs"
 SITE_TAGLINE = "California wildfire updates — verified, sourced, human-reviewed"
@@ -87,7 +88,7 @@ def _stamp(iso: str | None) -> str:
 
 
 def _report_html(draft: sqlite3.Row, incident_name: str | None) -> str:
-    body_html = md.markdown(draft["body_md"] or "", extensions=["extra"])
+    body_html = clean_html(md.markdown(draft["body_md"] or "", extensions=["extra"]))
     inc = f" · {html.escape(incident_name)}" if incident_name else ""
     return _page(
         draft["title"] or "Update",

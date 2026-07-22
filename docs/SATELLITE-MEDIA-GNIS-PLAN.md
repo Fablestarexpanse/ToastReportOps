@@ -1,5 +1,7 @@
 # Plan: satellite data, media/video, and GNIS place names
 
+> 2026-07-22: GNIS partially built (`pipeline/geocode.py` + `/gnis` endpoints); FIRMS still key-gated.
+
 Three additions that share one theme — giving the ledger **eyes and a map**.
 Today the system reads text. These let it see fire from orbit, show pictures and
 video of it, and know where a place name actually is.

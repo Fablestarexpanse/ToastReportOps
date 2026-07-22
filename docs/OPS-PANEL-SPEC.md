@@ -1,5 +1,7 @@
 # OPS Incident Intelligence Panel — build spec (from concept review, 2026-07-20)
 
+> 2026-07-22: since built — weather, resources enrich, follow, notes, and timeline all shipped.
+
 Scope for the "clean up ops page with more data bars and info" punch-list item.
 Each panel below maps onto data we already collect; several showcase things
 only this system has. Ordered by win-size.

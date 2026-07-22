@@ -76,6 +76,7 @@ DAILY_STAGES = {
     # is every active fire still burning? official-inactive auto-closes;
     # everything else becomes an operator proposal
     "activity_check": 1800,
+    "jobs_prune": 3600,
     # the phone hub: alerts out every 30 s, button presses picked up every 15 s
     "telegram_notify": 30,
     "telegram_poll": 15,

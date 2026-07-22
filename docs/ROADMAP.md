@@ -29,7 +29,9 @@ time-window logic is the whole product — those get tests first.
 
 **Tasks**
 - Adapters: WFIGS/IRWIN (ArcGIS REST), FIRMS URT (free map key), NWS CAP alerts (Atom),
-  CA evacuation aggregation (Genasys/Zonehaven public layers + county feeds — **TOS flag**)
+  CA evacuation aggregation ~~(Genasys/Zonehaven public layers + county feeds — **TOS flag**)~~
+  — **BUILT** via the Cal OES Evacuation Aggregation Layer (state open data), not
+  Genasys; done — see `pipeline/evaczones.py` and DECISIONS 2026-07-21
 - Envelope dedup; incident auto-creation from official reports
 - Fact writes with supersession on changed values (acreage/containment updates supersede prior)
 - Operator UI shell in the mockup design system: top bar with mode nav + health dots,
@@ -68,13 +70,19 @@ a prompt-injection fixture visibly refused.
 ## Phase 3 — Rich sources
 
 **Tasks**
-- Scanner audio: stream capture → Silero VAD → distil-Whisper (gpu-worker) → entity
-  extraction → clip storage. Operator-picked stream set, statewide-capable (**TOS flag**)
+- Scanner audio ~~: stream capture → Silero VAD → distil-Whisper (gpu-worker) → entity
+  extraction → clip storage. Operator-picked stream set, statewide-capable (**TOS flag**)~~
+  — **BUILT** as the RADIO mode inbox (`data/radio/inbox/`, own-SDR captures) with
+  optional Whisper transcription via `WHISPER_URL`; done — see docs/RADIO-SETUP.md
 - Article scrapers with content-hash change detection + robots.txt compliance
 - Social adapters: Bluesky jetstream, Reddit API, Mastodon, RSS (X ingest deferred — see Flagged)
-- ADS-B ingest (adsb.fi / airplanes.live free feeds — **flag**) + orbit/grid-pattern
-  detection over incidents
-- ALERTCalifornia camera sampling + smoke detection model (**TOS flag**)
+- ADS-B ingest (adsb.fi / airplanes.live free feeds ~~— **flag**~~) + orbit/grid-pattern
+  detection over incidents — **BUILT** as the AIR mode; done — see code/DECISIONS
+- ALERTCalifornia cameras ~~camera sampling + smoke detection model (**TOS flag**)~~
+  — **BUILT** as metadata + operator-browser frames (no automated sampling — the
+  TOS boundary), in-tool viewer + view cones; done — see DECISIONS
+- Meshtastic ingest (not in the original plan) — **BUILT** as the MESH tab via the
+  public MQTT firehose; done — see DECISIONS
 - Image pipeline: EXIF → VLM visual placement → bearing triangulation →
   reverse-image check against the archive
 - "Add source by URL, AI probes it" flow v1
@@ -95,7 +103,9 @@ a prompt-injection fixture visibly refused.
 - Editor UI with approval workflow (DB state machine already enforced)
 - Public site: Next.js static export + MapLibre/PMTiles incident maps
 - Share-card generation (Pillow, burned-in timestamp)
-- Publishers: X, Facebook Page, RSS, email digest, webhook/Discord.
+- Publishers ~~: X, Facebook Page, RSS, email digest, webhook/Discord~~ — the
+  actual built set is **Bluesky, X, Facebook, Telegram** (credential-gated);
+  RSS / email digest / webhook / Discord remain unbuilt (planned).
   (Site deploy removed 2026-07-20 — publishing to a website is manual.)
 - Supersessions/corrections visible on the public site; evac rendered verbatim with
   deep link + "verify with officials" notice
@@ -135,10 +145,10 @@ degraded sentinel keeps the site updated.
 
 | Item | Issue | When |
 |---|---|---|
-| Broadcastify | TOS prohibits recording/redistribution — clips-for-analysis likely still violates. Alternatives: OpenMHz (has API), county-run streams, own SDR (RTL-SDR + trunk-recorder is the clean legal path) | before Phase 3 |
-| ALERTCalifornia cameras | TOS on automated sampling unknown — needs reading; research-partnership routes exist | before Phase 3 |
-| ADS-B | ADSBExchange is now paid; adsb.fi / airplanes.live free feeds have fair-use terms to verify; own receiver is an option | before Phase 3 |
-| Evac aggregators (Genasys/Zonehaven) | public-layer scraping posture varies by county | before Phase 1 evac work |
+| ~~Broadcastify~~ | **RESOLVED** — Broadcastify is not used; scanner audio comes from the operator's own SDR feeding the RADIO inbox (the clean legal path). See docs/RADIO-SETUP.md | done |
+| ~~ALERTCalifornia cameras~~ | **RESOLVED** — no automated sampling; camera metadata only, frames load in the operator's browser. See DECISIONS | done |
+| ~~ADS-B~~ | **RESOLVED** — built on the free aggregator feeds (AIR mode). ADSBExchange skipped | done |
+| ~~Evac aggregators (Genasys/Zonehaven)~~ | **RESOLVED** — Genasys not used; the Cal OES Evacuation Aggregation Layer (state open data) covers every county. See DECISIONS 2026-07-21 | done |
 | X / Twitter ingest | free read tier (~100 reads/mo) is useless; scraping violates TOS. Deferred — X is publish-only (~500 posts/mo free writes) unless a paid tier is approved | revisit anytime |
 | Facebook Page API | app review required for Pages publishing — lead time; start early | before Phase 4 |
 | FIRMS | free but requires map-key registration | Phase 1 setup |

@@ -17,6 +17,7 @@ import {
   fetchAircraftPhoto,
   fetchIncidents,
 } from "@/lib/api";
+import { escHtml } from "@/lib/html";
 import { C, Z, font } from "@/lib/theme";
 import { age, fmtStamp } from "@/lib/time";
 
@@ -191,7 +192,7 @@ export default function AirMode({ toast }: { toast: (msg: string) => void }) {
         fillColor: C.emberHot,
         fillOpacity: 0.35,
       })
-        .bindTooltip(`<b>${fire.canonical_name}</b>`, { direction: "top" })
+        .bindTooltip(`<b>${escHtml(fire.canonical_name)}</b>`, { direction: "top" })
         .addTo(g);
     }
   }, [fire, ready]);
@@ -211,7 +212,7 @@ export default function AirMode({ toast }: { toast: (msg: string) => void }) {
         }),
         interactive: true,
       })
-        .bindTooltip(`${b.name}${active ? " — fire aircraft on field" : ""}`, { direction: "top" })
+        .bindTooltip(`${escHtml(b.name)}${active ? " — fire aircraft on field" : ""}`, { direction: "top" })
         .addTo(g);
     }
   }, [bases, ready]);
@@ -256,8 +257,8 @@ export default function AirMode({ toast }: { toast: (msg: string) => void }) {
         interactive: true,
       })
         .bindTooltip(
-          `<b>${a.flight ?? a.hex.toUpperCase()}</b> · ${style.label}${a.military ? " · MIL" : ""}` +
-            `<br/>${a.descr ?? a.type ?? "unknown type"}` +
+          `<b>${escHtml(a.flight ?? a.hex.toUpperCase())}</b> · ${style.label}${a.military ? " · MIL" : ""}` +
+            `<br/>${escHtml(a.descr ?? a.type ?? "unknown type")}` +
             `<br/>${a.alt_ft != null ? Math.round(a.alt_ft).toLocaleString() + " ft" : "alt ?"}` +
             ` · ${a.gs != null ? Math.round(a.gs) + " kt" : "spd ?"}`,
           { direction: "top", opacity: 0.95, offset: [0, -8] },
@@ -287,7 +288,7 @@ export default function AirMode({ toast }: { toast: (msg: string) => void }) {
         interactive: true,
       })
         .bindTooltip(
-          `<b>${a.flight ?? a.hex.toUpperCase()}</b> · MILITARY<br/>${a.descr ?? a.type ?? ""}` +
+          `<b>${escHtml(a.flight ?? a.hex.toUpperCase())}</b> · MILITARY<br/>${escHtml(a.descr ?? a.type ?? "")}` +
             `<br/>${a.alt_ft != null ? Math.round(a.alt_ft).toLocaleString() + " ft" : ""}`,
           { direction: "top", opacity: 0.95 },
         )

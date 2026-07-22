@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MeshMessages, MeshNodes, fetchMeshMessages, fetchMeshNodes } from "@/lib/api";
+import { escHtml } from "@/lib/html";
 import { C, Z, font } from "@/lib/theme";
 import { age, fmtStamp } from "@/lib/time";
 
@@ -91,8 +92,8 @@ export default function MeshMode({ toast }: { toast: (m: string) => void }) {
       });
       L.marker([n.lat, n.lon], { icon, interactive: true })
         .bindTooltip(
-          `<b>${n.long_name ?? n.node_id}</b>${n.short_name ? ` (${n.short_name})` : ""}` +
-            `${n.hw_model ? `<br/>${n.hw_model}` : ""}` +
+          `<b>${escHtml(n.long_name ?? n.node_id)}</b>${n.short_name ? ` (${escHtml(n.short_name)})` : ""}` +
+            `${n.hw_model ? `<br/>${escHtml(n.hw_model)}` : ""}` +
             `${n.battery != null ? `<br/>battery ${n.battery > 100 ? "powered" : n.battery + "%"}` : ""}` +
             `<br/>heard ${age(n.last_heard)} ago`,
           { direction: "top", opacity: 0.95, offset: [0, -6] },
