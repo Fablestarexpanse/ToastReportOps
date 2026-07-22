@@ -1771,9 +1771,7 @@ function OpsMode({
   const [activity, setActivity] = useState<import("@/lib/api").ActivityProposal[]>([]);
   const [activityBusy, setActivityBusy] = useState(false);
   // collapse the proposals panel out of the way; the count stays visible
-  const [activityOpen, setActivityOpen] = useState(
-    () => typeof window === "undefined" || localStorage.getItem("tr-activity-open") !== "0",
-  );
+  const [activityOpen, setActivityOpen] = useState(true);
   const toggleActivityOpen = () => {
     setActivityOpen((v) => {
       localStorage.setItem("tr-activity-open", v ? "0" : "1");
@@ -1781,9 +1779,14 @@ function OpsMode({
     });
   };
   // HIDE, never delete: this year's fires stay queryable in ARCHIVE
-  const [hideContained, setHideContained] = useState(
-    () => typeof window !== "undefined" && localStorage.getItem("tr-hide-contained") === "1",
-  );
+  const [hideContained, setHideContained] = useState(false);
+  // saved prefs load AFTER mount — reading localStorage during the first
+  // render makes the client disagree with the server-rendered HTML (hydration
+  // mismatch); the server has no localStorage and must render the defaults
+  useEffect(() => {
+    if (localStorage.getItem("tr-activity-open") === "0") setActivityOpen(false);
+    if (localStorage.getItem("tr-hide-contained") === "1") setHideContained(true);
+  }, []);
   const toggleHideContained = () => {
     setHideContained((v) => {
       localStorage.setItem("tr-hide-contained", v ? "0" : "1");
