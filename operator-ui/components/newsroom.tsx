@@ -576,9 +576,18 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
                     alt="attached incident card"
                     style={{ width: "100%", maxWidth: 760, borderRadius: 8, border: `1px solid ${C.line}`, display: "block" }}
                   />
-                  <div style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint, marginTop: 4 }}>
-                    attached card — publishes with the post on image-capable channels ·
-                    regenerate with 🗺 GRAPHIC after new numbers land
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4 }}>
+                    <a
+                      href={`/api/drafts/${detail.draft.id}/graphic.png`}
+                      download={`${(detail.draft.title || detail.draft.id).slice(0, 40).replace(/[^\w -]/g, "")}-card.png`}
+                      style={{ fontFamily: font.mono, fontSize: 9.5, color: C.blue, border: `1px solid ${C.blue}55`, borderRadius: 4, padding: "3px 10px", textDecoration: "none", whiteSpace: "nowrap" }}
+                    >
+                      ⤓ SAVE GRAPHIC
+                    </a>
+                    <span style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint }}>
+                      attached card — publishes with the post on image-capable channels ·
+                      regenerate with 🗺 GRAPHIC after new numbers land
+                    </span>
                   </div>
                 </div>
               )}
