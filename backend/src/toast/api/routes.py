@@ -1371,6 +1371,15 @@ def get_draft(request: Request, draft_id: str) -> dict:
     return {"draft": draft, "cited_facts": cited, "publications": pubs}
 
 
+@router.post("/render/markdown")
+def render_markdown(request: Request, body: dict) -> dict:
+    """Render draft markdown EXACTLY as the site will publish it — same
+    library, same extensions. A preview that lies is worse than none."""
+    import markdown as md
+
+    return {"html": md.markdown(str(body.get("body_md") or ""), extensions=["extra"])}
+
+
 @router.post("/drafts/statewide")
 def statewide_draft(request: Request) -> dict:
     """One roundup draft covering every active fire — composed mechanically

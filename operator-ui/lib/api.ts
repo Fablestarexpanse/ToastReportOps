@@ -295,6 +295,9 @@ export const generateDraft = (incidentId: string, window?: { window_start?: stri
     window ?? {},
   );
 
+export const renderMarkdown = (body_md: string) =>
+  post<{ html: string }>("/render/markdown", { body_md });
+
 export const generateStatewide = () =>
   post<{ draft_id: string; title: string; fires: number; under_evac: number; cited: number }>(
     "/drafts/statewide",

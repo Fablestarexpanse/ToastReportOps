@@ -14,6 +14,7 @@ import {
   fetchPublishChannels,
   makeGraphic,
   releaseDraft,
+  renderMarkdown,
   retryPublication,
   archiveDraft,
   deleteDraft,
@@ -170,6 +171,7 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
       setDetail(d);
       setBodyEdit(d.draft.body_md);
       setTitleEdit(d.draft.title ?? "");
+      setPreviewMode(false);
     });
   }, [selId]);
 
@@ -265,6 +267,22 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
       toast(`release failed: ${e instanceof Error ? e.message : e}`);
     } finally {
       setReleasing(false);
+    }
+  };
+
+  const [previewMode, setPreviewMode] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState("");
+  const togglePreview = async () => {
+    if (previewMode) {
+      setPreviewMode(false);
+      return;
+    }
+    try {
+      const r = await renderMarkdown(bodyEdit);
+      setPreviewHtml(r.html);
+      setPreviewMode(true);
+    } catch (e) {
+      toast(`preview failed: ${e instanceof Error ? e.message : e}`);
     }
   };
 
@@ -619,13 +637,38 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
                   </div>
                 </div>
               )}
-              <textarea
-                value={bodyEdit}
-                onChange={(e) => setBodyEdit(e.target.value)}
-                readOnly={d.status === "published"}
-                spellCheck={false}
-                style={{ width: "100%", minHeight: 300, background: "transparent", border: "none", outline: "none", resize: "vertical", color: C.txt, fontFamily: font.body, fontSize: 13.5, lineHeight: 1.65 }}
-              />
+              <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+                {(["EDIT", "PREVIEW"] as const).map((m) => {
+                  const active = (m === "PREVIEW") === previewMode;
+                  return (
+                    <span
+                      key={m}
+                      onClick={() => ((m === "PREVIEW") !== previewMode ? togglePreview() : undefined)}
+                      title={m === "PREVIEW" ? "rendered exactly as the site publishes it — same markdown engine" : "raw markdown"}
+                      style={{ fontFamily: font.mono, fontSize: 9, padding: "2px 9px", borderRadius: 3, cursor: "pointer", letterSpacing: 1, border: `1px solid ${active ? C.ember : C.line}`, color: active ? C.ember : C.dim }}
+                    >
+                      {m}
+                    </span>
+                  );
+                })}
+              </div>
+              {previewMode ? (
+                <div
+                  className="md-preview"
+                  // our own markdown engine over the operator's own text — the
+                  // same HTML the static site publishes
+                  dangerouslySetInnerHTML={{ __html: previewHtml }}
+                  style={{ color: C.txt, fontFamily: font.body, fontSize: 13.5, lineHeight: 1.7, maxWidth: 760 }}
+                />
+              ) : (
+                <textarea
+                  value={bodyEdit}
+                  onChange={(e) => setBodyEdit(e.target.value)}
+                  readOnly={d.status === "published"}
+                  spellCheck={false}
+                  style={{ width: "100%", minHeight: 300, background: "transparent", border: "none", outline: "none", resize: "vertical", color: C.txt, fontFamily: font.body, fontSize: 13.5, lineHeight: 1.65 }}
+                />
+              )}
               <div style={{ fontFamily: font.mono, fontSize: 9, color: C.faint, marginTop: 6 }}>
                 [#id] citations reference the ledger facts below · evacuation text is verbatim from officials
               </div>

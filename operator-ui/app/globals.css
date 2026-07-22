@@ -130,3 +130,14 @@ textarea::placeholder {
 .leaflet-tooltip-top:before {
   border-top-color: #2e3843;
 }
+
+
+/* rendered-draft preview: match the published site's reading feel */
+.md-preview h1, .md-preview h2, .md-preview h3 { margin: 0.9em 0 0.4em; line-height: 1.25; }
+.md-preview h2 { font-size: 1.25em; border-bottom: 1px solid #2c343e; padding-bottom: 0.2em; }
+.md-preview p, .md-preview ul, .md-preview ol { margin: 0.55em 0; }
+.md-preview ul, .md-preview ol { padding-left: 1.4em; }
+.md-preview li { margin: 0.25em 0; }
+.md-preview a { color: #5cb8ff; }
+.md-preview hr { border: none; border-top: 1px solid #2c343e; margin: 1.1em 0; }
+.md-preview strong { color: #ffd9c7; }
