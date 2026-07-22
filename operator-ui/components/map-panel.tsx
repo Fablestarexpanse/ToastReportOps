@@ -125,7 +125,7 @@ const OVERLAYS: Record<string, OverlaySpec> = {
     attribution: "NASA GIBS · NOAA GOES-West ABI GeoColor",
     time: "latest",
     maxNativeZoom: 7,
-    note: "GOES-West geostationary imagery, ~10-min refresh — watch smoke move. Network required.",
+    note: "GOES-West geostationary — enable to auto-play a looping ~2-hour time-lapse of the smoke moving. Network required.",
   },
   // VIIRS true colour: yesterday's polar overpass — burn scars and thick smoke
   // as the eye would see them.
@@ -229,8 +229,8 @@ export default function MapPanel({
   const evacLabelZoomHandler = useRef<(() => void) | null>(null);
   const overlayRefs = useRef<Record<string, L.TileLayer>>({});
   const [overlays, setOverlays] = useState<Record<string, boolean>>({});
-  // GOES time-lapse: preloaded frame layers + the play timer + the frame clock
-  const [goesLoop, setGoesLoop] = useState(false);
+  // GOES is animation-only: enabling it auto-plays a continuous time-lapse.
+  // Preloaded frame layers + the play timer + the current-frame clock.
   const goesFramesRef = useRef<L.TileLayer[]>([]);
   const goesTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [goesFrameTime, setGoesFrameTime] = useState<string | null>(null);
@@ -349,9 +349,10 @@ export default function MapPanel({
     const m = map.current;
     if (!m) return;
     for (const [key, spec] of Object.entries(OVERLAYS)) {
-      // while GOES is looping, the time-lapse effect owns the frames — the
-      // static single-frame layer would double-draw underneath it
-      const on = !!overlays[key] && !(key === "goes" && goesLoop);
+      // GOES is handled entirely by the time-lapse effect below (it animates,
+      // never draws a single static frame), so skip it here
+      if (key === "goes") continue;
+      const on = !!overlays[key];
       const existing = overlayRefs.current[key];
       if (on && !existing) {
         const url =
@@ -376,13 +377,15 @@ export default function MapPanel({
         delete overlayRefs.current[key];
       }
     }
-  }, [overlays, ready, goesLoop]);
+  }, [overlays, ready]);
 
   // GOES time-lapse — the reason to animate: geostationary frames every 10 min,
-  // so ~2 hours of them played in sequence is the smoke plume in motion. GIBS
-  // publishes each frame ~40 min behind real time, so the window starts ~50 min
-  // back to land only on frames that exist; all preloaded, then cycled by
-  // opacity so playback is instant with no per-frame network stall.
+  // so ~2 hours of them played on a continuous loop is the smoke plume in
+  // motion. Enabling the GOES-WEST layer IS the animation — it auto-plays and
+  // never stops until toggled off. GIBS publishes each frame ~40 min behind
+  // real time, so the window starts ~50 min back to land only on frames that
+  // exist; all preloaded, then cycled by opacity so playback is instant with
+  // no per-frame network stall.
   useEffect(() => {
     const m = map.current;
     const stop = () => {
@@ -394,7 +397,7 @@ export default function MapPanel({
       goesFramesRef.current = [];
       setGoesFrameTime(null);
     };
-    if (!m || !ready || !overlays.goes || !goesLoop) {
+    if (!m || !ready || !overlays.goes) {
       stop();
       return;
     }
@@ -427,7 +430,7 @@ export default function MapPanel({
       show(idx);
     }, 650);
     return stop;
-  }, [overlays.goes, goesLoop, ready]);
+  }, [overlays.goes, ready]);
 
   // perimeters: fetched once, refreshed on the server's own 30-minute cache.
   // A failure here is silent by design — the map is still useful without them.
@@ -1231,27 +1234,12 @@ export default function MapPanel({
               }}
             >
               {overlays[key] ? "◼" : "◻"} {spec.label}
+              {key === "goes" && overlays.goes && goesFrameTime
+                ? ` ${goesFrameTime.slice(11, 16)}Z`
+                : ""}
             </span>
           );
         })}
-        {overlays.goes && (
-          <span
-            onClick={() => setGoesLoop((v) => !v)}
-            title="time-lapse the last ~2 hours of GOES-West at 10-min steps — watch the smoke plume move"
-            style={{
-              pointerEvents: "auto",
-              cursor: "pointer",
-              color: goesLoop ? C.ok : C.dim,
-              border: `1px solid ${goesLoop ? C.ok + "66" : C.line}`,
-              borderRadius: 3,
-              padding: "1px 5px",
-            }}
-          >
-            {goesLoop
-              ? `❚❚ ${goesFrameTime ? goesFrameTime.slice(11, 16) + "Z" : "…"}`
-              : "▶ LOOP 2H"}
-          </span>
-        )}
         {!!wind?.count && (
           <span
             onClick={() => setShowWind((v) => !v)}
