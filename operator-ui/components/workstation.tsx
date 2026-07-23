@@ -717,13 +717,22 @@ const ROLE_META: Record<string, { glyph: string; color: string; label: string }>
 /* Air resources over the fire — a live ADS-B roster, role-typed, click a row to
    pull the aircraft's photo (by its ICAO hex, its assigned ID) with the
    photographer credit that its source requires. */
-function AirResourcesBox({ resources, observed }: { resources: AirResource[]; observed: number }) {
+function AirResourcesBox({
+  resources,
+  observed,
+  onSelect,
+}: {
+  resources: AirResource[];
+  observed: number;
+  onSelect?: (hex: string | null) => void;
+}) {
   const [openHex, setOpenHex] = useState<string | null>(null);
   const [photos, setPhotos] = useState<Record<string, AircraftPhoto | "loading">>({});
 
   const openRow = async (hex: string) => {
     const next = openHex === hex ? null : hex;
     setOpenHex(next);
+    onSelect?.(next); // blink this aircraft (and tag it) on the map, or clear it
     if (next && !photos[hex]) {
       setPhotos((p) => ({ ...p, [hex]: "loading" }));
       try {
@@ -760,12 +769,23 @@ function AirResourcesBox({ resources, observed }: { resources: AirResource[]; ob
       {fireOps.map((a) => {
         const m = ROLE_META[a.role] ?? ROLE_META.other;
         const photo = photos[a.hex];
+        const isSel = openHex === a.hex; // selected: highlighted here, blinking on the map
         return (
-          <div key={a.hex} style={{ borderTop: `1px solid ${C.line}44`, padding: "4px 0" }}>
+          <div
+            key={a.hex}
+            style={{
+              borderTop: `1px solid ${C.line}44`,
+              padding: "4px 6px",
+              margin: "0 -4px",
+              borderRadius: 4,
+              borderLeft: isSel ? `2px solid ${m.color}` : "2px solid transparent",
+              background: isSel ? m.color + "1e" : undefined,
+            }}
+          >
             <div
               onClick={() => openRow(a.hex)}
               className="tr-row"
-              title="click to see the aircraft and pull its photo"
+              title="click to see the aircraft and pull its photo — blinks it on the map"
               style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer" }}
             >
               <span style={{ color: m.color, fontSize: 13, width: 14, textAlign: "center" }}>{m.glyph}</span>
@@ -872,10 +892,12 @@ function IntelPanel({
   sel,
   toast,
   onPinMap,
+  onSelectAircraft,
 }: {
   sel: Incident;
   toast: (m: string) => void;
   onPinMap?: (lat: number, lon: number, incidentId?: string | null) => void;
+  onSelectAircraft?: (hex: string | null) => void;
 }) {
   const intel = usePolling(() => fetchIntel(sel.id), [sel.id]);
   const [hist, setHist] = useState<IncidentHistory | null>(null);
@@ -1220,7 +1242,11 @@ function IntelPanel({
       )}
 
       {/* air resources over the fire — live ADS-B roster, role-typed, click for a photo */}
-      <AirResourcesBox resources={intel.air_resources ?? []} observed={intel.aircraft_observed ?? 0} />
+      <AirResourcesBox
+        resources={intel.air_resources ?? []}
+        observed={intel.aircraft_observed ?? 0}
+        onSelect={onSelectAircraft}
+      />
 
       {/* deployed resources — the official total, plus what reporting says */}
       <div>
@@ -1904,6 +1930,9 @@ function OpsMode({
     },
     [incidents, pullUpEvac, toast],
   );
+  // the aircraft the operator opened in the roster — its map icon blinks and
+  // shows an identifier tag while its row is highlighted
+  const [selAircraft, setSelAircraft] = useState<string | null>(null);
   const staleCount = facts?.filter((f) => f.stale).length ?? 0;
   const [panelTab, setPanelTab] = useState<"intel" | "weather" | "ledger" | "timeline">("intel");
   const [basemap] = useState(() => loadDisplayPrefs().basemap);
@@ -2271,6 +2300,7 @@ function OpsMode({
             onSelect={setSelected}
             basemap={basemap}
             focus={focus}
+            highlightAircraft={selAircraft}
           />
         </div>
         {activity.length > 0 && (
@@ -2548,7 +2578,14 @@ function OpsMode({
           ))}
         </div>
         <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
-          {panelTab === "intel" && sel && <IntelPanel sel={sel} toast={toast} onPinMap={pullUpEvac} />}
+          {panelTab === "intel" && sel && (
+            <IntelPanel
+              sel={sel}
+              toast={toast}
+              onPinMap={pullUpEvac}
+              onSelectAircraft={setSelAircraft}
+            />
+          )}
           {panelTab === "weather" && sel && <WeatherPanel incidentId={sel.id} />}
           {panelTab === "timeline" && sel && <TimelinePanel incidentId={sel.id} />}
           {panelTab === "ledger" && (

@@ -261,6 +261,7 @@ export default function MapPanel({
   onSelect,
   basemap = "dark",
   focus,
+  highlightAircraft,
 }: {
   incidents: Incident[];
   selected: string | null;
@@ -277,6 +278,9 @@ export default function MapPanel({
     basemap?: string;
     layers?: { evac?: boolean; roads?: boolean };
   } | null;
+  /** hex of an aircraft the operator selected in the roster — its map icon
+      blinks and shows a permanent identifier tag until deselected */
+  highlightAircraft?: string | null;
 }) {
   const holder = useRef<HTMLDivElement | null>(null);
   const map = useRef<L.Map | null>(null);
@@ -640,15 +644,24 @@ export default function MapPanel({
       // rotor glyph reads at a glance; fixed-wing get a heading-rotated shape
       const heading = a.track ?? 0;
       const rotate = a.role === "helicopter" ? 0 : heading;
+      // the selected aircraft blinks and gets a ring, so the eye finds it among
+      // a busy sky the moment its row is opened in the roster
+      const sel = !!highlightAircraft && a.hex === highlightAircraft;
+      const ring = sel
+        ? `<div style="position:absolute;left:-5px;top:-5px;width:36px;height:36px;` +
+          `border-radius:50%;border:2px solid ${style.color};box-shadow:0 0 8px ${style.color}"></div>`
+        : "";
       const icon = L.divIcon({
-        className: "",
+        className: sel ? "tr-blink" : "",
         html:
+          ring +
           `<div style="transform:rotate(${rotate}deg);color:${style.color};` +
           `font-size:${a.fire_ops ? style.size : 14}px;line-height:1;` +
           `text-shadow:0 0 3px #000;opacity:${a.fire_ops ? 1 : 0.7}">${style.glyph}</div>`,
         iconSize: [26, 26],
         iconAnchor: [13, 13],
       });
+      const ident = escHtml(a.flight || a.hex); // callsign, else the ICAO hex id
       const label =
         `${escHtml(a.flight || a.type || "aircraft")}${a.descr ? ` — ${escHtml(a.descr)}` : ""}` +
         `<br/>${a.alt_ft != null ? `${a.alt_ft.toLocaleString()} ft` : "alt n/a"}` +
@@ -657,11 +670,31 @@ export default function MapPanel({
         (a.fire_ops
           ? `<br/><b style="color:${style.color}">${style.label}</b>`
           : "<br/><i>aircraft near the fire — role unknown</i>");
-      L.marker([a.lat, a.lon], { icon }).bindTooltip(label, { direction: "top", opacity: 0.95 }).addTo(group);
+      const marker = L.marker([a.lat, a.lon], { icon });
+      if (sel) {
+        // a permanent identifier tag rides the selected aircraft; the full
+        // detail is still one hover away
+        marker.bindTooltip(`<b style="color:${style.color}">${ident}</b>`, {
+          permanent: true,
+          direction: "top",
+          offset: [0, -6],
+          className: "tr-aircraft-tag",
+          opacity: 1,
+        });
+      } else {
+        marker.bindTooltip(label, { direction: "top", opacity: 0.95 });
+      }
+      marker.addTo(group);
     }
     group.addTo(m);
     aircraftLayerRef.current = group;
-  }, [aircraft, showAircraft, ready]);
+  }, [aircraft, showAircraft, ready, highlightAircraft]);
+
+  // selecting an aircraft to inspect implies wanting to see it — make sure the
+  // aircraft layer is on so its icon (now blinking) is actually visible
+  useEffect(() => {
+    if (highlightAircraft) setShowAircraft(true);
+  }, [highlightAircraft]);
 
   // ALERTCalifornia cameras near the SELECTED fire only — 2,100 statewide
   // markers would be noise; the ones that can see this fire are signal. Reads

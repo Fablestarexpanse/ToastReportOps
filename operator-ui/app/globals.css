@@ -146,6 +146,15 @@ textarea::placeholder {
 .leaflet-tooltip-top:before {
   border-top-color: #2e3843;
 }
+/* the permanent identifier tag on a selected (blinking) aircraft — compact,
+   monospaced, and it must not eat pointer events over the map */
+.tr-aircraft-tag {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  padding: 1px 5px;
+  font-weight: 700;
+  pointer-events: none;
+}
 
 
 /* rendered-draft preview: match the published site's reading feel */
