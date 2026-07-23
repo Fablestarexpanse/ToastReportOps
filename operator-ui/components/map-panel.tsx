@@ -839,11 +839,13 @@ export default function MapPanel({
       evacLabelLayerRef.current = null;
     }
     if (evacLabelZoomHandler.current) {
-      m.off("zoomend", evacLabelZoomHandler.current);
+      m.off("zoomend moveend", evacLabelZoomHandler.current);
       evacLabelZoomHandler.current = null;
     }
     if (!showEvacZones || !evacZones?.features?.length) return;
     const zoneLabels = L.layerGroup();
+    // one entry per on-map label, so a zoom/pan handler can re-fit them all
+    const labelInfos: { marker: L.Marker; bounds: L.LatLngBounds; len: number }[] = [];
     // status colors mirror the official public convention: order = the alarm
     // color, warning = amber, shelter-in-place = blue, anything else dim
     const colorOf = (status: string | null): string => {
@@ -880,46 +882,66 @@ export default function MapPanel({
               `<br/><i>Cal OES · official status, verbatim · verify locally before acting</i>`,
             { sticky: true, opacity: 0.97 },
           );
-          // a label ON the section itself: short zone id, status word, issued age
+          // a label ON the section: one clean line, sized to the zone below
           const b = (lyr as L.Polygon).getBounds?.();
           if (b?.isValid()) {
             const short = esc((p.ZONE_ID || "").split("-").pop() || p.ZONE_ID || "?");
             const s = (p.STATUS || "").toLowerCase();
-            const word = s.includes("order") ? "ORDER" : s.includes("warning") ? "WARNING" : esc((p.STATUS || "").toUpperCase().slice(0, 12));
+            const word = s.includes("order")
+              ? "ORDER"
+              : s.includes("warning")
+                ? "WARNING"
+                : esc((p.STATUS || "").toUpperCase().slice(0, 12));
             const col = colorOf(p.STATUS);
-            zoneLabels.addLayer(
-              L.marker(b.getCenter(), {
-                interactive: false,
-                keyboard: false,
-                icon: L.divIcon({
-                  className: "",
-                  iconSize: [0, 0],
-                  html:
-                    `<div style="transform:translate(-50%,-50%);pointer-events:none;text-align:center;` +
-                    `font-family:ui-monospace,monospace;font-size:38px;font-weight:700;color:${col};` +
-                    `text-shadow:0 0 6px #000,0 0 10px #000,0 2px 8px #000;white-space:nowrap;line-height:1.15">` +
-                    `${short}<br/><span style="font-size:20px;font-weight:600">${word}` +
-                    `${p.issued_at ? ` · ${age(p.issued_at)}` : ""}</span></div>`,
-                }),
+            const text = `${short} · ${word}${p.issued_at ? ` · ${age(p.issued_at)}` : ""}`;
+            const marker = L.marker(b.getCenter(), {
+              interactive: false,
+              keyboard: false,
+              icon: L.divIcon({
+                className: "tr-zone-label",
+                iconSize: [0, 0],
+                html:
+                  `<div style="transform:translate(-50%,-50%);pointer-events:none;` +
+                  `white-space:nowrap;font-family:ui-monospace,monospace;font-weight:700;` +
+                  `color:${col};text-shadow:0 0 4px #000,0 0 7px #000,0 1px 4px #000">${text}</div>`,
               }),
-            );
+            });
+            zoneLabels.addLayer(marker);
+            labelInfos.push({ marker, bounds: b, len: text.length });
           }
         },
       },
     ).addTo(m);
     evacZoneLayerRef.current = layer;
-    // labels only once zoomed in enough to read them — statewide they are noise
-    const syncZoneLabels = () => {
-      if (m.getZoom() >= 10) {
-        if (!m.hasLayer(zoneLabels)) zoneLabels.addTo(m);
-      } else if (m.hasLayer(zoneLabels)) {
-        m.removeLayer(zoneLabels);
+
+    // Scale each label to its zone's on-screen width so it grows and shrinks
+    // WITH the map instead of sitting at a fixed pixel size, and hide labels
+    // for zones too small to read at the current zoom (statewide = clutter).
+    const sizeZoneLabels = () => {
+      for (const { marker, bounds, len } of labelInfos) {
+        const el = marker.getElement()?.firstElementChild as HTMLElement | undefined;
+        if (!el) continue;
+        const w = Math.abs(
+          m.latLngToContainerPoint(bounds.getNorthEast()).x -
+            m.latLngToContainerPoint(bounds.getSouthWest()).x,
+        );
+        // fit the line across ~90% of the zone; monospace char ≈ 0.6em wide
+        const fit = (w * 0.9) / (len * 0.6);
+        const size = Math.max(9, Math.min(46, fit));
+        if (fit < 9) {
+          el.style.display = "none"; // zone too small to hold the label here
+        } else {
+          el.style.display = "";
+          el.style.fontSize = `${size}px`;
+        }
       }
     };
-    syncZoneLabels();
-    m.on("zoomend", syncZoneLabels);
+    zoneLabels.addTo(m); // always on; per-label display handles zoom clutter
+    // run after the labels are actually in the DOM, then on every zoom/pan
+    requestAnimationFrame(sizeZoneLabels);
+    m.on("zoomend moveend", sizeZoneLabels);
     evacLabelLayerRef.current = zoneLabels;
-    evacLabelZoomHandler.current = syncZoneLabels;
+    evacLabelZoomHandler.current = sizeZoneLabels;
   }, [evacZones, showEvacZones, ready]);
 
   useEffect(() => {
