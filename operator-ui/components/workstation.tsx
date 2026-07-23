@@ -236,6 +236,9 @@ function FactRow({
     } catch {}
   };
   const lagged = lag(f.observed_at, f.ingested_at);
+  // the row accent tracks URGENCY, not tier: an evacuation is the thing the
+  // operator must see first when scanning the feed
+  const urgent = f.kind === "evac" || tags.includes("EVACUATION");
   return (
     <div
       className="tr-row"
@@ -252,9 +255,10 @@ function FactRow({
         gap: 8,
         opacity: superseded ? 0.55 : 1,
         cursor: f.source_url ? "pointer" : "default",
+        background: urgent && !superseded ? C.evac + "10" : undefined,
       }}
     >
-      <div style={{ width: 3, borderRadius: 2, background: TIER[f.tier], flexShrink: 0 }} />
+      <div style={{ width: 3, borderRadius: 2, background: urgent ? C.evac : TIER[f.tier], flexShrink: 0 }} />
       <div style={{ minWidth: 0, flex: 1 }}>
         <div
           style={{
@@ -269,10 +273,11 @@ function FactRow({
             T{f.tier}
           </span>
           <span
-            title={`published ${fmtFull(f.observed_at)} — age ${age(f.observed_at)}`}
-            style={{ color: ageColor(f.observed_at, C) }}
+            title={`published ${fmtFull(f.observed_at)}\nreceived  ${fmtFull(f.ingested_at)}${lagged ? `\n+${lagged} lag` : ""}`}
+            style={{ color: ageColor(f.observed_at, C), whiteSpace: "nowrap" }}
           >
-            {age(f.observed_at)} old
+            {age(f.observed_at)}
+            {f.stale ? " ⏱" : ""}
           </span>
           <span
             style={{
@@ -289,10 +294,7 @@ function FactRow({
             {f.source_url && <span style={{ color: C.blue }}> ⧉</span>}
           </span>
           {showIncident && f.incident_name && (
-            <span style={{ color: C.ember }}>{f.incident_name}</span>
-          )}
-          {showIncident && f.incident_county && (
-            <span style={{ color: C.faint }}>{f.incident_county}</span>
+            <span style={{ color: C.ember, whiteSpace: "nowrap" }}>{f.incident_name}</span>
           )}
           <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
             {showIncident && (
@@ -317,82 +319,70 @@ function FactRow({
           style={{
             fontSize: 11.5,
             marginTop: 2,
+            fontWeight: urgent ? 600 : 400,
             textDecoration: superseded ? "line-through" : "none",
           }}
         >
           {f.content}
         </div>
-        {/* bi-temporal: when it happened vs when we got it */}
-        <div style={{ fontFamily: font.mono, fontSize: 8.5, marginTop: 3, display: "flex", gap: 10, color: C.faint }}>
-          <span title={fmtFull(f.observed_at)}>
-            PUB <span style={{ color: C.dim }}>{fmtStamp(f.observed_at)}</span>
-          </span>
-          <span title={fmtFull(f.ingested_at)}>
-            RCV <span style={{ color: C.dim }}>{fmtStamp(f.ingested_at)}</span>
-          </span>
-          {lagged && (
-            <span style={{ color: f.stale ? C.warn : C.faint }} title="delay between publication and our receipt">
-              +{lagged} lag
-            </span>
-          )}
-        </div>
-        {tags.length > 0 && (
-          <div style={{ display: "flex", gap: 4, marginTop: 3, flexWrap: "wrap" }}>
-            {tags.map((tag) => (
-              <span
-                key={tag}
-                style={{
-                  fontFamily: font.mono,
-                  fontSize: 7.5,
-                  letterSpacing: 0.5,
-                  color: tag === "EVACUATION" ? C.evac : C.dim,
-                  border: `1px solid ${tag === "EVACUATION" ? C.evac + "66" : C.line}`,
-                  borderRadius: 3,
-                  padding: "0 4px",
-                }}
-              >
-                #{tag}
-              </span>
-            ))}
-          </div>
-        )}
-        <div style={{ fontFamily: font.mono, fontSize: 9, marginTop: 3, display: "flex", gap: 8 }}>
-          <span style={{ color: C.faint }}>{f.kind}</span>
-          {onStar && (
+        {/* one footer line: kind + topic tags on the left, corroboration and
+            actions on the right. The PUB/RCV timestamps and lag now live in the
+            age hover above; superseded shows as strike + fade — neither needs
+            its own line, which halves the row's height. */}
+        <div
+          style={{
+            fontFamily: font.mono,
+            fontSize: 8.5,
+            marginTop: 4,
+            display: "flex",
+            gap: 6,
+            flexWrap: "wrap",
+            alignItems: "center",
+            color: C.faint,
+          }}
+        >
+          <span style={{ color: C.dim }}>{f.kind}</span>
+          {tags.map((tag) => (
             <span
-              onClick={(e) => {
-                e.stopPropagation(); // the row itself opens the source
-                onStar(f);
+              key={tag}
+              style={{
+                fontSize: 7.5,
+                letterSpacing: 0.5,
+                color: tag === "EVACUATION" ? C.evac : C.dim,
+                border: `1px solid ${tag === "EVACUATION" ? C.evac + "66" : C.line}`,
+                borderRadius: 3,
+                padding: "0 4px",
               }}
-              title={f.starred ? "unpin" : "pin this fact"}
-              style={{ color: f.starred ? C.warn : C.faint, cursor: "pointer", fontSize: 10 }}
             >
-              {f.starred ? "★" : "☆"}
+              #{tag}
             </span>
-          )}
-          <span
-            onClick={copyCitation}
-            title='copy as citation: "quote" — source (tier), observed time, link'
-            style={{ color: cited ? C.ok : C.faint, cursor: "pointer" }}
-          >
-            {cited ? "✓ copied" : "⧉ cite"}
+          ))}
+          <span style={{ marginLeft: "auto", display: "flex", gap: 9, alignItems: "center" }}>
+            {(f.corroborating_sources ?? 0) > 0 && (
+              <span style={{ color: C.ok }} title="independent sources corroborating">
+                ✓×{f.corroborating_sources}
+              </span>
+            )}
+            {onStar && (
+              <span
+                onClick={(e) => {
+                  e.stopPropagation(); // the row itself opens the source
+                  onStar(f);
+                }}
+                title={f.starred ? "unpin" : "pin this fact"}
+                style={{ color: f.starred ? C.warn : C.faint, cursor: "pointer", fontSize: 10 }}
+              >
+                {f.starred ? "★" : "☆"}
+              </span>
+            )}
+            <span
+              onClick={copyCitation}
+              title='copy as citation: "quote" — source (tier), observed time, link'
+              style={{ color: cited ? C.ok : C.faint, cursor: "pointer" }}
+            >
+              {cited ? "✓ copied" : "⧉ cite"}
+            </span>
           </span>
-          {f.supersedes && (
-            <span style={{ color: C.blue }} title={`supersedes ${f.supersedes}`}>
-              ⤷ supersedes #{f.supersedes.slice(-6)}
-            </span>
-          )}
-          {superseded && <span style={{ color: C.faint }}>superseded</span>}
-          {(f.corroborating_sources ?? 0) > 0 && (
-            <span style={{ color: C.ok }} title="independent sources corroborating">
-              ✓×{f.corroborating_sources}
-            </span>
-          )}
-          {f.stale && (
-            <span style={{ color: C.warn }} title="observed_at trails ingested_at by > 6h">
-              ⏱ STALE
-            </span>
-          )}
         </div>
       </div>
     </div>
@@ -1942,36 +1932,32 @@ function OpsMode({
               outline: "none",
             }}
           />
-          {/* sort + group row */}
-          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", width: "100%" }}>
-            {(Object.keys(SORT_LABELS) as SortMode[]).map((m) => (
-              <span
-                key={m}
-                onClick={() => setSortMode(m)}
-                title={
-                  m === "received"
-                    ? "order by when we received it"
-                    : m === "published"
-                      ? "order by when the source published it"
-                      : m === "oldest"
-                        ? "oldest publication first"
-                        : m === "confidence"
-                          ? "highest confidence first"
-                          : "most trusted sources first"
-                }
-                style={{
-                  fontFamily: font.mono,
-                  fontSize: 8,
-                  padding: "2px 6px",
-                  borderRadius: 3,
-                  cursor: "pointer",
-                  border: `1px solid ${sortMode === m ? C.blue : C.line}`,
-                  color: sortMode === m ? C.blue : C.faint,
-                }}
-              >
-                {SORT_LABELS[m]}
-              </span>
-            ))}
+          {/* sort + group row — five sort chips collapsed to one dropdown so
+              the header stays a single tidy line (newest is the default) */}
+          <div style={{ display: "flex", gap: 6, width: "100%", alignItems: "center" }}>
+            <span style={{ fontFamily: font.mono, fontSize: 8, color: C.faint, letterSpacing: 1 }}>SORT</span>
+            <select
+              value={sortMode}
+              onChange={(e) => setSortMode(e.target.value as SortMode)}
+              title="order the stream"
+              style={{
+                background: C.bg,
+                border: `1px solid ${C.line}`,
+                borderRadius: 3,
+                color: C.blue,
+                fontFamily: font.mono,
+                fontSize: 9,
+                padding: "2px 4px",
+                outline: "none",
+                cursor: "pointer",
+              }}
+            >
+              {(Object.keys(SORT_LABELS) as SortMode[]).map((m) => (
+                <option key={m} value={m} style={{ background: C.panel }}>
+                  {SORT_LABELS[m]}
+                </option>
+              ))}
+            </select>
             <span
               onClick={() => setGroupByFire((v) => !v)}
               title="group the stream by fire"
