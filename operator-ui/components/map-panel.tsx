@@ -294,24 +294,24 @@ export default function MapPanel({
   const goesTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [goesFrameTime, setGoesFrameTime] = useState<string | null>(null);
   const [perimeters, setPerimeters] = useState<PerimeterCollection | null>(null);
-  const [showPerimeters, setShowPerimeters] = useState(true);
+  const [showPerimeters, setShowPerimeters] = useState(false);
   const [hotspots, setHotspots] = useState<HotspotSet | null>(null);
-  const [showHotspots, setShowHotspots] = useState(true);
+  const [showHotspots, setShowHotspots] = useState(false);
   const [aircraft, setAircraft] = useState<AircraftSet | null>(null);
-  const [showAircraft, setShowAircraft] = useState(true);
+  const [showAircraft, setShowAircraft] = useState(false);
   const [wind, setWind] = useState<WindSet | null>(null);
-  const [showWind, setShowWind] = useState(true);
+  const [showWind, setShowWind] = useState(false);
   const [windField, setWindField] = useState<WindField | null>(null);
   const [cameras, setCameras] = useState<CameraSet | null>(null);
-  const [showCameras, setShowCameras] = useState(true);
+  const [showCameras, setShowCameras] = useState(false);
   const [firewx, setFirewx] = useState<FireWeatherSet | null>(null);
-  const [showFirewx, setShowFirewx] = useState(true);
+  const [showFirewx, setShowFirewx] = useState(false);
   const [evacZones, setEvacZones] = useState<EvacZoneSet | null>(null);
-  const [showEvacZones, setShowEvacZones] = useState(true);
+  const [showEvacZones, setShowEvacZones] = useState(false);
   const [firis, setFiris] = useState<FirisSet | null>(null);
-  const [showFiris, setShowFiris] = useState(true);
+  const [showFiris, setShowFiris] = useState(false);
   const [closures, setClosures] = useState<ClosureSet | null>(null);
-  const [showClosures, setShowClosures] = useState(true);
+  const [showClosures, setShowClosures] = useState(false);
   // the in-tool frame viewer: which camera, and a nonce so REFRESH re-asks
   const [viewCam, setViewCam] = useState<Camera | null>(null);
   const [frameNonce, setFrameNonce] = useState(0);
@@ -319,6 +319,7 @@ export default function MapPanel({
   const incidentsRef = useRef<Incident[]>(incidents);
   incidentsRef.current = incidents;
   const [showKey, setShowKey] = useState(false);
+  const [layersOpen, setLayersOpen] = useState(false);
   const [tileError, setTileError] = useState(false);
   const [ready, setReady] = useState(false);
   // A zoom-to-origin swaps in imagery so the operator can see the ground.
@@ -1218,6 +1219,112 @@ export default function MapPanel({
   const placed = incidents.filter((i) => i.lat != null && i.lon != null);
   const evacCount = placed.filter(hasActiveEvac).length;
 
+  // The layers menu, data-driven: one row per toggleable layer, grouped so the
+  // list reads at a glance instead of a wall of chips. `avail` hides a row
+  // until its data exists; `note` is the hover explanation. Fire pins are the
+  // always-on base (active fires) and are not in this list.
+  type LayerRow = {
+    label: string;
+    on: boolean;
+    toggle: () => void;
+    accent: string;
+    avail: boolean;
+    detail?: string;
+    note?: string;
+  };
+  const ov = (k: string) => ({
+    on: !!overlays[k],
+    toggle: () => setOverlays((o) => ({ ...o, [k]: !o[k] })),
+  });
+  const layerGroups: { group: string; rows: LayerRow[] }[] = [
+    {
+      group: "FIRE",
+      rows: [
+        {
+          label: "Perimeters", accent: C.ember, on: showPerimeters,
+          toggle: () => setShowPerimeters((v) => !v),
+          avail: !!perimeters?.features?.length, detail: `${perimeters?.features?.length ?? 0}`,
+          note: perimeters?.note,
+        },
+        {
+          label: "IR heat · FIRIS", accent: C.emberHot, on: showFiris,
+          toggle: () => setShowFiris((v) => !v),
+          avail: !!firis?.features?.length, detail: `${firis?.features?.length ?? 0}`,
+          note: firis?.note,
+        },
+        {
+          label: "Hotspots", accent: C.emberHot, on: showHotspots,
+          toggle: () => setShowHotspots((v) => !v),
+          avail: !!hotspots?.count, detail: `${hotspots?.count ?? 0}`, note: hotspots?.note,
+        },
+        {
+          label: "Fire imagery · SWIR", accent: C.ok, ...ov("fireswir"),
+          avail: true, note: OVERLAYS.fireswir.note,
+        },
+      ],
+    },
+    {
+      group: "WEATHER & SMOKE",
+      rows: [
+        {
+          label: "Wind", accent: C.blue, on: showWind, toggle: () => setShowWind((v) => !v),
+          avail: !!wind?.count || !!windField?.count, detail: `${wind?.count ?? 0}`,
+          note: "official per-fire NWS wind + ambient field",
+        },
+        {
+          label: "Red flag", accent: C.evac, on: showFirewx, toggle: () => setShowFirewx((v) => !v),
+          avail: !!firewx?.count, detail: `${firewx?.count ?? 0}`, note: firewx?.note,
+        },
+        {
+          label: "Clouds · GOES-West", accent: C.ok, ...ov("clouds"), avail: true,
+          note: OVERLAYS.clouds.note,
+          detail: overlays.clouds && goesFrameTime ? `${goesFrameTime.slice(11, 16)}Z` : undefined,
+        },
+        { label: "Smoke · AOD", accent: C.ok, ...ov("smoke"), avail: true, note: OVERLAYS.smoke.note },
+      ],
+    },
+    {
+      group: "AIR",
+      rows: [
+        {
+          label: "Aircraft", accent: C.blue, on: showAircraft, toggle: () => setShowAircraft((v) => !v),
+          avail: !!aircraft?.count, detail: `${aircraft?.count ?? 0}`, note: aircraft?.note,
+        },
+        {
+          label: "Cameras", accent: "#45d6d0", on: showCameras, toggle: () => setShowCameras((v) => !v),
+          avail: !!cameras?.count, detail: `${cameras?.count ?? 0}`,
+          note: "ALERTCalifornia cameras near the selected fire",
+        },
+      ],
+    },
+    {
+      group: "GROUND",
+      rows: [
+        {
+          label: "Evacuation zones", accent: C.evac, on: showEvacZones,
+          toggle: () => setShowEvacZones((v) => !v),
+          avail: !!evacZones?.count, detail: `${evacZones?.count ?? 0}`, note: evacZones?.note,
+        },
+        {
+          label: "Road closures", accent: C.warn, on: showClosures,
+          toggle: () => setShowClosures((v) => !v),
+          avail: !!closures?.count, detail: `${closures?.count ?? 0}`, note: closures?.note,
+        },
+      ],
+    },
+    {
+      group: "BASE",
+      rows: [
+        { label: "Place labels", accent: C.txt, ...ov("labels"), avail: true, note: "names on top of any basemap" },
+        { label: "Water", accent: C.txt, ...ov("water"), avail: true, note: "USGS streams and lakes" },
+      ],
+    },
+  ];
+  const activeLayers = layerGroups.reduce(
+    (n, g) => n + g.rows.filter((r) => r.avail && r.on).length,
+    0,
+  );
+
   return (
     /* isolation + a z-index floor keeps every Leaflet pane (which numbers
        itself up to 800) inside this box, where it cannot paint over a modal */
@@ -1346,215 +1453,105 @@ export default function MapPanel({
         </div>
       )}
 
+      {/* Layers menu + status, bottom-left. The layers live behind one button
+          so the map stays clear; the panel groups them and hides any layer
+          whose data is not present yet. */}
       <div
         style={{
           position: "absolute",
           bottom: 8,
           left: 10,
           zIndex: Z.mapControl,
-          fontFamily: font.mono,
-          fontSize: 9,
-          color: C.dim,
-          background: C.panel + "cc",
-          borderRadius: 4,
-          padding: "3px 7px",
           display: "flex",
-          gap: 8,
-          alignItems: "center",
-          pointerEvents: "none",
+          flexDirection: "column",
+          gap: 6,
+          alignItems: "flex-start",
         }}
       >
-        <span>
-          {placed.length} plotted · click a pin
-        </span>
-        {!!perimeters?.features?.length && (
-          <span
-            onClick={() => setShowPerimeters((v) => !v)}
-            title={perimeters.note ?? "mapped fire perimeters"}
+        {layersOpen && (
+          <div
             style={{
-              pointerEvents: "auto",
-              cursor: "pointer",
-              color: showPerimeters ? C.ember : C.dim,
-              border: `1px solid ${showPerimeters ? C.ember + "66" : C.line}`,
-              borderRadius: 3,
-              padding: "1px 5px",
+              background: C.panel + "f2",
+              border: `1px solid ${C.line}`,
+              borderRadius: 6,
+              padding: "8px 10px",
+              fontFamily: font.mono,
+              fontSize: 10,
+              maxHeight: "62vh",
+              overflowY: "auto",
+              boxShadow: "0 6px 22px #000a",
+              minWidth: 186,
             }}
           >
-            {showPerimeters ? "◼" : "◻"} PERIMETERS ({perimeters.features.length})
-            {/* the age travels with the layer: a crisp polygon is still an
-                overnight IR map, not a live fire edge */}
-            {perimeters.mapped_latest ? ` · newest flown ${age(perimeters.mapped_latest)} ago` : ""}
-          </span>
+            {layerGroups.map((g) => {
+              const rows = g.rows.filter((r) => r.avail);
+              if (!rows.length) return null;
+              return (
+                <div key={g.group} style={{ marginBottom: 7 }}>
+                  <div style={{ color: C.faint, letterSpacing: 1.5, fontSize: 8.5, margin: "1px 0 3px" }}>
+                    {g.group}
+                  </div>
+                  {rows.map((r) => (
+                    <div
+                      key={r.label}
+                      onClick={r.toggle}
+                      title={r.note}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 7,
+                        cursor: "pointer",
+                        padding: "2px 1px",
+                        color: r.on ? C.txt : C.dim,
+                      }}
+                    >
+                      <span style={{ width: 9, textAlign: "center", color: r.on ? r.accent : C.line }}>
+                        {r.on ? "◼" : "◻"}
+                      </span>
+                      <span style={{ flex: 1, whiteSpace: "nowrap" }}>{r.label}</span>
+                      {r.detail ? <span style={{ color: C.faint }}>{r.detail}</span> : null}
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
         )}
-        {!!firis?.features?.length && (
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            background: C.panel + "cc",
+            borderRadius: 4,
+            padding: "3px 7px",
+            fontFamily: font.mono,
+            fontSize: 9,
+            color: C.dim,
+          }}
+        >
           <span
-            onClick={() => setShowFiris((v) => !v)}
-            title={firis.note ?? "FIRIS infrared heat perimeters (CAL FIRE)"}
+            onClick={() => setLayersOpen((v) => !v)}
+            title="show / hide map layers"
             style={{
-              pointerEvents: "auto",
               cursor: "pointer",
-              color: showFiris ? C.emberHot : C.dim,
-              border: `1px solid ${showFiris ? C.emberHot + "66" : C.line}`,
+              color: layersOpen ? C.ember : C.txt,
+              border: `1px solid ${layersOpen ? C.ember + "66" : C.line}`,
               borderRadius: 3,
-              padding: "1px 5px",
-            }}
-          >
-            {showFiris ? "◼" : "◻"} IR HEAT ({firis.features.length}) · FIRIS
-          </span>
-        )}
-        {!!hotspots?.count && (
-          <span
-            onClick={() => setShowHotspots((v) => !v)}
-            title={hotspots.note}
-            style={{
-              pointerEvents: "auto",
-              cursor: "pointer",
-              color: showHotspots ? C.emberHot : C.dim,
-              border: `1px solid ${showHotspots ? C.emberHot + "66" : C.line}`,
-              borderRadius: 3,
-              padding: "1px 5px",
-            }}
-          >
-            {showHotspots ? "◼" : "◻"} HOTSPOTS ({hotspots.count})
-            {hotspots.latest_pass ? ` · last pass ${age(hotspots.latest_pass)} ago` : ""}
-          </span>
-        )}
-        {(["labels", "water", "clouds", "smoke", "fireswir"] as const).map((key) => {
-          const spec = OVERLAYS[key];
-          // satellite layers get their own accent so the network-heavy imagery
-          // reads distinct from the lightweight vector overlays
-          const sat = key === "clouds" || key === "smoke" || key === "fireswir";
-          const accent = sat ? C.ok : C.txt;
-          const title =
-            spec.note ??
-            (key === "labels"
-              ? "place names on top of any basemap — turn on for a clean terrain base"
-              : "USGS water features (streams, lakes)");
-          return (
-            <span
-              key={key}
-              onClick={() => setOverlays((o) => ({ ...o, [key]: !o[key] }))}
-              title={title}
-              style={{
-                pointerEvents: "auto",
-                cursor: "pointer",
-                color: overlays[key] ? accent : C.dim,
-                border: `1px solid ${overlays[key] ? accent + "66" : C.line}`,
-                borderRadius: 3,
-                padding: "1px 5px",
-              }}
-            >
-              {overlays[key] ? "◼" : "◻"} {spec.label}
-              {key === "clouds" && overlays.clouds && goesFrameTime
-                ? ` ${goesFrameTime.slice(11, 16)}Z`
-                : ""}
-            </span>
-          );
-        })}
-        {(!!wind?.count || !!windField?.count) && (
-          <span
-            onClick={() => setShowWind((v) => !v)}
-            title="bright arrows = official NWS wind at each fire (points where the fire is pushed); dim grid = ambient regional flow (Open-Meteo model, context only)"
-            style={{
-              pointerEvents: "auto",
-              cursor: "pointer",
-              color: showWind ? C.blue : C.dim,
-              border: `1px solid ${showWind ? C.blue + "66" : C.line}`,
-              borderRadius: 3,
-              padding: "1px 5px",
-            }}
-          >
-            {showWind ? "◼" : "◻"} WIND ({wind?.count ?? 0})
-          </span>
-        )}
-        {!!evacZones?.count && (
-          <span
-            onClick={() => setShowEvacZones((v) => !v)}
-            title={`${evacZones.note} Statuses right now: ${Object.entries(evacZones.statuses).map(([s, n]) => `${s}: ${n}`).join(", ")}`}
-            style={{
-              pointerEvents: "auto",
-              cursor: "pointer",
-              color: showEvacZones ? C.evac : C.dim,
-              border: `1px solid ${showEvacZones ? C.evac + "88" : C.line}`,
-              borderRadius: 3,
-              padding: "1px 5px",
+              padding: "1px 6px",
               fontWeight: 700,
             }}
           >
-            {showEvacZones ? "◼" : "◻"} EVAC ZONES ({evacZones.count}) · Cal OES
+            {layersOpen ? "▾" : "▸"} LAYERS{activeLayers ? ` (${activeLayers})` : ""}
           </span>
-        )}
-        {!!firewx?.count && (
-          <span
-            onClick={() => setShowFirewx((v) => !v)}
-            title={`${firewx.note}${firewx.unresolved ? ` (${firewx.unresolved} zone(s) unresolved — listed, not mapped)` : ""}`}
-            style={{
-              pointerEvents: "auto",
-              cursor: "pointer",
-              color: showFirewx ? C.evac : C.dim,
-              border: `1px solid ${showFirewx ? C.evac + "66" : C.line}`,
-              borderRadius: 3,
-              padding: "1px 5px",
-            }}
-          >
-            {showFirewx ? "◼" : "◻"} RED FLAG ({firewx.count}) · forecast
-          </span>
-        )}
-        {!!closures?.count && (
-          <span
-            onClick={() => setShowClosures((v) => !v)}
-            title={closures.note}
-            style={{
-              pointerEvents: "auto",
-              cursor: "pointer",
-              color: showClosures ? C.warn : C.dim,
-              border: `1px solid ${showClosures ? C.warn + "66" : C.line}`,
-              borderRadius: 3,
-              padding: "1px 5px",
-            }}
-          >
-            {showClosures ? "◼" : "◻"} CLOSURES ({closures.count}) · state hwys only
-          </span>
-        )}
-        {!!cameras?.count && (
-          <span
-            onClick={() => setShowCameras((v) => !v)}
-            title={`ALERTCalifornia cameras within 40 km of the selected fire (${cameras.total_in_range} in range). Click a ◎ on the map to view.`}
-            style={{
-              pointerEvents: "auto",
-              cursor: "pointer",
-              color: showCameras ? "#45d6d0" : C.dim,
-              border: `1px solid ${showCameras ? "#45d6d066" : C.line}`,
-              borderRadius: 3,
-              padding: "1px 5px",
-            }}
-          >
-            {showCameras ? "◼" : "◻"} CAMS ({cameras.count})
-          </span>
-        )}
-        {!!aircraft?.count && (
-          <span
-            onClick={() => setShowAircraft((v) => !v)}
-            title={aircraft.note}
-            style={{
-              pointerEvents: "auto",
-              cursor: "pointer",
-              color: showAircraft ? C.blue : C.dim,
-              border: `1px solid ${showAircraft ? C.blue + "66" : C.line}`,
-              borderRadius: 3,
-              padding: "1px 5px",
-            }}
-          >
-            {showAircraft ? "◼" : "◻"} AIRCRAFT ({aircraft.count})
-            {aircraft.fire_ops ? ` · ${aircraft.fire_ops} air ops` : ""}
-          </span>
-        )}
-        {evacCount > 0 && (
-          <span style={{ color: C.evac, display: "flex", alignItems: "center", gap: 4 }}>
-            <span style={{ width: 7, height: 7, borderRadius: 4, background: C.evac, display: "inline-block" }} />
-            {evacCount} under evacuation
-          </span>
-        )}
+          <span>{placed.length} fires · click a pin</span>
+          {evacCount > 0 && (
+            <span style={{ color: C.evac, display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ width: 7, height: 7, borderRadius: 4, background: C.evac, display: "inline-block" }} />
+              {evacCount} under evacuation
+            </span>
+          )}
+        </div>
       </div>
 
       <MapKey open={showKey} onToggle={() => setShowKey((v) => !v)} />
