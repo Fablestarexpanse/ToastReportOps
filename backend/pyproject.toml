@@ -19,6 +19,9 @@ dependencies = [
     "meshtastic>=2.5",
     "cryptography>=43.0",
     "nh3>=0.2",
+    # civilian-facing evac graphics show local Pacific time; zoneinfo needs the
+    # tz database, which Windows and slim Linux images don't ship on their own
+    "tzdata>=2024.1",
 ]
 
 [dependency-groups]

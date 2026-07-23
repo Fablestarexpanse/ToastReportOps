@@ -658,6 +658,38 @@ def _evac_word(status: str | None) -> str:
     }.get(status or "", (status or "UNKNOWN").upper())
 
 
+def _pacific_tz():
+    from zoneinfo import ZoneInfo
+
+    try:
+        return ZoneInfo("America/Los_Angeles")
+    except Exception:  # tz database missing — fall back to UTC below
+        return None
+
+
+def _civilian_time(iso: str | None) -> str:
+    """A UTC timestamp the way a Californian reads it: local Pacific, 12-hour
+    with AM/PM — never military. The evac card is public-facing; a resident
+    deciding whether to leave should not have to convert 20:09Z in their head."""
+    if not iso:
+        return ""
+    from datetime import datetime
+
+    try:
+        dt = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return str(iso)[:16].replace("T", " ")
+    tz = _pacific_tz()
+    if tz is not None:
+        dt = dt.astimezone(tz)
+        zone = dt.strftime("%Z")
+    else:
+        zone = "UTC"
+    hour = dt.hour % 12 or 12
+    ampm = "AM" if dt.hour < 12 else "PM"
+    return f"{dt.strftime('%b')} {dt.day}, {hour}:{dt.minute:02d} {ampm} {zone}"
+
+
 def generate_evac_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
     """A shareable card of a fire's CURRENT evacuation zones, rendered verbatim
     from the Cal OES layer. This is the one graphic where every pixel is an
@@ -736,9 +768,10 @@ def generate_evac_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
             d.text((58 + 470, y), _evac_word(z.get("status")), font=_font(20), fill=col)
             issued = z.get("issued_at")
             if issued:
-                # date AND time it was issued (UTC), never just the date
+                # date AND time it was issued, in plain civilian Pacific time so a
+                # resident reads it at a glance — never military, never bare UTC
                 d.text(
-                    (W - 40, y + 3), f"issued {str(issued)[:16].replace('T', ' ')}Z",
+                    (W - 40, y + 3), f"issued {_civilian_time(issued)}",
                     font=_font(15), fill=DIM, anchor="ra",
                 )
             y += 38
@@ -762,8 +795,7 @@ def generate_evac_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
         "rendered verbatim. ALWAYS follow the official county notice, not this card.",
         font=_font(15), fill=DIM,
     )
-    stamp = utcnow()[:16].replace("T", " ")
-    d.text((40, fy + 44), f"card created {stamp} UTC", font=_font(14), fill=EMBER)
+    d.text((40, fy + 44), f"card created {_civilian_time(utcnow())}", font=_font(14), fill=EMBER)
     from toast.core.appsettings import brand_line
 
     brand = brand_line(conn)
