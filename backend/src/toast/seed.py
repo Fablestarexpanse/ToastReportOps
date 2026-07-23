@@ -287,6 +287,18 @@ RADIO_CHANNEL_SEEDS = [
         "url": "https://www.cafirefighters.com/live.htm",
         "notes": "Statewide fire/EMS dispatch listening page.",
     },
+    # The operator's own antenna, live. rtl_airband publishes CAL FIRE VHF to
+    # the in-stack icecast (port 8100); this channel plays it the moment the
+    # SDR host starts streaming — see docs/RADIO-SETUP.md. Free forever, no
+    # third-party terms, works through a PSPS.
+    {
+        "name": "My SDR — LIVE (Butte CAL FIRE VHF)",
+        "kind": "stream",
+        "county": "Butte",
+        "url": "http://localhost:8100/calfire-btu",
+        "notes": "Own RTL-SDR via rtl_airband -> in-stack icecast. Silent until the "
+        "SDR host streams (docs/RADIO-SETUP.md, 'live listening').",
+    },
 ]
 
 
@@ -301,8 +313,17 @@ def seed_radio_channels(conn) -> list[str]:
         conn.execute(
             """INSERT INTO radio_channels (id, name, kind, county, system, talkgroups,
                                            url, notes, enabled, created_at, updated_at)
-               VALUES (?, ?, ?, NULL, NULL, NULL, ?, ?, 1, ?, ?)""",
-            (ulid(), spec["name"], spec["kind"], spec["url"], spec["notes"], now, now),
+               VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, 1, ?, ?)""",
+            (
+                ulid(),
+                spec["name"],
+                spec["kind"],
+                spec.get("county"),
+                spec["url"],
+                spec["notes"],
+                now,
+                now,
+            ),
         )
         created.append(spec["name"])
     return created

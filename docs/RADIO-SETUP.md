@@ -33,11 +33,22 @@ Butte County Sheriff / local fire may be on a trunked system; that is a later
 upgrade (`trunk-recorder` instead of `rtl_airband`) and the inbox contract
 already handles it.
 
-## 3. Capture software: rtl_airband
+## 3. Capture software: rtl_airband — DUAL output (archive + live)
 
-`rtl_airband` scans a list of conventional channels with one dongle and writes
-a file per transmission. Windows builds exist; it also runs fine in Docker or
-WSL. Config sketch (`rtl_airband.conf`):
+`rtl_airband` scans a list of conventional channels with one dongle and can
+write BOTH outputs at once, which is exactly the design:
+
+- **file output** → the inbox → CAS archive, transcripts, WATCH (the record)
+- **icecast output** → the stack's own icecast server → the RADIO tab's
+  **"My SDR — LIVE (Butte CAL FIRE VHF)"** channel plays it in-app (the live
+  scanner). Free forever, zero third-party terms, PSPS-proof.
+
+The icecast server is already in the stack (`docker compose` service
+`icecast`, loopback port **8100**; source password `toast-sdr-source` unless
+overridden in `.env`). The RADIO channel is pre-seeded and pointed at
+`http://localhost:8100/calfire-btu` — the moment rtl_airband connects, ▶
+LISTEN goes live. Windows builds of rtl_airband exist; it also runs fine in
+Docker or WSL. Config sketch (`rtl_airband.conf`):
 
 ```
 devices: ({
@@ -48,20 +59,42 @@ devices: ({
   channels: (
     {
       freq = 151190000;            # EXAMPLE ONLY — use RadioReference's current list
-      outputs: ( {
-        type = "file";
-        directory = "F:/Cursor Projects/ToastReportOPs/data/radio/inbox";
-        filename_template = "btu_local";
-        split_on_transmission = true;   # one file per transmission — required
-      } );
+      outputs: (
+        {
+          type = "file";
+          directory = "F:/Cursor Projects/ToastReportOPs/data/radio/inbox";
+          filename_template = "btu_local";
+          split_on_transmission = true;   # one file per transmission — required
+        },
+        {
+          type = "icecast";
+          server = "127.0.0.1";
+          port = 8100;
+          mountpoint = "calfire-btu";     # must match the seeded channel URL
+          username = "source";
+          password = "toast-sdr-source";  # ICECAST_SOURCE_PASSWORD if overridden
+          name = "BTU CAL FIRE VHF";
+        }
+      );
     }
-    # ...one block per channel
+    # ...one block per channel; all channels can share the one icecast mount
+    # (a merged scan, like a real scanner) or use one mount per channel
   );
 });
 ```
 
-`split_on_transmission = true` is the line that matters: it produces exactly
-what the inbox expects — one audio file per push-to-talk.
+`split_on_transmission = true` is the line that matters for the archive: one
+audio file per push-to-talk. The icecast output carries the same audio as a
+continuous live stream.
+
+**Test the live path without the SDR** (a 15-second tone through the real
+mount — the seeded channel should play it in the RADIO tab):
+
+```bash
+docker run --rm linuxserver/ffmpeg -f lavfi -i sine=frequency=440 -t 15 \
+  -c:a libmp3lame -b:a 48k -content_type audio/mpeg -f mp3 \
+  icecast://source:toast-sdr-source@host.docker.internal:8100/calfire-btu
+```
 
 ## 4. The inbox contract
 

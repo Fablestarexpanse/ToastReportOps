@@ -139,7 +139,14 @@ def test_seed_radio_channels_idempotent(db):
     from toast.seed import seed_radio_channels
 
     first = seed_radio_channels(db)
-    assert len(first) == 3
+    assert len(first) == 4
     assert seed_radio_channels(db) == []  # second run adds nothing
     kinds = {r["kind"] for r in db.execute("SELECT kind FROM radio_channels")}
-    assert kinds == {"link"}  # starter set is all link-outs, per policy
+    # link-outs (Broadcastify et al., per policy) + the operator's own live
+    # SDR stream slot, waiting on hardware
+    assert kinds == {"link", "stream"}
+    sdr = db.execute(
+        "SELECT county, url FROM radio_channels WHERE kind = 'stream'"
+    ).fetchone()
+    assert sdr["county"] == "Butte"
+    assert sdr["url"] == "http://localhost:8100/calfire-btu"

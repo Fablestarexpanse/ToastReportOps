@@ -102,6 +102,24 @@ services:
       - ldr_data:/data
     restart: unless-stopped
 
+  # Icecast: the operator's OWN live scanner stream. rtl_airband on the SDR
+  # host publishes CAL FIRE VHF here (see docs/RADIO-SETUP.md — dual output:
+  # this mount for live listening, the file inbox for the archive/transcripts).
+  # The RADIO tab's seeded "My SDR — LIVE" channel plays it in-app. Free
+  # forever, zero third-party terms, and it keeps working through a PSPS.
+  # Loopback-bound like everything else; passwords are stack-internal knobs,
+  # not secrets (override in .env if the mount is ever exposed beyond localhost).
+  icecast:
+    profiles: [desktop]
+    image: libretime/icecast:latest
+    environment:
+      ICECAST_SOURCE_PASSWORD: "${ICECAST_SOURCE_PASSWORD:-toast-sdr-source}"
+      ICECAST_ADMIN_PASSWORD: "${ICECAST_ADMIN_PASSWORD:-toast-sdr-admin}"
+      ICECAST_RELAY_PASSWORD: "${ICECAST_RELAY_PASSWORD:-toast-sdr-relay}"
+    ports:
+      - "127.0.0.1:8100:8000"
+    restart: unless-stopped
+
   # Mesh listener: the public Meshtastic MQTT firehose filtered to a NorCal
   # picture. Persistent subscription, so a service rather than a job.
   mesh:
