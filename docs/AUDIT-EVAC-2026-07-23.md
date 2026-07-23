@@ -73,6 +73,33 @@ times directly, not buried in prose.
   green pill, none pulse; the Spain evac does not pulse.
 - Backend suite green (455 tests), ruff/tsc/eslint clean.
 
+## Freshness / cadence (follow-up, same day)
+
+Evac is time-sensitive, so the whole detection chain was audited for latency. The
+gap: `evac_zone_sync` was **not a scheduled stage** — the authoritative Cal OES
+layer only refreshed reactively (when a news evac fact fired a sync) or lazily
+(when the map tab was open). If a county elevated a zone and no article mentioned
+it, the pin/counts/bell/Telegram — all now zone-driven — could sit on a stale
+cache.
+
+Fix: `evac_zone_sync` is now a scheduled stage at **120 s**, enqueued at **ingest
+priority (2)**, ahead of the maintenance backlog (`scheduler.py`,
+`STAGE_PRIORITY`). The Cal OES layer rebuilds every ~5 min at source, so 2-min
+polling reflects a new order or a reduction within ~2 min of the county
+publishing it — proactively, regardless of news or which tab is open.
+
+End-to-end latency now: county elevates → Cal OES publishes (their ~5 min) → our
+sync ≤ 2 min → operator ≤ 5 s (browser bell/pin, 5 s poll) / ≤ 30 s (Telegram).
+The dominant term is Cal OES's own rebuild, which no consumer can beat. The bell's
+lift detection was also corrected: zone-authoritative status returns `null` (not
+`"lifted"`) when the last zone clears, so the all-clear now fires on active→none.
+
+Official evac-carrying source polls were reviewed and left as-is: CAL FIRE 120 s,
+NWS CAP 300 s (NWS asks for restraint; the zone layer is the fast path).
+
+Verified live: zone cache age dropped 246 s → 27 s after the change; sync jobs run
+at priority 2.
+
 ## Not done (noted)
 
 - The CA-relevance gate at ingest still let the Spain article through once; the

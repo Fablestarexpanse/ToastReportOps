@@ -130,7 +130,11 @@ export default function AlertBell({
       const evacMap: Record<string, string> = evacSeen.current ?? {};
       for (const i of incs) {
         const raw = i.evac_status;
-        const cur = raw && (ACTIVE_EVAC.has(raw) || raw === "lifted") ? raw : "none";
+        // evac_status is zone-authoritative: it is an active status while any
+        // zone is elevated, and becomes null the moment the county reduces or
+        // cancels the last one — there is no explicit "lifted" value anymore. So
+        // a lift shows up as active -> none, which is exactly what we alert on.
+        const cur = raw && ACTIVE_EVAC.has(raw) ? raw : "none";
         const prev = evacMap[i.id];
         evacMap[i.id] = cur;
         if (firstEvacRun) continue; // recording history, not announcing it
@@ -150,7 +154,7 @@ export default function AlertBell({
               "official text in the incident panel — verify before repeating",
             at: now,
           });
-        } else if (cur === "lifted" && wasActive) {
+        } else if (cur === "none" && wasActive) {
           fresh.push({
             id: `evac-${i.id}-lifted-${now}`,
             kind: "evac",

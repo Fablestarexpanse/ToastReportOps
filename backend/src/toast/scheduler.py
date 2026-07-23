@@ -77,6 +77,14 @@ DAILY_STAGES = {
     # everything else becomes an operator proposal
     "activity_check": 1800,
     "jobs_prune": 3600,
+    # EVACUATIONS ARE TIME-SENSITIVE. The Cal OES zone layer is the authoritative,
+    # self-correcting source for orders/warnings, and it is what drives the pin,
+    # the counts, the bell and the Telegram alert. It rebuilds every ~5 min at
+    # source, so we pull it every 2 min — proactively, not only when a news fact
+    # happens to fire a sync or the map tab happens to be open — so a new order or
+    # a reduction is reflected within ~2 min of the county publishing it. Runs at
+    # ingest priority (see STAGE_PRIORITY), never behind the maintenance backlog.
+    "evac_zone_sync": 120,
     # the phone hub: alerts out every 30 s, button presses picked up every 15 s
     "telegram_notify": 30,
     "telegram_poll": 15,
@@ -101,13 +109,21 @@ def stage_due(conn, stage: str, interval_s: int) -> bool:
     return (row["last"] or 0) + interval_s <= now
 
 
+# Most maintenance stages run at the lowest priority (8) — they can wait behind
+# live ingest. A few cannot: an evacuation refresh is a life-safety path and must
+# jump the queue, so it rides at ingest priority (2), the same as a reactive
+# evac sync fired by a fresh order.
+STAGE_PRIORITY = {"evac_zone_sync": 2}
+
+
 def scan_once(conn) -> int:
     log = get_logger("scheduler")
     n = 0
     for stage, interval_s in DAILY_STAGES.items():
         if stage_due(conn, stage, interval_s):
-            job_id = jobs.enqueue(conn, stage, {}, priority=8)  # lowest priority
-            log.info("maintenance_enqueued", stage=stage, job_id=job_id)
+            priority = STAGE_PRIORITY.get(stage, 8)
+            job_id = jobs.enqueue(conn, stage, {}, priority=priority)
+            log.info("maintenance_enqueued", stage=stage, job_id=job_id, priority=priority)
             n += 1
     for src in due_sources(conn):
         job_id = jobs.enqueue(conn, "poll", {"source_id": src["id"], "adapter": src["adapter"]})
