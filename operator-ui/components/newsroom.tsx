@@ -48,7 +48,15 @@ const WINDOWS: [string, number | null][] = [
   ["Last hour", 1],
 ];
 
-export default function NewsroomMode({ toast }: { toast: (m: string) => void }) {
+export default function NewsroomMode({
+  toast,
+  focusIncident,
+}: {
+  toast: (m: string) => void;
+  /** set when OPS sends a fire here: preselect it in the generator (which also
+      filters the queue to its drafts) — straight to drafting, no searching */
+  focusIncident?: { id: string; nonce: number } | null;
+}) {
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [research, setResearch] = useState<ResearchJob[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
@@ -93,6 +101,12 @@ export default function NewsroomMode({ toast }: { toast: (m: string) => void }) 
     // it was, every 8 seconds, until "" and null were told apart.
     setGenIncident((prev) => (prev === null && unique.length ? unique[0].id : prev));
   }, []);
+
+  // OPS handed us a fire: select it. nonce in the deps so sending the same
+  // fire again still re-applies after the operator changed the dropdown.
+  useEffect(() => {
+    if (focusIncident) setGenIncident(focusIncident.id);
+  }, [focusIncident?.id, focusIncident?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     refresh();

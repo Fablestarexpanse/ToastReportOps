@@ -1744,9 +1744,14 @@ const SORT_LABELS: Record<SortMode, string> = {
 function OpsMode({
   toast,
   focusIncident,
+  onSendToNewsroom,
+  onSelectedFire,
 }: {
   toast: (m: string) => void;
   focusIncident?: { id: string; nonce: number; pullEvac?: boolean } | null;
+  onSendToNewsroom?: (incidentId: string) => void;
+  /** report the selection so the top bar can carry the fire's name */
+  onSelectedFire?: (fire: { name: string; county: string | null; status: string } | null) => void;
 }) {
   const incidents = usePolling(fetchIncidents);
   const intake = usePolling(fetchIntake);
@@ -1899,6 +1904,13 @@ function OpsMode({
   };
 
   const sel = incidents?.find((i) => i.id === selected);
+  // lift the selection into the top bar (and clear it when OPS unmounts)
+  useEffect(() => {
+    onSelectedFire?.(
+      sel ? { name: sel.canonical_name, county: sel.county, status: sel.status } : null,
+    );
+  }, [sel?.canonical_name, sel?.county, sel?.status]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => onSelectedFire?.(null), []); // eslint-disable-line react-hooks/exhaustive-deps
   // "pull this evacuation up on the map": fly to it, turn on the zone polygons
   // and the road-closure layer, and switch to the street basemap so the routes
   // out are legible. Time-sensitive — one click, no menu hunting.
@@ -2399,10 +2411,9 @@ function OpsMode({
       {/* ledger panel */}
       <div style={{ borderLeft: `1px solid ${C.line}`, background: C.panel, display: "flex", flexDirection: "column", minHeight: 0 }}>
         <div style={{ padding: "10px 13px", borderBottom: `1px solid ${C.line}`, flexShrink: 0 }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-            <div style={{ fontFamily: font.disp, fontSize: 20, fontWeight: 700, flex: 1, minWidth: 0 }}>
-              {sel?.canonical_name ?? "—"}
-            </div>
+          {/* the fire's name now rides the top bar — this row is all actions,
+              wrapping instead of hiding when space runs short */}
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
             {sel && (sel.lat == null || sel.lon == null) && (
               /* a fire the news has named but nobody has pinned must still be
                  findable — best effort, precision stated out loud */
@@ -2476,6 +2487,17 @@ function OpsMode({
                 style={{ fontFamily: font.mono, fontSize: 9, color: C.blue, border: `1px solid ${C.blue}66`, borderRadius: 3, padding: "2px 7px", cursor: "pointer", whiteSpace: "nowrap" }}
               >
                 ⌕ RESEARCH
+              </span>
+            )}
+            {sel && onSendToNewsroom && (
+              /* straight to drafting: NEWSROOM opens with this fire already
+                 selected in the generator and the queue filtered to it */
+              <span
+                onClick={() => onSendToNewsroom(sel.id)}
+                title="open NEWSROOM with this fire selected — generate its update with one click, queue filtered to its drafts"
+                style={{ fontFamily: font.mono, fontSize: 9, fontWeight: 700, color: C.ember, border: `1px solid ${C.ember}66`, borderRadius: 3, padding: "2px 7px", cursor: "pointer", whiteSpace: "nowrap" }}
+              >
+                ✎ NEWSROOM
               </span>
             )}
           </div>
@@ -3468,6 +3490,20 @@ export default function Workstation() {
     setFocusIncident({ id: incidentId, nonce: Date.now(), pullEvac: true });
     setMode("ops");
   }, []);
+  // OPS "send to newsroom": jump to NEWSROOM with this fire already selected in
+  // the generator/queue filter — no searching, straight to drafting
+  const [newsroomFocus, setNewsroomFocus] = useState<{ id: string; nonce: number } | null>(null);
+  const sendToNewsroom = useCallback((incidentId: string) => {
+    setNewsroomFocus({ id: incidentId, nonce: Date.now() });
+    setMode("news");
+  }, []);
+  // the selected fire's name lives in the top bar's open middle, not in the
+  // ledger panel header where it was squeezing the action buttons
+  const [headerFire, setHeaderFire] = useState<{
+    name: string;
+    county: string | null;
+    status: string;
+  } | null>(null);
   const health = usePolling(fetchHealth);
   const [showDead, setShowDead] = useState(false);
   // usePolling deliberately swallows fetch errors and keeps the last value, so
@@ -3549,7 +3585,34 @@ export default function Workstation() {
             </div>
           ))}
         </div>
-        <div style={{ flex: 1 }} />
+        {/* the working fire, front and centre — moved out of the ledger panel
+            header where it was hiding the action buttons */}
+        {mode === "ops" && headerFire ? (
+          <div style={{ flex: 1, display: "flex", alignItems: "baseline", justifyContent: "center", gap: 9, minWidth: 0, overflow: "hidden" }}>
+            <span
+              style={{
+                fontFamily: font.disp,
+                fontSize: 17,
+                fontWeight: 700,
+                letterSpacing: 1,
+                color: C.txt,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {headerFire.name}
+            </span>
+            <span style={{ fontFamily: font.mono, fontSize: 9.5, color: C.dim, whiteSpace: "nowrap" }}>
+              {headerFire.county ? `${headerFire.county} County · ` : ""}
+              <span style={{ color: headerFire.status === "active" ? C.emberHot : C.dim }}>
+                {headerFire.status.toUpperCase()}
+              </span>
+            </span>
+          </div>
+        ) : (
+          <div style={{ flex: 1 }} />
+        )}
         <AlertBell onOpen={openAlertTarget} />
         <span
           onClick={() => setShowSettings(true)}
@@ -3614,12 +3677,20 @@ export default function Workstation() {
         </div>
       )}
 
-      {mode === "ops" && <OpsMode key={uiKey} toast={toast} focusIncident={focusIncident} />}
+      {mode === "ops" && (
+        <OpsMode
+          key={uiKey}
+          toast={toast}
+          focusIncident={focusIncident}
+          onSendToNewsroom={sendToNewsroom}
+          onSelectedFire={setHeaderFire}
+        />
+      )}
       {mode === "evac" && <EvacMode toast={toast} onShowOnMap={showEvacOnMap} />}
       {mode === "air" && <AirMode toast={toast} />}
       {mode === "radio" && <RadioMode toast={toast} />}
       {mode === "mesh" && <MeshMode toast={toast} />}
-      {mode === "news" && <NewsroomMode toast={toast} />}
+      {mode === "news" && <NewsroomMode toast={toast} focusIncident={newsroomFocus} />}
       {mode === "watch" && <WatchMode toast={toast} />}
       {mode === "archive" && <ArchiveMode toast={toast} />}
       {mode === "sources" && <SourcesMode toast={toast} />}
