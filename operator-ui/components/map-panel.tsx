@@ -894,7 +894,25 @@ export default function MapPanel({
                 : esc((p.STATUS || "").toUpperCase().slice(0, 12));
             const col = colorOf(p.STATUS);
             const text = `${short} · ${word}${p.issued_at ? ` · ${age(p.issued_at)}` : ""}`;
-            const marker = L.marker(b.getCenter(), {
+            // sit on the polygon's own vertex centroid, not the bounding-box
+            // centre — for an L-shaped or diagonal zone the box centre lands
+            // outside it. Computed from the geometry so it needs no map (the
+            // Leaflet getCenter() throws before the layer is added to one).
+            const g = feature.geometry;
+            let ring: number[][] | null = null;
+            if (g?.type === "Polygon") ring = g.coordinates[0] as number[][];
+            else if (g?.type === "MultiPolygon") ring = g.coordinates[0]?.[0] as number[][];
+            let at = b.getCenter();
+            if (ring?.length) {
+              let sx = 0;
+              let sy = 0;
+              for (const pt of ring) {
+                sx += pt[0];
+                sy += pt[1];
+              }
+              at = L.latLng(sy / ring.length, sx / ring.length);
+            }
+            const marker = L.marker(at, {
               interactive: false,
               keyboard: false,
               icon: L.divIcon({
@@ -921,15 +939,18 @@ export default function MapPanel({
       for (const { marker, bounds, len } of labelInfos) {
         const el = marker.getElement()?.firstElementChild as HTMLElement | undefined;
         if (!el) continue;
-        const w = Math.abs(
-          m.latLngToContainerPoint(bounds.getNorthEast()).x -
-            m.latLngToContainerPoint(bounds.getSouthWest()).x,
-        );
-        // fit the line across ~90% of the zone; monospace char ≈ 0.6em wide
-        const fit = (w * 0.9) / (len * 0.6);
-        const size = Math.max(9, Math.min(46, fit));
-        if (fit < 9) {
-          el.style.display = "none"; // zone too small to hold the label here
+        const ne = m.latLngToContainerPoint(bounds.getNorthEast());
+        const sw = m.latLngToContainerPoint(bounds.getSouthWest());
+        const w = Math.abs(ne.x - sw.x);
+        const h = Math.abs(sw.y - ne.y);
+        // the label must fit the zone BOTH ways: across ~72% of its width
+        // (monospace char ≈ 0.6em wide) and within ~40% of its height, so a
+        // wide-but-thin or tall-but-narrow zone still holds it inside
+        const byWidth = (w * 0.72) / (len * 0.6);
+        const byHeight = h * 0.4;
+        const size = Math.min(byWidth, byHeight, 40);
+        if (size < 8) {
+          el.style.display = "none"; // zone too small to nest the label here
         } else {
           el.style.display = "";
           el.style.fontSize = `${size}px`;
