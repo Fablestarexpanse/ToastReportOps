@@ -174,16 +174,22 @@ def incident_intel(conn: sqlite3.Connection, incident_id: str) -> dict[str, Any]
         # newsroom paraphrase is the single most important thing about it.
         impacts[kind] = [{**dict(r), "official": r["tier"] <= OFFICIAL_MAX_TIER} for r in rows]
 
-    # Orders and warnings mean very different things to someone deciding
-    # whether to leave, so they are never collapsed into one number.
+    # Orders and warnings mean very different things to someone deciding whether
+    # to leave, so they are never collapsed into one number. The counts come from
+    # the authoritative Cal OES zones (one row per elevated zone, self-correcting
+    # on a lift) — NOT from tallying free-text facts, which over-counts every
+    # dupe and paraphrase and never drops a reduced zone.
+    from toast.pipeline.evacstate import evac_state
+
+    state = evac_state(conn, incident_id)
     impact_counts = {
-        "orders": sum(1 for f in impacts["evac"] if f["evac_status"] == "order"),
-        "warnings": sum(1 for f in impacts["evac"] if f["evac_status"] == "warning"),
-        "shelter_in_place": sum(
-            1 for f in impacts["evac"] if f["evac_status"] == "shelter_in_place"
-        ),
+        "orders": state.counts["order"],
+        "warnings": state.counts["warning"],
+        "shelter_in_place": state.counts["shelter_in_place"],
+        "advisory": state.counts["advisory"],
+        # 'lifted' stays fact-derived — a zone that lifted has already left the
+        # layer, so this is just the recent-history signal for the green line
         "lifted": sum(1 for f in impacts["evac"] if f["evac_status"] == "lifted"),
-        "unclassified": sum(1 for f in impacts["evac"] if not f["evac_status"]),
         "road_closures": len(impacts["road"]),
     }
 
@@ -202,6 +208,11 @@ def incident_intel(conn: sqlite3.Connection, incident_id: str) -> dict[str, Any]
         "evac": impacts["evac"],
         "road": impacts["road"],
         "impact_counts": impact_counts,
+        # the authoritative picture: which zones this fire currently sits under,
+        # each with its official status/id/times/critical text rendered verbatim
+        "evac_zones": state.zones,
+        "evac_status": state.status,
+        "evac_source": state.source,
     }
 
 

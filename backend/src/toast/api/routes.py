@@ -77,7 +77,21 @@ def list_incidents(request: Request, status: str | None = None, include_rx: bool
         )
         .fetchall()
     )
-    return {"incidents": [dict(r) for r in rows]}
+    # The evac_status the SQL computed is the old facts-based pick; override it
+    # with the authoritative zone-derived state so a reduced/lifted zone actually
+    # de-escalates the pin. One cache read for the whole page.
+    from toast.pipeline.evacstate import evac_state, zone_index
+
+    conn = _conn(request)
+    zidx = zone_index(conn)
+    out = []
+    for r in rows:
+        d = dict(r)
+        state = evac_state(conn, d["id"], zone_index=zidx)
+        d["evac_status"] = state.status
+        d["evac_source"] = state.source
+        out.append(d)
+    return {"incidents": out}
 
 
 @router.get("/incidents/{incident_id}")

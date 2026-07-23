@@ -713,10 +713,28 @@ export type IncidentIntel = {
     orders: number;
     warnings: number;
     shelter_in_place: number;
+    advisory: number;
     lifted: number;
-    unclassified: number;
     road_closures: number;
   };
+  // the authoritative picture: the Cal OES zones this fire currently sits under,
+  // each status/id/time/critical-text rendered verbatim. Self-correcting — a
+  // reduced or cancelled zone drops out of this list within minutes.
+  evac_zones: EvacZoneSummary[];
+  evac_status: string | null;
+  evac_source: "zones" | "facts" | "none";
+};
+
+export type EvacZoneSummary = {
+  zone_id: string | null;
+  zone_name: string | null;
+  status_raw: string | null;
+  status: string | null;
+  issued_at: string | null;
+  last_updated_at: string | null;
+  critical_info: string | null;
+  public_info: string | null;
+  county: string | null;
 };
 
 export type TimelineEntry = {

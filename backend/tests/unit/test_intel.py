@@ -203,23 +203,39 @@ def test_evac_text_travels_with_its_official_deep_link(seeded):
     assert evac[0]["content"].startswith("EVACUATION ORDER:")  # verbatim, unsummarized
 
 
+def _zone_cache(db, statuses):
+    """Seed the Cal OES zone cache with zones already matched to incident i1."""
+    import json
+
+    from toast.core.db import utcnow
+
+    features = [
+        {
+            "geometry": {"type": "Point", "coordinates": [-121.6, 39.76]},
+            "properties": {
+                "ZONE_ID": f"US-CA-XBU-Z{i}",
+                "ZONE_NAME": f"Zone {i}",
+                "STATUS": s,
+                "issued_at": NOW,
+                "incident_id": "i1",
+            },
+        }
+        for i, s in enumerate(statuses)
+    ]
+    db.execute(
+        "INSERT OR REPLACE INTO map_cache (key, payload, fetched_at) VALUES (?, ?, ?)",
+        ("evaczones:ca", json.dumps({"features": features}), utcnow()),
+    )
+
+
 def test_every_evacuation_instruction_is_counted(seeded):
-    """shelter_in_place and unclassified were computed and rendered nowhere, so
-    a fire whose only instruction was 'shelter in place' displayed no evacuation
-    badges at all."""
-    _evac_fact(seeded, "order")
-    _evac_fact(seeded, "shelter_in_place")
-    _evac_fact(seeded, None)
+    """Counts are zone-authoritative now: a fire whose only instruction is
+    'shelter in place' must still surface the badge, and each status is tallied
+    from the zones a county has actually elevated (not from free-text facts,
+    which over-count dupes and never drop a reduced zone)."""
+    _zone_cache(seeded, ["Evacuation Order", "Shelter In Place", "Evacuation Warning"])
     counts = incident_intel(seeded, "i1")["impact_counts"]
     assert counts["orders"] == 1
     assert counts["shelter_in_place"] == 1
-    assert counts["unclassified"] == 1
-    # the total must account for every evac fact — none may be invisible
-    total = (
-        counts["orders"]
-        + counts["warnings"]
-        + counts["shelter_in_place"]
-        + counts["lifted"]
-        + counts["unclassified"]
-    )
-    assert total == len(incident_intel(seeded, "i1")["evac"])
+    assert counts["warnings"] == 1
+    assert counts["advisory"] == 0

@@ -869,14 +869,24 @@ export default function MapPanel({
           // VERBATIM: status and official text exactly as the county issued them
           const zoneLabel = [p.ZONE_ID, p.ZONE_NAME && p.ZONE_NAME !== p.ZONE_ID ? p.ZONE_NAME : null]
             .filter(Boolean).map((s) => esc(s)).join(" · ");
+          // "in effect" is derived from the real status, never assumed. The Cal
+          // OES layer carries only elevated zones, but if a downgraded or lifted
+          // row ever survives upstream we must reflect its true state, not paint
+          // it as an active order.
+          const sc = colorOf(p.STATUS ?? null);
+          const active = /order|warning|shelter|advisory/.test((p.STATUS || "").toLowerCase());
+          const effectLine = active
+            ? `<b style="color:${sc}">IN EFFECT</b> as of ${age(evacZones.fetched_at)} ago` +
+              ` <i>(zones leave this layer when lifted)</i>`
+            : `<b style="color:${C.dim}">${esc(p.STATUS)?.toUpperCase() || "STATUS UNKNOWN"}</b>` +
+              ` — no longer an active order`;
           lyr.bindTooltip(
-            `<b style="color:#ff4d8f">${esc(p.STATUS)?.toUpperCase()}</b> — zone ${zoneLabel || "?"}` +
+            `<b style="color:${sc}">${esc(p.STATUS)?.toUpperCase()}</b> — zone ${zoneLabel || "?"}` +
               `${p.COUNTY ? `<br/>${esc(p.COUNTY)} County` : ""}` +
               `${p.incident_name ? ` · nearest fire: ${esc(p.incident_name)}` : ""}` +
               `${p.issued_at ? `<br/>issued ${fmtStamp(p.issued_at)} (${age(p.issued_at)} ago)` : ""}` +
               `${p.last_updated_at ? ` · updated ${age(p.last_updated_at)} ago` : ""}` +
-              `<br/><b style="color:#ff4d8f">STILL IN EFFECT</b> as of ${age(evacZones.fetched_at)} ago` +
-              ` <i>(zones leave this layer when lifted)</i>` +
+              `<br/>${effectLine}` +
               `${p.CRITICAL_INFO ? `<br/><b>${esc(p.CRITICAL_INFO)}</b>` : ""}` +
               `${p.PUBLIC_INFO ? `<br/>${esc(p.PUBLIC_INFO).slice(0, 300)}` : ""}` +
               `${p.NOTES ? `<br/>${esc(p.NOTES).slice(0, 200)}` : ""}` +

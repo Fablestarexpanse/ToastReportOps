@@ -236,9 +236,16 @@ function FactRow({
     } catch {}
   };
   const lagged = lag(f.observed_at, f.ingested_at);
-  // the row accent tracks URGENCY, not tier: an evacuation is the thing the
-  // operator must see first when scanning the feed
-  const urgent = f.kind === "evac" || tags.includes("EVACUATION");
+  // the row accent tracks URGENCY, not tier: an ACTIVE evacuation is the thing
+  // the operator must see first when scanning the feed. A lifted/cancelled evac
+  // is the opposite of urgent — it must not keep pulsing red. And an evac claim
+  // that is neither tied to a fire nor from an official source (a foreign or
+  // stray "evacuation" line) must not raise a California alarm at all.
+  const isEvac = f.kind === "evac" || tags.includes("EVACUATION");
+  const evacLifted = f.evac_status === "lifted" || f.evac_status === "cancelled";
+  const evacRelevant = f.incident_id != null || f.tier <= 2;
+  const urgent = isEvac && !evacLifted && evacRelevant;
+  const lifted = isEvac && evacLifted;
   return (
     <div
       className={`tr-row${urgent && !superseded ? " tr-evac-alert" : ""}`}
@@ -258,7 +265,14 @@ function FactRow({
         background: urgent && !superseded ? C.evac + "10" : undefined,
       }}
     >
-      <div style={{ width: 3, borderRadius: 2, background: urgent ? C.evac : TIER[f.tier], flexShrink: 0 }} />
+      <div
+        style={{
+          width: 3,
+          borderRadius: 2,
+          background: urgent ? C.evac : lifted ? C.ok : TIER[f.tier],
+          flexShrink: 0,
+        }}
+      />
       <div style={{ minWidth: 0, flex: 1 }}>
         <div
           style={{
@@ -342,21 +356,43 @@ function FactRow({
           }}
         >
           <span style={{ color: C.dim }}>{f.kind}</span>
-          {tags.map((tag) => (
+          {/* the actual evac instruction, colored by severity: active = alarm,
+              lifted = the all-clear green, so a lifted notice never reads as a
+              live order at a glance */}
+          {isEvac && f.evac_status && (
             <span
-              key={tag}
               style={{
                 fontSize: 7.5,
                 letterSpacing: 0.5,
-                color: tag === "EVACUATION" ? C.evac : C.dim,
-                border: `1px solid ${tag === "EVACUATION" ? C.evac + "66" : C.line}`,
+                fontWeight: 700,
+                color: lifted ? C.ok : urgent ? C.evac : C.warn,
+                border: `1px solid ${(lifted ? C.ok : urgent ? C.evac : C.warn) + "88"}`,
                 borderRadius: 3,
                 padding: "0 4px",
               }}
             >
-              #{tag}
+              {lifted ? "✓ LIFTED" : f.evac_status.replace(/_/g, " ").toUpperCase()}
             </span>
-          ))}
+          )}
+          {tags.map((tag) => {
+            const evacTag = tag === "EVACUATION";
+            const tone = evacTag ? (lifted ? C.ok : C.evac) : C.dim;
+            return (
+              <span
+                key={tag}
+                style={{
+                  fontSize: 7.5,
+                  letterSpacing: 0.5,
+                  color: tone,
+                  border: `1px solid ${evacTag ? tone + "66" : C.line}`,
+                  borderRadius: 3,
+                  padding: "0 4px",
+                }}
+              >
+                #{tag}
+              </span>
+            );
+          })}
           <span style={{ marginLeft: "auto", display: "flex", gap: 9, alignItems: "center" }}>
             {(f.corroborating_sources ?? 0) > 0 && (
               <span style={{ color: C.ok }} title="independent sources corroborating">
@@ -976,20 +1012,19 @@ function IntelPanel({ sel, toast }: { sel: Incident; toast: (m: string) => void 
           evacuation badges at all, while the tile below it read "N EVACUATION"
           from a different count. Two numbers on one screen disagreeing, on the
           one data class this project treats as sacred. */}
-      {intel.evac.length + (intel.impact_counts?.road_closures ?? 0) > 0 && (
+      {(intel.evac_zones?.length ?? 0) + intel.evac.length + (intel.impact_counts?.road_closures ?? 0) > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }}>
           {[
             // The core three always render, zeros included: "0 EVAC ORDERS" is
-            // a fact the operator wants stated, not an absence to infer.
+            // a fact the operator wants stated, not an absence to infer. Counts
+            // are zone-authoritative now (one row per elevated zone) — a reduced
+            // or cancelled zone drops out, so these track reality, not fact churn.
             { label: "EVAC ORDERS", n: intel.impact_counts.orders, color: C.evac, always: true },
             { label: "WARNINGS", n: intel.impact_counts.warnings, color: C.warn, always: true },
             { label: "ROAD CLOSURES", n: intel.impact_counts.road_closures, color: C.blue, always: true },
             // these two appear only when present — but they MUST appear then.
-            // Both were computed by the backend and rendered nowhere, so a fire
-            // whose only instruction was shelter-in-place showed no badges at all.
             { label: "SHELTER IN PLACE", n: intel.impact_counts.shelter_in_place ?? 0, color: C.violet },
-            // an evac fact we could not classify is still an evac fact
-            { label: "UNCLASSIFIED", n: intel.impact_counts.unclassified ?? 0, color: C.warn },
+            { label: "ADVISORY", n: intel.impact_counts.advisory ?? 0, color: C.warn },
           ]
             .filter((b) => b.always || b.n > 0)
             .map((b) => (
@@ -1016,6 +1051,49 @@ function IntelPanel({ sel, toast }: { sel: Incident; toast: (m: string) => void 
       {intel.impact_counts?.lifted > 0 && (
         <div style={{ fontFamily: font.mono, fontSize: 8.5, color: C.ok }}>
           ✓ {intel.impact_counts.lifted} evacuation{intel.impact_counts.lifted === 1 ? "" : "s"} lifted
+        </div>
+      )}
+
+      {/* The authoritative zones this fire currently sits under — Cal OES, one
+          row per elevated zone, status/id/times/critical-text VERBATIM. This is
+          the list that self-corrects: a reduced or cancelled zone leaves it. */}
+      {(intel.evac_zones?.length ?? 0) > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <div style={{ fontFamily: font.mono, fontSize: 8, color: C.faint, letterSpacing: 1 }}>
+            ACTIVE ZONES · CAL OES · VERBATIM
+          </div>
+          {intel.evac_zones.map((z, i) => {
+            const st = (z.status || "").toLowerCase();
+            const zc =
+              st === "order" ? C.evac : st === "warning" ? C.warn : st === "shelter_in_place" ? C.violet : C.dim;
+            return (
+              <div key={z.zone_id ?? i} style={{ borderLeft: `2px solid ${zc}`, paddingLeft: 7 }}>
+                <div style={{ display: "flex", gap: 6, alignItems: "baseline" }}>
+                  <span style={{ fontFamily: font.mono, fontSize: 10, color: C.txt }}>
+                    {z.zone_id || z.zone_name || "zone"}
+                  </span>
+                  <span
+                    style={{ fontFamily: font.mono, fontSize: 8, fontWeight: 700, color: zc, letterSpacing: 0.5 }}
+                  >
+                    {(z.status_raw || z.status || "").toUpperCase()}
+                  </span>
+                  {z.issued_at && (
+                    <span style={{ fontFamily: font.mono, fontSize: 8, color: C.faint, marginLeft: "auto" }}>
+                      issued {age(z.issued_at)} ago
+                    </span>
+                  )}
+                </div>
+                {z.critical_info && (
+                  <div style={{ fontSize: 10, color: C.dim, whiteSpace: "pre-wrap", marginTop: 1 }}>
+                    {z.critical_info}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          <div style={{ fontFamily: font.mono, fontSize: 7.5, color: C.faint }}>
+            Cal OES official status, verbatim · verify locally before acting
+          </div>
         </div>
       )}
 

@@ -112,6 +112,14 @@ def generate_draft(
     facts = gather_facts(conn, incident_id, window_start=window_start, window_end=window_end)
     if not facts:
         return {"created": False, "reason": "no facts in window"}
+    # Doctrine: evacuation instructions are reproduced VERBATIM FROM OFFICIALS
+    # ONLY. A newsroom paraphrase of an order is not a citable instruction, so
+    # unofficial (tier > 2) evac facts never enter a report body — filtered here,
+    # once, so the [#n] numbers in the prompt block and the Sources list still
+    # line up. Such facts stay visible in the intel panel, badged REPORTED.
+    facts = [f for f in facts if not (f["kind"] == "evac" and f["tier"] > 2)]
+    if not facts:
+        return {"created": False, "reason": "no facts in window"}
 
     facts_text, id_map = _facts_block(facts)
     prompt = load_prompt("draft_update", conn=conn)
@@ -195,12 +203,17 @@ def generate_statewide_roundup(conn: sqlite3.Connection) -> dict[str, Any]:
            WHERE status = 'active' AND COALESCE(incident_type, 'WF') != 'RX'"""
     ).fetchall()
 
+    from toast.pipeline.evacstate import evac_state, zone_index
+
+    zidx = zone_index(conn)
     entries = []
     for inc in incidents:
         ac = _latest_fact_row(conn, inc["id"], "acreage")
         ct = _latest_fact_row(conn, inc["id"], "containment")
+        # the status WORD is zone-authoritative (tracks reductions/lifts); ev is
+        # kept only to cite the official notice when one exists in the ledger
+        evac_status = evac_state(conn, inc["id"], zone_index=zidx).status
         ev = _latest_fact_row(conn, inc["id"], "evac")
-        evac_status = ev["evac_status"] if ev else None
         entries.append(
             {
                 "inc": inc,

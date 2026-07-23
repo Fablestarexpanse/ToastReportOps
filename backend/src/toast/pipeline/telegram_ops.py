@@ -107,28 +107,33 @@ def notify_sweep(
             if _send(client, token, chat, f"🔥 NEW FIRE: <b>{name}</b>{county}"):
                 sent += 1
 
-        # evacuation transitions — persisted baseline, alerts even after restarts
+        # evacuation transitions — persisted baseline, alerts even after restarts.
+        # State is zone-authoritative: an escalation, a DOWNGRADE (order→warning),
+        # and a lift (active→none, the zone left the Cal OES layer) all register.
+        from toast.pipeline.evacstate import evac_state, zone_index
+
+        zidx = zone_index(conn)
         for r in conn.execute(
-            """SELECT i.id, i.canonical_name,
-                 (SELECT v.evac_status FROM facts v WHERE v.incident_id = i.id
-                    AND v.kind = 'evac'
-                    AND v.id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)
-                  ORDER BY (v.observed_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')) ASC,
-                    (v.tier >= 3) ASC, v.observed_at DESC LIMIT 1) AS evac
-               FROM incidents i WHERE i.status = 'active'"""
+            "SELECT id, canonical_name FROM incidents WHERE status = 'active'"
         ):
-            cur = r["evac"] if r["evac"] in (*ACTIVE_EVAC, "lifted") else "none"
+            st = evac_state(conn, r["id"], zone_index=zidx).status
+            cur = st if st in ACTIVE_EVAC else "none"
             prev = state["evac"].get(r["id"], "none")
             state["evac"][r["id"]] = cur
             if first_run or cur == prev:
                 continue
-            if cur in ACTIVE_EVAC or (cur == "lifted" and prev in ACTIVE_EVAC):
-                text = (
-                    f"{EVAC_LABEL[cur]}: <b>{html.escape(r['canonical_name'])}</b>\n"
-                    "Official text is in the workstation — verify before repeating."
-                )
-                if _send(client, token, chat, text):
-                    sent += 1
+            if cur in ACTIVE_EVAC:
+                label = EVAC_LABEL[cur]  # newly ordered, warned, or downgraded
+            elif prev in ACTIVE_EVAC:
+                label = EVAC_LABEL["lifted"]  # active → none = reduced/cancelled
+            else:
+                continue
+            text = (
+                f"{label}: <b>{html.escape(r['canonical_name'])}</b>\n"
+                "Official text is in the workstation — verify before repeating."
+            )
+            if _send(client, token, chat, text):
+                sent += 1
 
         # drafts arriving for review, with approval buttons
         for r in conn.execute(

@@ -213,7 +213,11 @@ def generate_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
 
     acreage = _latest(conn, incident_id, "acreage", "acreage")
     containment = _latest(conn, incident_id, "containment", "containment_pct")
-    evac = _latest(conn, incident_id, "evac", "evac_status")
+    # evac is zone-authoritative: a graphic must never announce an order that a
+    # county has already reduced or lifted (the zone has dropped from the layer)
+    from toast.pipeline.evacstate import evac_state
+
+    evac = evac_state(conn, incident_id).status
     evac_active = evac in ("order", "warning", "shelter_in_place")
 
     img = Image.new("RGB", (W, H), BG)
@@ -396,15 +400,20 @@ def generate_state_card(conn: sqlite3.Connection) -> bytes:
              (SELECT v.acreage FROM facts v WHERE v.incident_id = i.id AND v.kind='acreage'
                 AND v.id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)
               ORDER BY (v.observed_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')) ASC,
-                (v.tier >= 3) ASC, v.observed_at DESC LIMIT 1) AS acreage,
-             (SELECT v.evac_status FROM facts v WHERE v.incident_id = i.id AND v.kind='evac'
-                AND v.id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)
-              ORDER BY (v.observed_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')) ASC,
-                (v.tier >= 3) ASC, v.observed_at DESC LIMIT 1) AS evac
+                (v.tier >= 3) ASC, v.observed_at DESC LIMIT 1) AS acreage
            FROM incidents i
            WHERE i.status = 'active' AND COALESCE(i.incident_type, 'WF') != 'RX'"""
     ).fetchall()
-    fires = [dict(r) for r in rows]
+    # evac is zone-authoritative, computed off the shared cache read, not the
+    # facts pick — so "UNDER EVAC" counts and pink rings track reductions/lifts
+    from toast.pipeline.evacstate import evac_state, zone_index
+
+    zidx = zone_index(conn)
+    fires = []
+    for r in rows:
+        d = dict(r)
+        d["evac"] = evac_state(conn, d["id"], zone_index=zidx).status
+        fires.append(d)
 
     # The published number is HARD FACT: only fires an official source lists
     # active RIGHT NOW — CAL FIRE's live list or NIFC's federal current layer,
