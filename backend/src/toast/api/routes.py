@@ -613,6 +613,194 @@ def radio_ingest_now(request: Request) -> dict:
     return ingest_inbox(_conn(request))
 
 
+def _channel_dict(row: sqlite3.Row) -> dict[str, Any]:
+    d = dict(row)
+    d["talkgroups"] = json.loads(d["talkgroups"]) if d.get("talkgroups") else []
+    d["enabled"] = bool(d["enabled"])
+    return d
+
+
+@router.get("/radio/board")
+def radio_board(request: Request) -> dict:
+    """The scanner board: active-fire counties (most urgent first), each with its
+    fires and its saved channels, plus a computed Broadcastify search link per
+    county (link-out by operator decision — their terms prohibit embedding).
+    Statewide channels ride separately. OpenMHz browsing happens client-side
+    against their open API; this endpoint owns only local data."""
+    from urllib.parse import quote
+
+    from toast.pipeline.evacstate import evac_state, zone_index
+
+    conn = _conn(request)
+    fires = conn.execute(
+        """SELECT i.id, i.canonical_name, i.county,
+             (SELECT v.acreage FROM facts v WHERE v.incident_id = i.id AND v.kind='acreage'
+                AND v.id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)
+              ORDER BY (v.observed_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')) ASC,
+                (v.tier >= 3) ASC, v.observed_at DESC LIMIT 1) AS acreage
+           FROM incidents i
+           WHERE i.status = 'active' AND COALESCE(i.incident_type, 'WF') != 'RX'
+             AND i.county IS NOT NULL"""
+    ).fetchall()
+    zidx = zone_index(conn)
+    by_county: dict[str, dict[str, Any]] = {}
+    for f in fires:
+        st = evac_state(conn, f["id"], zone_index=zidx)
+        c = by_county.setdefault(
+            f["county"], {"county": f["county"], "fires": [], "evac": False, "acres": 0.0}
+        )
+        c["fires"].append(
+            {
+                "id": f["id"],
+                "name": f["canonical_name"],
+                "acreage": f["acreage"],
+                "evac_status": st.status,
+            }
+        )
+        c["evac"] = c["evac"] or st.active
+        c["acres"] += float(f["acreage"] or 0)
+
+    channels = [
+        _channel_dict(r)
+        for r in conn.execute("SELECT * FROM radio_channels ORDER BY name")
+    ]
+    for county in by_county.values():
+        county["channels"] = [c for c in channels if c["county"] == county["county"]]
+        county["broadcastify_search"] = (
+            "https://www.broadcastify.com/search/?q="
+            + quote(f"{county['county']} County CA fire")
+        )
+        county["fires"].sort(key=lambda x: x["acreage"] or 0, reverse=True)
+
+    counties = sorted(
+        by_county.values(), key=lambda c: (not c["evac"], -c["acres"], c["county"])
+    )
+    # channels filed under a county with no active fire still deserve a card —
+    # the operator saved them for a reason
+    quiet = sorted(
+        {c["county"] for c in channels if c["county"]} - set(by_county.keys())
+    )
+    for name in quiet:
+        counties.append(
+            {
+                "county": name,
+                "fires": [],
+                "evac": False,
+                "acres": 0.0,
+                "channels": [c for c in channels if c["county"] == name],
+                "broadcastify_search": "https://www.broadcastify.com/search/?q="
+                + quote(f"{name} County CA fire"),
+            }
+        )
+    return {
+        "counties": counties,
+        "statewide": [c for c in channels if not c["county"]],
+        "note": (
+            "In-app audio: OpenMHz (open API) and operator-supplied streams. "
+            "Broadcastify is a link-out per its terms."
+        ),
+    }
+
+
+@router.get("/radio/channels")
+def radio_channels_list(request: Request) -> dict:
+    rows = _conn(request).execute("SELECT * FROM radio_channels ORDER BY name").fetchall()
+    return {"channels": [_channel_dict(r) for r in rows]}
+
+
+@router.post("/radio/channels")
+def radio_channel_create(request: Request, body: dict) -> dict:
+    """Save a channel to the tuning bank. kind decides the fields:
+    openmhz -> system (+ optional talkgroups []), stream/link -> url."""
+    kind = body.get("kind")
+    name = (body.get("name") or "").strip()
+    if kind not in ("openmhz", "stream", "link"):
+        raise HTTPException(422, "kind must be openmhz, stream, or link")
+    if not name:
+        raise HTTPException(422, "name required")
+    if kind == "openmhz" and not (body.get("system") or "").strip():
+        raise HTTPException(422, "openmhz channel needs a system shortName")
+    url = (body.get("url") or "").strip() or None
+    if kind in ("stream", "link") and not (url or "").startswith(("http://", "https://")):
+        raise HTTPException(422, f"{kind} channel needs an http(s) url")
+    tgs = body.get("talkgroups") or []
+    if not isinstance(tgs, list) or not all(isinstance(t, int) for t in tgs):
+        raise HTTPException(422, "talkgroups must be a list of integers")
+    from toast.core.db import utcnow
+    from toast.core.ids import ulid as _ulid
+
+    now = utcnow()
+    cid = _ulid()
+    _conn(request).execute(
+        """INSERT INTO radio_channels (id, name, kind, county, system, talkgroups, url,
+                                       notes, enabled, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+        (
+            cid,
+            name,
+            kind,
+            (body.get("county") or "").strip() or None,
+            (body.get("system") or "").strip() or None,
+            json.dumps(tgs) if tgs else None,
+            url,
+            (body.get("notes") or "").strip() or None,
+            now,
+            now,
+        ),
+    )
+    return {"ok": True, "id": cid}
+
+
+@router.patch("/radio/channels/{channel_id}")
+def radio_channel_update(request: Request, channel_id: str, body: dict) -> dict:
+    """Edit a saved channel — rename, move county, toggle, or paste a stream
+    URL onto a link channel to upgrade it to in-app playback."""
+    conn = _conn(request)
+    if conn.execute(
+        "SELECT 1 FROM radio_channels WHERE id = ?", (channel_id,)
+    ).fetchone() is None:
+        raise HTTPException(404, "channel not found")
+    sets, params = [], []
+    for col in ("name", "county", "url", "notes", "system", "kind"):
+        if col in body:
+            val = (str(body[col]).strip() or None) if body[col] is not None else None
+            if col == "kind" and val not in ("openmhz", "stream", "link"):
+                raise HTTPException(422, "bad kind")
+            sets.append(f"{col} = ?")
+            params.append(val)
+    if "talkgroups" in body:
+        tgs = body["talkgroups"] or []
+        if not isinstance(tgs, list) or not all(isinstance(t, int) for t in tgs):
+            raise HTTPException(422, "talkgroups must be a list of integers")
+        sets.append("talkgroups = ?")
+        params.append(json.dumps(tgs) if tgs else None)
+    if "enabled" in body:
+        sets.append("enabled = ?")
+        params.append(1 if body["enabled"] else 0)
+    if not sets:
+        return {"ok": True, "id": channel_id}
+    from toast.core.db import utcnow
+
+    sets.append("updated_at = ?")
+    params.append(utcnow())
+    conn.execute(
+        f"UPDATE radio_channels SET {', '.join(sets)} WHERE id = ?",
+        (*params, channel_id),
+    )
+    return {"ok": True, "id": channel_id}
+
+
+@router.delete("/radio/channels/{channel_id}")
+def radio_channel_delete(request: Request, channel_id: str) -> dict:
+    """Channels are operator configuration, not evidence — deletable."""
+    cur = _conn(request).execute(
+        "DELETE FROM radio_channels WHERE id = ?", (channel_id,)
+    )
+    if cur.rowcount == 0:
+        raise HTTPException(404, "channel not found")
+    return {"ok": True}
+
+
 @router.get("/evac-zones")
 def evac_zones(request: Request, refresh: bool = False) -> dict:
     """Elevated evacuation zones statewide from Cal OES — statuses VERBATIM.

@@ -414,3 +414,27 @@ Recommendation: B for Butte County (the operator's stated ground truth), A
 opportunistically. Whisper transcription runs locally either way; transcripts
 would enter the ledger as T4/T5 signals — never as publishable fact without
 official corroboration, same as all community-grade sources.
+
+## 2026-07-23 — RADIO becomes a fire scanner: audio-source policy
+
+The RADIO tab grew from an SDR clip archive into a scanner organized around
+active fires: a county board (evac counties first, fire chips per county), a
+saved-channel directory, and a SCAN engine that merges armed channels into one
+live feed and plays each new transmission in arrival order.
+
+**Operator decision on audio sources** (the Genasys-style compliance call):
+
+- **OpenMHz is the in-app live source.** Open API (`Access-Control-Allow-Origin:
+  *`), fetched DIRECTLY by the operator's browser — the browser is exactly the
+  client they serve, so there is no backend proxy and no user-agent games.
+  Per-call m4a clips land ~30 s behind live; SCAN plays them in order.
+- **Broadcastify is a link-out.** Their terms prohibit third-party embedding
+  without the paid partner API. Every county card carries a computed
+  Broadcastify search link; any link channel can be upgraded to an in-app
+  stream by pasting a direct URL (e.g. from the operator's own Premium
+  account) — the tool stays neutral, the operator decides per channel.
+- **The operator's own SDR remains the archival spine** — captures go to the
+  CAS, transcripts feed WATCH as T5, and it keeps working through a PSPS.
+
+Channels are operator configuration (like sources): a `radio_channels` table
+(0036), editable and deletable, seeded with three statewide link-outs.

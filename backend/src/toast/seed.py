@@ -264,8 +264,52 @@ GENERAL_SEEDS: list[dict[str, Any]] = [
 SEEDS = SEEDS + MEDIA_SEEDS + GENERAL_SEEDS
 
 
-def seed(conn) -> list[str]:
+# Starter scanner channels — statewide reference listening posts, all link-outs
+# (the operator upgrades any of them to an in-app stream by pasting a stream
+# URL, or adds OpenMHz systems from the RADIO tab's picker). Broadcastify stays
+# a link-out by operator decision: their terms prohibit third-party embedding.
+RADIO_CHANNEL_SEEDS = [
+    {
+        "name": "Broadcastify — California directory",
+        "kind": "link",
+        "url": "https://www.broadcastify.com/listen/stid/6",
+        "notes": "Every CA volunteer feed (CAL FIRE units, county dispatch). Link-out per TOS.",
+    },
+    {
+        "name": "ScanCal — CA fire live streams",
+        "kind": "link",
+        "url": "https://www.scancal.org/live.html",
+        "notes": "Independent CAL FIRE + air tactics streams, openly published.",
+    },
+    {
+        "name": "CA Fire Fighters — live dispatch",
+        "kind": "link",
+        "url": "https://www.cafirefighters.com/live.htm",
+        "notes": "Statewide fire/EMS dispatch listening page.",
+    },
+]
+
+
+def seed_radio_channels(conn) -> list[str]:
     created = []
+    for spec in RADIO_CHANNEL_SEEDS:
+        if conn.execute(
+            "SELECT 1 FROM radio_channels WHERE name = ?", (spec["name"],)
+        ).fetchone():
+            continue
+        now = utcnow()
+        conn.execute(
+            """INSERT INTO radio_channels (id, name, kind, county, system, talkgroups,
+                                           url, notes, enabled, created_at, updated_at)
+               VALUES (?, ?, ?, NULL, NULL, NULL, ?, ?, 1, ?, ?)""",
+            (ulid(), spec["name"], spec["kind"], spec["url"], spec["notes"], now, now),
+        )
+        created.append(spec["name"])
+    return created
+
+
+def seed(conn) -> list[str]:
+    created = seed_radio_channels(conn)
     for spec in SEEDS:
         exists = conn.execute(
             "SELECT id, enabled FROM sources WHERE adapter = ? AND name = ?",

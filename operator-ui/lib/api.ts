@@ -1393,6 +1393,72 @@ export type RadioCalls = { calls: RadioCall[]; count: number; pending_transcript
 
 export const fetchRadioCalls = () => get<RadioCalls>("/radio/calls");
 
+/* ---- the scanner channel directory + county board ---- */
+
+export type RadioChannel = {
+  id: string;
+  name: string;
+  // openmhz plays in-app (open API); stream plays in-app (operator-supplied
+  // URL); link opens in the browser (Broadcastify stays a link-out per TOS)
+  kind: "openmhz" | "stream" | "link";
+  county: string | null;
+  system: string | null;
+  talkgroups: number[];
+  url: string | null;
+  notes: string | null;
+  enabled: boolean;
+};
+
+export type RadioBoardCounty = {
+  county: string;
+  fires: { id: string; name: string; acreage: number | null; evac_status: string | null }[];
+  evac: boolean;
+  acres: number;
+  channels: RadioChannel[];
+  broadcastify_search: string;
+};
+
+export type RadioBoard = {
+  counties: RadioBoardCounty[];
+  statewide: RadioChannel[];
+  note: string;
+};
+
+export const fetchRadioBoard = () => get<RadioBoard>("/radio/board");
+
+export const createRadioChannel = (body: {
+  name: string;
+  kind: RadioChannel["kind"];
+  county?: string | null;
+  system?: string | null;
+  talkgroups?: number[];
+  url?: string | null;
+  notes?: string | null;
+}) => post<{ ok: boolean; id: string }>("/radio/channels", body);
+
+export async function updateRadioChannel(
+  id: string,
+  body: Partial<Pick<RadioChannel, "name" | "county" | "url" | "notes" | "kind" | "enabled" | "talkgroups">>,
+): Promise<void> {
+  const res = await fetch(`/api/radio/channels/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const detail = await res.json().then((d) => d.detail).catch(() => res.status);
+    throw new Error(String(detail));
+  }
+}
+
+export async function deleteRadioChannel(id: string): Promise<void> {
+  const res = await fetch(`/api/radio/channels/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const detail = await res.json().then((d) => d.detail).catch(() => res.status);
+    throw new Error(String(detail));
+  }
+}
+
 /* ---- AIR mode ---- */
 
 export type AirAircraft = {
