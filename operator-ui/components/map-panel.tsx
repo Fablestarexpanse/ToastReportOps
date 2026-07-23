@@ -141,6 +141,18 @@ const OVERLAYS: Record<string, OverlaySpec> = {
     opacity: 0.55,
     note: "MODIS aerosol optical depth — coarse smoke-density signal, previous day. Network required.",
   },
+  // VIIRS short-wave IR composite (M11-I2-I1): active fire glows orange, fresh
+  // burn scars go dark red, healthy vegetation green — the satellite's heat
+  // signature of a fire, from yesterday's polar overpass. A full image, so it
+  // covers the basemap when on (fire pins ride above it).
+  fireswir: {
+    url: `${GIBS}/VIIRS_NOAA20_CorrectedReflectance_BandsM11-I2-I1/default/{time}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`,
+    label: "FIRE (SWIR)",
+    attribution: "NASA GIBS · VIIRS NOAA-20 SWIR M11-I2-I1 — active fire glows orange (prev. day)",
+    time: "day",
+    maxNativeZoom: 9,
+    note: "VIIRS short-wave IR — active fire glows orange, burn scars dark red. Previous-day overpass. Network required.",
+  },
 };
 
 // yesterday UTC as YYYY-MM-DD — the safe date for GIBS daily mosaics
@@ -1289,11 +1301,11 @@ export default function MapPanel({
             {hotspots.latest_pass ? ` · last pass ${age(hotspots.latest_pass)} ago` : ""}
           </span>
         )}
-        {(["labels", "water", "clouds", "smoke"] as const).map((key) => {
+        {(["labels", "water", "clouds", "smoke", "fireswir"] as const).map((key) => {
           const spec = OVERLAYS[key];
           // satellite layers get their own accent so the network-heavy imagery
           // reads distinct from the lightweight vector overlays
-          const sat = key === "clouds" || key === "smoke";
+          const sat = key === "clouds" || key === "smoke" || key === "fireswir";
           const accent = sat ? C.ok : C.txt;
           const title =
             spec.note ??
