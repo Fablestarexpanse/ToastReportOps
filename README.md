@@ -13,6 +13,45 @@ newsroom → publish), with a 9-mode operator UI, a Docker stack, and 440 passin
 operator UI (port 3005) in its own app window. Alternative:
 `docker compose --profile desktop up`.
 
+## System requirements
+
+Everything runs on one machine, bound to localhost — no cloud account required. The
+main hardware driver is the local LLM.
+
+**The local LLM.** Reasoning and embeddings run on-machine via **Ollama** (in-stack
+container, GPU passthrough). Two models, auto-pulled on first boot:
+
+| Role | Model | Size | Notes |
+|---|---|---|---|
+| Extraction / drafting / sift | **`qwen3:14b`** (14B, Q4) | ~9 GB | Default; swappable — see `.env` `LLM_MODEL` |
+| Embeddings (dedup / corroboration) | **`nomic-embed-text`** (768-dim) | ~0.3 GB | Runs on the same GPU |
+
+The endpoint is OpenAI-compatible, so `LLM_BASE_URL` can point at a **cloud API**
+instead — then no GPU is needed at all.
+
+**Software prerequisites:**
+- **Docker Desktop** — the backend is 8 containers (api, worker, scheduler, llm/Ollama,
+  searxng, local-deep-research, mesh, litestream)
+- Windows: **WSL2** + the **NVIDIA WSL driver**; Linux: **NVIDIA Container Toolkit** (GPU passthrough)
+- **Node 20+** — only to run the operator UI outside Docker
+- Broadband internet — for the free/keyless public feeds (CAL FIRE, Cal OES, NWS, ADS-B, …)
+
+**Minimum hardware:**
+
+| Component | Minimum | Notes |
+|---|---|---|
+| OS | Windows 10/11 (WSL2) or Linux | macOS only if you skip the NVIDIA GPU / run a smaller model on Metal |
+| GPU | NVIDIA, **≥ 12 GB VRAM** (e.g. RTX 3060 12 GB / 4070) | To hold `qwen3:14b`. Use `qwen3:8b` (~5 GB) on an 8 GB card, or go cloud for none |
+| CPU | Modern 6-core / 12-thread | Runs the 8 services + WSL2 |
+| RAM | **16 GB** | 32 GB comfortable alongside a browser + the UI |
+| Disk | **~50 GB free, SSD** | ~15–20 GB images + ~10 GB models + a growing data archive |
+| Network | Broadband | First boot pulls ~10 GB of models + images |
+
+**Recommended (the reference build):** NVIDIA **RTX 4090 (24 GB VRAM)** via WSL2/Docker,
+**32 GB+ RAM**, 8-core+ CPU, and an **NVMe SSD with 100 GB+ free** — the append-only
+ledger and raw-content archive grow unbounded by design, so budget storage for
+long-running use.
+
 ## Core principles
 
 1. **Local-first, append-only.** SQLite is the primary store. The fact ledger is
