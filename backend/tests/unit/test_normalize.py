@@ -252,3 +252,68 @@ class TestOfficialFirstValues:
 
         self._fact(seeded, acreage=300, tier=4, observed="2026-07-19T12:00:00.000Z", fid="fa")
         assert latest_fact(seeded, "i1", "acreage")["acreage"] == 300
+
+
+class TestFactIdempotence:
+    """A source re-polled and re-extracted a claim it already gave us: the same
+    words must not stack a second live row into the intake feed."""
+
+    def _news(self, db, content, *, incident_id=None, kind="other", supersedes=None):
+        from toast.pipeline.ledger import write_fact
+
+        return write_fact(
+            db,
+            incident_id=incident_id,
+            envelope_id="e1",
+            source_id="s1",
+            tier=4,
+            content=content,
+            kind=kind,
+            observed_at=NOW,
+            supersedes=supersedes,
+        )
+
+    def test_same_source_identical_claim_is_not_duplicated(self, seeded):
+        a = self._news(seeded, "The Biscar Fire is 42% contained.")
+        b = self._news(seeded, "The Biscar Fire is 42% contained.")
+        assert a == b  # handed back the fact we already hold
+        n = seeded.execute(
+            "SELECT COUNT(*) FROM facts WHERE content = 'The Biscar Fire is 42% contained.'"
+        ).fetchone()[0]
+        assert n == 1
+
+    def test_incidentless_news_claims_dedup_too(self, seeded):
+        a = self._news(seeded, "A new wildfire was reported in Los Angeles County.")
+        b = self._news(seeded, "A new wildfire was reported in Los Angeles County.")
+        assert a == b
+        assert seeded.execute("SELECT COUNT(*) FROM facts").fetchone()[0] == 1
+
+    def test_different_content_still_written(self, seeded):
+        self._news(seeded, "The Biscar Fire is 42% contained.")
+        self._news(seeded, "The Biscar Fire is 55% contained.")
+        assert seeded.execute("SELECT COUNT(*) FROM facts").fetchone()[0] == 2
+
+    def test_other_source_saying_the_same_thing_still_counts(self, seeded):
+        seeded.execute(
+            "INSERT INTO sources (id, name, type, adapter, tier, created_at, updated_at)"
+            " VALUES ('s2', 'Other', 'scrape', 'rss', 4, ?, ?)",
+            (NOW, NOW),
+        )
+        self._news(seeded, "The Biscar Fire is 42% contained.")
+        seeded.execute(
+            "INSERT INTO facts (id, incident_id, envelope_id, source_id, tier, content,"
+            " kind, confidence, observed_at, ingested_at) VALUES"
+            " ('f2', NULL, 'e1', 's2', 4, 'The Biscar Fire is 42% contained.', 'other',"
+            " 0.9, ?, ?)",
+            (NOW, NOW),
+        )
+        # cross-source agreement is corroboration, not a duplicate: both rows live
+        assert seeded.execute("SELECT COUNT(*) FROM facts").fetchone()[0] == 2
+
+    def test_a_superseding_write_is_never_blocked(self, seeded):
+        first = self._news(seeded, "60 acres", kind="acreage")
+        # a genuine correction carries supersedes and must go through even though
+        # the guard would otherwise see a live row for this source+kind
+        second = self._news(seeded, "60 acres", kind="acreage", supersedes=first)
+        assert second != first
+        assert seeded.execute("SELECT COUNT(*) FROM facts").fetchone()[0] == 2

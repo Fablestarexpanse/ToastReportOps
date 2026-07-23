@@ -128,6 +128,18 @@ def intake(
             FROM facts f JOIN sources s ON s.id = f.source_id
             LEFT JOIN incidents i ON i.id = f.incident_id
             WHERE f.tier <= ?
+              -- Collapse a source repeating itself. The write path now refuses
+              -- to stack an identical live claim, but rows banked before that
+              -- guard existed are append-only and can't be deleted, so the feed
+              -- shows one row per (source, incident, kind, content) — the newest
+              -- — and hides the older twins. Cross-source agreement is untouched.
+              AND NOT EXISTS (
+                SELECT 1 FROM facts d
+                WHERE d.source_id = f.source_id AND d.kind = f.kind
+                  AND d.content = f.content AND d.incident_id IS f.incident_id
+                  AND (d.ingested_at > f.ingested_at
+                       OR (d.ingested_at = f.ingested_at AND d.id > f.id))
+              )
             ORDER BY f.ingested_at DESC LIMIT ?""",
             (min_tier, limit),
         )

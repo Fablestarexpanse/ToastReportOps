@@ -78,6 +78,27 @@ def write_fact(
     # every fact write funnels through here, so this is where a timestamp the
     # database cannot do arithmetic on gets stopped
     observed_at = require_iso(observed_at, field="observed_at")
+    # Fact-level idempotence — don't feed in news we've already fed in. A source
+    # re-polled and re-extracted a claim it has already given us: the page moved
+    # just enough (a timestamp, a hit counter) to mint a fresh envelope, so the
+    # envelope UNIQUE guard let it through, and the extractor produced the very
+    # same sentence. That is the same source repeating itself, not a new
+    # observation and not corroboration. One live row per
+    # (source, incident, kind, content) is enough — hand back the fact we already
+    # hold instead of stacking a duplicate into the intake feed. Scoped to
+    # supersedes IS NULL so a genuine superseding write (a value changed) is never
+    # blocked, and left to the same source so cross-source agreement still counts.
+    if supersedes is None:
+        existing = conn.execute(
+            f"""SELECT id FROM facts
+               WHERE source_id = ? AND kind = ? AND content = ?
+                 AND incident_id IS ?
+                 AND {not_superseded()}
+               LIMIT 1""",
+            (source_id, kind, content, incident_id),
+        ).fetchone()
+        if existing is not None:
+            return existing[0]
     conn.execute(
         """INSERT INTO facts
            (id, incident_id, envelope_id, source_id, tier, content, kind,

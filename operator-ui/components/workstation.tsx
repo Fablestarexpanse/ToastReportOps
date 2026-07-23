@@ -241,7 +241,7 @@ function FactRow({
   const urgent = f.kind === "evac" || tags.includes("EVACUATION");
   return (
     <div
-      className="tr-row"
+      className={`tr-row${urgent && !superseded ? " tr-evac-alert" : ""}`}
       onClick={f.source_url ? openSource : undefined}
       title={
         f.source_url

@@ -70,6 +70,21 @@ textarea::placeholder {
 .tr-blink {
   animation: trblink 1.4s ease-in-out infinite;
 }
+
+/* an active evacuation row pulses a glow around its edges — the same alarm
+   language the map uses for an evac ring, carried into the intake feed */
+.tr-evac-alert {
+  animation: trevac 1.6s ease-in-out infinite;
+}
+@keyframes trevac {
+  0%,
+  100% {
+    box-shadow: inset 2px 0 0 0 #ff4d8f, 0 0 0 0 rgba(255, 77, 143, 0);
+  }
+  50% {
+    box-shadow: inset 2px 0 0 0 #ff4d8f, 0 0 7px 1px rgba(255, 77, 143, 0.6);
+  }
+}
 @keyframes trblink {
   0%,
   100% {
@@ -90,7 +105,8 @@ textarea::placeholder {
 
 @media (prefers-reduced-motion: reduce) {
   .tr-pulse,
-  .tr-in {
+  .tr-in,
+  .tr-evac-alert {
     animation: none;
   }
 }
