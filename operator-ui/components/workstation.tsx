@@ -207,10 +207,13 @@ function FactRow({
   f,
   showIncident,
   onStar,
+  onPinMap,
 }: {
   f: Fact;
   showIncident?: boolean;
   onStar?: (f: Fact) => void;
+  /** evac rows get a "pull it up on the map" action when a target is resolvable */
+  onPinMap?: (f: Fact) => void;
 }) {
   const superseded = f.superseded_by != null;
   const tags = factTags(f);
@@ -394,6 +397,20 @@ function FactRow({
             );
           })}
           <span style={{ marginLeft: "auto", display: "flex", gap: 9, alignItems: "center" }}>
+            {/* one click puts this evacuation on the map: fly to it, show the
+                zones, and switch to the roads view so the routes are visible */}
+            {isEvac && onPinMap && (
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPinMap(f);
+                }}
+                title="show on map: fly to this evacuation, zones + roads on"
+                style={{ color: urgent ? C.evac : C.blue, cursor: "pointer", fontWeight: 700 }}
+              >
+                ◎ map
+              </span>
+            )}
             {(f.corroborating_sources ?? 0) > 0 && (
               <span style={{ color: C.ok }} title="independent sources corroborating">
                 ✓×{f.corroborating_sources}
@@ -850,7 +867,15 @@ function Sparkline({ hist }: { hist: IncidentHistory }) {
   );
 }
 
-function IntelPanel({ sel, toast }: { sel: Incident; toast: (m: string) => void }) {
+function IntelPanel({
+  sel,
+  toast,
+  onPinMap,
+}: {
+  sel: Incident;
+  toast: (m: string) => void;
+  onPinMap?: (lat: number, lon: number, incidentId?: string | null) => void;
+}) {
   const intel = usePolling(() => fetchIntel(sel.id), [sel.id]);
   const [hist, setHist] = useState<IncidentHistory | null>(null);
   useEffect(() => {
@@ -1059,8 +1084,30 @@ function IntelPanel({ sel, toast }: { sel: Incident; toast: (m: string) => void 
           the list that self-corrects: a reduced or cancelled zone leaves it. */}
       {(intel.evac_zones?.length ?? 0) > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-          <div style={{ fontFamily: font.mono, fontSize: 8, color: C.faint, letterSpacing: 1 }}>
-            ACTIVE ZONES · CAL OES · VERBATIM
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontFamily: font.mono, fontSize: 8, color: C.faint, letterSpacing: 1 }}>
+              ACTIVE ZONES · CAL OES · VERBATIM
+            </span>
+            {onPinMap && sel.lat != null && sel.lon != null && (
+              <span
+                onClick={() => onPinMap(sel.lat!, sel.lon!, sel.id)}
+                title="show these zones on the map: fly here, zones + roads on"
+                style={{
+                  marginLeft: "auto",
+                  fontFamily: font.mono,
+                  fontSize: 8,
+                  fontWeight: 700,
+                  letterSpacing: 0.5,
+                  color: C.evac,
+                  border: `1px solid ${C.evac}66`,
+                  borderRadius: 3,
+                  padding: "1px 6px",
+                  cursor: "pointer",
+                }}
+              >
+                ◎ SHOW ON MAP
+              </span>
+            )}
           </div>
           {intel.evac_zones.map((z, i) => {
             const st = (z.status || "").toLowerCase();
@@ -1818,6 +1865,37 @@ function OpsMode({
   };
 
   const sel = incidents?.find((i) => i.id === selected);
+  // "pull this evacuation up on the map": fly to it, turn on the zone polygons
+  // and the road-closure layer, and switch to the street basemap so the routes
+  // out are legible. Time-sensitive — one click, no menu hunting.
+  const pullUpEvac = useCallback(
+    (lat: number, lon: number, incidentId?: string | null) => {
+      if (incidentId) setSelected(incidentId);
+      setFocus({
+        lat,
+        lon,
+        zoom: 13,
+        nonce: Date.now(),
+        basemap: "osm",
+        layers: { evac: true, roads: true },
+      });
+    },
+    [],
+  );
+  const pinFactOnMap = useCallback(
+    (f: Fact) => {
+      let lat = f.lat;
+      let lon = f.lon;
+      if ((lat == null || lon == null) && f.incident_id) {
+        const inc = incidents?.find((i) => i.id === f.incident_id);
+        lat = inc?.lat ?? null;
+        lon = inc?.lon ?? null;
+      }
+      if (lat != null && lon != null) pullUpEvac(lat, lon, f.incident_id);
+      else toast("no location on this evacuation to map yet");
+    },
+    [incidents, pullUpEvac, toast],
+  );
   const staleCount = facts?.filter((f) => f.stale).length ?? 0;
   const [panelTab, setPanelTab] = useState<"intel" | "weather" | "ledger" | "timeline">("intel");
   const [basemap] = useState(() => loadDisplayPrefs().basemap);
@@ -1827,6 +1905,7 @@ function OpsMode({
     zoom: number;
     nonce: number;
     basemap?: string;
+    layers?: { evac?: boolean; roads?: boolean };
   } | null>(null);
   const [originCheck, setOriginCheck] = useState<OriginCheck | null>(null);
   // scoped to the fire being checked: a bare boolean left "verifying origin
@@ -2133,13 +2212,13 @@ function OpsMode({
                     <span style={{ marginLeft: "auto", color: C.faint }}>{rows.length}</span>
                   </div>
                   {rows.map((f) => (
-                    <FactRow key={f.id} f={{ ...f, starred: (starred[f.id] ?? !!f.starred) ? 1 : 0 }} showIncident onStar={onStar} />
+                    <FactRow key={f.id} f={{ ...f, starred: (starred[f.id] ?? !!f.starred) ? 1 : 0 }} showIncident onStar={onStar} onPinMap={pinFactOnMap} />
                   ))}
                 </div>
               ))
             : shown.map((f, i) => (
                 <div key={f.id} className={i === 0 ? "tr-in" : undefined}>
-                  <FactRow f={{ ...f, starred: (starred[f.id] ?? !!f.starred) ? 1 : 0 }} showIncident onStar={onStar} />
+                  <FactRow f={{ ...f, starred: (starred[f.id] ?? !!f.starred) ? 1 : 0 }} showIncident onStar={onStar} onPinMap={pinFactOnMap} />
                 </div>
               ))}
           {!shown.length && (
@@ -2461,7 +2540,7 @@ function OpsMode({
           ))}
         </div>
         <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
-          {panelTab === "intel" && sel && <IntelPanel sel={sel} toast={toast} />}
+          {panelTab === "intel" && sel && <IntelPanel sel={sel} toast={toast} onPinMap={pullUpEvac} />}
           {panelTab === "weather" && sel && <WeatherPanel incidentId={sel.id} />}
           {panelTab === "timeline" && sel && <TimelinePanel incidentId={sel.id} />}
           {panelTab === "ledger" && (

@@ -266,8 +266,17 @@ export default function MapPanel({
   selected: string | null;
   onSelect: (id: string) => void;
   basemap?: string;
-  /** bump `nonce` to fly to a point; `zoom` 16+ is street level */
-  focus?: { lat: number; lon: number; zoom: number; nonce: number; basemap?: string } | null;
+  /** bump `nonce` to fly to a point; `zoom` 16+ is street level. `layers` turns
+      overlays on with the jump — used by the "pull up this evac on the map"
+      action, which wants the zones and the road network visible on arrival. */
+  focus?: {
+    lat: number;
+    lon: number;
+    zoom: number;
+    nonce: number;
+    basemap?: string;
+    layers?: { evac?: boolean; roads?: boolean };
+  } | null;
 }) {
   const holder = useRef<HTMLDivElement | null>(null);
   const map = useRef<L.Map | null>(null);
@@ -1188,6 +1197,10 @@ export default function MapPanel({
   useEffect(() => {
     if (!focus || !map.current) return;
     if (focus.basemap && focus.basemap !== basemap) setOverride(focus.basemap);
+    // "pull up this evac": the operator wants to see the zones and how the roads
+    // run around them, so turn those layers on as we arrive.
+    if (focus.layers?.evac) setShowEvacZones(true);
+    if (focus.layers?.roads) setShowClosures(true);
     map.current.flyTo([focus.lat, focus.lon], focus.zoom, { duration: 1.2 });
   }, [focus, basemap]);
 
