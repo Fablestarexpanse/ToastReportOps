@@ -1748,10 +1748,12 @@ function OpsMode({
   onSelectedFire,
 }: {
   toast: (m: string) => void;
-  focusIncident?: { id: string; nonce: number; pullEvac?: boolean } | null;
+  focusIncident?: { id: string; nonce: number; pullEvac?: boolean; center?: boolean } | null;
   onSendToNewsroom?: (incidentId: string) => void;
   /** report the selection so the top bar can carry the fire's name */
-  onSelectedFire?: (fire: { name: string; county: string | null; status: string } | null) => void;
+  onSelectedFire?: (
+    fire: { id: string; name: string; county: string | null; status: string } | null,
+  ) => void;
 }) {
   const incidents = usePolling(fetchIncidents);
   const intake = usePolling(fetchIntake);
@@ -1830,14 +1832,29 @@ function OpsMode({
 
   // an alert was clicked in the bell: select that fire. nonce is in the dep so
   // clicking the same fire again re-focuses it (the id alone would not change).
+  // `incidents` is in the deps because the fly-to needs coordinates that may
+  // not have loaded yet — but it also refreshes every poll, so each request is
+  // handled exactly ONCE (by nonce) or the map would re-fly every 5 seconds.
+  const handledFocusNonce = useRef<number | null>(null);
   useEffect(() => {
     if (!focusIncident) return;
     setSelected(focusIncident.id);
-    // arrived from the EVAC tab's "show on map": also fly there with the zones
-    // and roads on. Wait for the incidents list so we have coordinates.
-    if (focusIncident.pullEvac) {
-      const inc = incidents?.find((i) => i.id === focusIncident.id);
-      if (inc?.lat != null && inc?.lon != null) pullUpEvac(inc.lat, inc.lon, inc.id);
+    if (handledFocusNonce.current === focusIncident.nonce) return;
+    const needsCoords = focusIncident.pullEvac || focusIncident.center;
+    const inc = incidents?.find((i) => i.id === focusIncident.id);
+    if (needsCoords && !incidents) return; // wait for the list, stay unhandled
+    handledFocusNonce.current = focusIncident.nonce;
+    // arrived from the EVAC tab's "show on map": fly there with zones + roads on
+    if (focusIncident.pullEvac && inc?.lat != null && inc?.lon != null) {
+      pullUpEvac(inc.lat, inc.lon, inc.id);
+    }
+    // top-bar name click: just re-centre the map on the fire, regional zoom
+    if (focusIncident.center) {
+      if (inc?.lat != null && inc?.lon != null) {
+        setFocus({ lat: inc.lat, lon: inc.lon, zoom: 10, nonce: Date.now() });
+      } else {
+        toast("no coordinates for this fire yet");
+      }
     }
   }, [focusIncident?.id, focusIncident?.nonce, incidents]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1907,9 +1924,11 @@ function OpsMode({
   // lift the selection into the top bar (and clear it when OPS unmounts)
   useEffect(() => {
     onSelectedFire?.(
-      sel ? { name: sel.canonical_name, county: sel.county, status: sel.status } : null,
+      sel
+        ? { id: sel.id, name: sel.canonical_name, county: sel.county, status: sel.status }
+        : null,
     );
-  }, [sel?.canonical_name, sel?.county, sel?.status]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sel?.id, sel?.canonical_name, sel?.county, sel?.status]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => onSelectedFire?.(null), []); // eslint-disable-line react-hooks/exhaustive-deps
   // "pull this evacuation up on the map": fly to it, turn on the zone polygons
   // and the road-closure layer, and switch to the street basemap so the routes
@@ -3475,6 +3494,7 @@ export default function Workstation() {
     id: string;
     nonce: number;
     pullEvac?: boolean;
+    center?: boolean; // fly the map to the fire (top-bar name click)
   } | null>(null);
   const openAlertTarget = useCallback((target: { incidentId?: string; watchKey?: string }) => {
     if (target.incidentId) {
@@ -3500,6 +3520,7 @@ export default function Workstation() {
   // the selected fire's name lives in the top bar's open middle, not in the
   // ledger panel header where it was squeezing the action buttons
   const [headerFire, setHeaderFire] = useState<{
+    id: string;
     name: string;
     county: string | null;
     status: string;
@@ -3590,6 +3611,10 @@ export default function Workstation() {
         {mode === "ops" && headerFire ? (
           <div style={{ flex: 1, display: "flex", alignItems: "baseline", justifyContent: "center", gap: 9, minWidth: 0, overflow: "hidden" }}>
             <span
+              onClick={() =>
+                setFocusIncident({ id: headerFire.id, nonce: Date.now(), center: true })
+              }
+              title="re-centre the map on this fire"
               style={{
                 fontFamily: font.disp,
                 fontSize: 17,
@@ -3599,9 +3624,10 @@ export default function Workstation() {
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
+                cursor: "pointer",
               }}
             >
-              {headerFire.name}
+              ⌖ {headerFire.name}
             </span>
             <span style={{ fontFamily: font.mono, fontSize: 9.5, color: C.dim, whiteSpace: "nowrap" }}>
               {headerFire.county ? `${headerFire.county} County · ` : ""}

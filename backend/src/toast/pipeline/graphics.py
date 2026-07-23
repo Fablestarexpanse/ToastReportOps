@@ -3,13 +3,14 @@
 A social post with a map travels farther than text, and the operator should
 not need a design tool mid-incident. One call renders a 1200x675 card: fire
 name, the ledger's current numbers, the evacuation state VERBATIM when one is
-active, and a map strip stitched from the same CARTO dark tiles the
-workstation uses, with the fire ring and (when we have it) the mapped
-perimeter drawn on top.
+active, and a map strip — USGS satellite imagery for a single fire (real
+terrain reads better under a fire ring; operator decision), the CARTO dark
+base for the statewide/All-California card — with the fire ring and (when we
+have it) the mapped perimeter drawn on top.
 
 Honesty carries into the pixels: numbers come from the ledger with their
 supersession chain (never invented), the evac banner is the official status
-word, the map credits OpenStreetMap/CARTO, and the footer timestamps the
+word, each map credits its tile source, and the footer timestamps the
 generation — a card screenshotted three days later says when it was true.
 """
 
@@ -32,6 +33,14 @@ W, H = 1200, 675
 MAP_H = 300
 TILE = 256
 TILE_URL = "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"
+# USGS National Map orthoimagery — public domain, no key. The INCIDENT card
+# uses this (operator decision: a single fire's snapshot reads better on real
+# terrain); the statewide/All-California card stays on the dark base. Note the
+# {z}/{y}/{x} order — USGS puts row before column.
+SAT_TILE_URL = (
+    "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/"
+    "MapServer/tile/{z}/{y}/{x}"
+)
 
 BG = (16, 20, 26)
 PANEL = (27, 33, 40)
@@ -54,9 +63,11 @@ def _tile_frac(lat: float, lon: float, z: int) -> tuple[float, float]:
     return x, y
 
 
-def _stitch_map(lat: float, lon: float, *, zoom: int = 11, w: int, h: int) -> Image.Image:
-    """Centre a (w x h) crop of CARTO dark tiles on the fire. A failed tile
-    leaves a dark square, never fails the card — the numbers still publish."""
+def _stitch_map(
+    lat: float, lon: float, *, zoom: int = 11, w: int, h: int, url: str = TILE_URL
+) -> Image.Image:
+    """Centre a (w x h) crop of map tiles on the fire. A failed tile leaves a
+    dark square, never fails the card — the numbers still publish."""
     img = Image.new("RGB", (w, h), BG)
     cx, cy = _tile_frac(lat, lon, zoom)
     px, py = cx * TILE, cy * TILE  # fire position in global pixel space
@@ -67,7 +78,7 @@ def _stitch_map(lat: float, lon: float, *, zoom: int = 11, w: int, h: int) -> Im
         for ty in range(ty0, ty1 + 1):
             try:
                 body, _ct = fetch(
-                    TILE_URL.format(z=zoom, x=tx, y=ty),
+                    url.format(z=zoom, x=tx, y=ty),
                     accept_types=("image/png", "image/jpeg", "application/octet-stream"),
                     max_bytes=1 * 1024 * 1024,
                 )
@@ -301,7 +312,9 @@ def generate_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
                 zoom = 7
         elif acreage:
             zoom = 12 if acreage < 300 else 11 if acreage < 3000 else 10 if acreage < 20000 else 9
-        strip = _stitch_map(c_lat, c_lon, zoom=zoom, w=map_w, h=map_h)
+        # satellite imagery for a single fire's snapshot — real terrain reads
+        # better than the dark base (operator decision; statewide stays dark)
+        strip = _stitch_map(c_lat, c_lon, zoom=zoom, w=map_w, h=map_h, url=SAT_TILE_URL)
         img.paste(strip, (40, map_top))
         d2 = ImageDraw.Draw(img)
         _draw_perimeter(
@@ -318,7 +331,7 @@ def generate_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
                 d2.ellipse([(cxp - r, cyp - r), (cxp + r, cyp + r)], outline=col, width=3)
         d2.rectangle([(40, map_top), (W - 40, map_top + map_h)], outline=LINE)
         d2.text(
-            (W - 46, map_top + map_h - 24), "(c) OpenStreetMap - (c) CARTO",
+            (W - 46, map_top + map_h - 24), "Imagery: USGS The National Map (public domain)",
             font=_font(14), fill=DIM, anchor="ra",
         )
     else:
