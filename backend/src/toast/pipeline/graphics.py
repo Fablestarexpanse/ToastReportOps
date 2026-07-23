@@ -632,10 +632,11 @@ def generate_state_card(conn: sqlite3.Connection) -> bytes:
 
 # --------------------------------------------------------------- evacuation card
 
-# status -> the public alarm convention, matching the map and the workstation
+# status -> the public alarm convention, matching the map and the workstation:
+# order is the alarm red, warning amber, shelter blue, advisory the calm green.
 WARN = (245, 190, 70)
 SIP = (120, 170, 255)
-ADVISORY = (150, 160, 172)
+ADVISORY = (74, 222, 128)
 _EVAC_RANK = {"order": 4, "shelter_in_place": 3, "warning": 2, "advisory": 1}
 
 
@@ -709,9 +710,24 @@ def generate_evac_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
             if counts.get(k)
         )
         d.text((40, y), summary, font=_font(22), fill=TXT)
-        y += 40
+        y += 38
 
-        shown = zones[:10]
+        # colour KEY — the full sequence, always shown, so there is no ambiguity
+        # about what a colour means: order red, warning amber, shelter blue,
+        # advisory green
+        key_font = _font(15)
+        lx = 40
+        d.text((lx, y), "KEY:", font=key_font, fill=DIM)
+        lx += int(d.textlength("KEY:  ", font=key_font))
+        for st in ("order", "warning", "shelter_in_place", "advisory"):
+            col = _evac_color(st)
+            d.rectangle([(lx, y + 2), (lx + 15, y + 17)], fill=col)
+            label = _evac_word(st)
+            d.text((lx + 21, y), label, font=key_font, fill=DIM)
+            lx += 21 + int(d.textlength(label, font=key_font)) + 26
+        y += 34
+
+        shown = zones[:9]
         for z in shown:
             col = _evac_color(z.get("status"))
             d.rectangle([(40, y + 4), (46, y + 30)], fill=col)
@@ -720,8 +736,9 @@ def generate_evac_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
             d.text((58 + 470, y), _evac_word(z.get("status")), font=_font(20), fill=col)
             issued = z.get("issued_at")
             if issued:
+                # date AND time it was issued (UTC), never just the date
                 d.text(
-                    (W - 40, y + 2), f"issued {str(issued)[:10]}",
+                    (W - 40, y + 3), f"issued {str(issued)[:16].replace('T', ' ')}Z",
                     font=_font(15), fill=DIM, anchor="ra",
                 )
             y += 38
@@ -746,7 +763,7 @@ def generate_evac_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
         font=_font(15), fill=DIM,
     )
     stamp = utcnow()[:16].replace("T", " ")
-    d.text((40, fy + 44), f"generated {stamp}Z", font=_font(14), fill=DIM)
+    d.text((40, fy + 44), f"card created {stamp} UTC", font=_font(14), fill=EMBER)
     from toast.core.appsettings import brand_line
 
     brand = brand_line(conn)

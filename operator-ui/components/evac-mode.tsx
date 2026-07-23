@@ -34,14 +34,18 @@ function norm(status: string | null | undefined): string {
   return "other";
 }
 
+// the public alarm sequence, matching the shareable card's KEY exactly:
+// order red · warning amber · shelter blue · advisory green
 function colorOf(status: string): string {
   return status === "order"
     ? C.evac
     : status === "warning"
       ? C.warn
       : status === "shelter_in_place"
-        ? C.violet
-        : C.dim;
+        ? C.blue
+        : status === "advisory"
+          ? C.ok
+          : C.dim;
 }
 
 function word(status: string): string {
@@ -240,9 +244,9 @@ export default function EvacMode({
       <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
         {tile("ORDERS", totals.order || 0, C.evac)}
         {tile("WARNINGS", totals.warning || 0, C.warn)}
-        {tile("SHELTER", totals.shelter_in_place || 0, C.violet)}
-        {tile("ADVISORY", totals.advisory || 0, C.dim)}
-        {tile("ROAD CLOSURES", closures.filter((c) => c.near).length, C.blue)}
+        {tile("SHELTER", totals.shelter_in_place || 0, C.blue)}
+        {tile("ADVISORY", totals.advisory || 0, C.ok)}
+        {tile("ROAD CLOSURES", closures.filter((c) => c.near).length, C.ember)}
       </div>
 
       {!list.length && (
