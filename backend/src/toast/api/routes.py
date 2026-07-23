@@ -600,6 +600,16 @@ def evac_zones(request: Request, refresh: bool = False) -> dict:
         raise HTTPException(502, f"Cal OES layer unreachable: {exc}") from exc
 
 
+@router.get("/firis")
+def firis_perimeters(request: Request, refresh: bool = False) -> dict:
+    """FIRIS infrared heat perimeters (CAL FIRE public view) — the most
+    authoritative fire footprint short of ground truth, flown and vectorised.
+    Degrades to the last good pull on an outage, never a broken map."""
+    from toast.pipeline.firis import get_firis
+
+    return get_firis(_conn(request), refresh=refresh)
+
+
 @router.get("/fire-weather")
 def fire_weather(request: Request, refresh: bool = False) -> dict:
     """Red flag / fire-weather alert polygons — a FORECAST layer, always

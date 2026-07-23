@@ -10,6 +10,7 @@ import {
   CameraSet,
   ClosureSet,
   EvacZoneSet,
+  FirisSet,
   FireWeatherSet,
   Hotspot,
   HotspotSet,
@@ -21,6 +22,7 @@ import {
   fetchCameras,
   fetchClosures,
   fetchEvacZones,
+  fetchFiris,
   fetchFireWeather,
   fetchHotspots,
   fetchPerimeters,
@@ -280,6 +282,7 @@ export default function MapPanel({
   const firewxLayerRef = useRef<L.GeoJSON | null>(null);
   const closureLayerRef = useRef<L.LayerGroup | null>(null);
   const evacZoneLayerRef = useRef<L.GeoJSON | null>(null);
+  const firisLayerRef = useRef<L.GeoJSON | null>(null);
   const pinRenderer = useRef<L.SVG | null>(null);
   const evacLabelLayerRef = useRef<L.LayerGroup | null>(null);
   const evacLabelZoomHandler = useRef<(() => void) | null>(null);
@@ -305,6 +308,8 @@ export default function MapPanel({
   const [showFirewx, setShowFirewx] = useState(true);
   const [evacZones, setEvacZones] = useState<EvacZoneSet | null>(null);
   const [showEvacZones, setShowEvacZones] = useState(true);
+  const [firis, setFiris] = useState<FirisSet | null>(null);
+  const [showFiris, setShowFiris] = useState(true);
   const [closures, setClosures] = useState<ClosureSet | null>(null);
   const [showClosures, setShowClosures] = useState(true);
   // the in-tool frame viewer: which camera, and a nonce so REFRESH re-asks
@@ -767,6 +772,60 @@ export default function MapPanel({
       clearInterval(t);
     };
   }, []);
+
+  // FIRIS IR heat perimeters (CAL FIRE): the flown fire footprint, tier-1.
+  // Refreshed on the server's own 15-min cache; a failure is silent.
+  useEffect(() => {
+    let live = true;
+    const load = () => fetchFiris().then((f) => live && setFiris(f)).catch(() => undefined);
+    load();
+    const t = setInterval(load, 5 * 60 * 1000);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, []);
+
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+    if (firisLayerRef.current) {
+      m.removeLayer(firisLayerRef.current);
+      firisLayerRef.current = null;
+    }
+    if (!showFiris || !firis?.features?.length) return;
+    const withShape = firis.features.filter((f) => f.geometry);
+    if (!withShape.length) return;
+    // heat-perimeter red; intense heat brighter; isolated heat a dashed hint
+    const styleFor = (kind: string | null) => {
+      const k = (kind || "").toLowerCase();
+      if (k.includes("intense")) return { color: C.emberHot, weight: 2.5, fillOpacity: 0.28 };
+      if (k.includes("isolated")) return { color: C.warn, weight: 1.5, dashArray: "4 4", fillOpacity: 0.1 };
+      return { color: C.ember, weight: 2, fillOpacity: 0.18 };
+    };
+    const layer = L.geoJSON(
+      { type: "FeatureCollection", features: withShape } as GeoJSON.FeatureCollection,
+      {
+        style: (feature) => {
+          const p = feature?.properties as FirisSet["features"][number]["properties"];
+          return { ...styleFor(p?.type), fillColor: C.ember, interactive: true };
+        },
+        onEachFeature: (feature, lyr) => {
+          const p = feature.properties as FirisSet["features"][number]["properties"];
+          const flown = p.poly_DateCurrent ? `${age(p.poly_DateCurrent)} ago` : "unknown";
+          lyr.bindTooltip(
+            `<b style="color:#ff9a3c">IR ${escHtml(p.type ?? "heat perimeter")}</b>` +
+              `${p.incident_name ? ` — ${escHtml(p.incident_name)}` : ""}` +
+              `${p.area_acres != null ? `<br/>${Math.round(p.area_acres).toLocaleString()} acres` : ""}` +
+              `<br/>flown ${flown}` +
+              `<br/><i>CAL FIRE FIRIS · infrared flight footprint (tier 1)</i>`,
+            { sticky: true, opacity: 0.95 },
+          );
+        },
+      },
+    ).addTo(m);
+    firisLayerRef.current = layer;
+  }, [firis, showFiris, ready]);
 
   useEffect(() => {
     const m = map.current;
@@ -1282,6 +1341,22 @@ export default function MapPanel({
             {/* the age travels with the layer: a crisp polygon is still an
                 overnight IR map, not a live fire edge */}
             {perimeters.mapped_latest ? ` · newest flown ${age(perimeters.mapped_latest)} ago` : ""}
+          </span>
+        )}
+        {!!firis?.features?.length && (
+          <span
+            onClick={() => setShowFiris((v) => !v)}
+            title={firis.note ?? "FIRIS infrared heat perimeters (CAL FIRE)"}
+            style={{
+              pointerEvents: "auto",
+              cursor: "pointer",
+              color: showFiris ? C.emberHot : C.dim,
+              border: `1px solid ${showFiris ? C.emberHot + "66" : C.line}`,
+              borderRadius: 3,
+              padding: "1px 5px",
+            }}
+          >
+            {showFiris ? "◼" : "◻"} IR HEAT ({firis.features.length}) · FIRIS
           </span>
         )}
         {!!hotspots?.count && (

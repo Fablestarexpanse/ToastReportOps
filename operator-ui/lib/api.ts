@@ -1289,6 +1289,33 @@ export type EvacZoneSet = {
 
 export const fetchEvacZones = () => get<EvacZoneSet>("/evac-zones");
 
+// FIRIS infrared heat perimeters (CAL FIRE) — the flown fire footprint
+export type FirisFeature = {
+  type: "Feature";
+  geometry: GeoJSON.Geometry | null;
+  properties: {
+    incident_name: string | null;
+    incident_number: string | null;
+    area_acres: number | null;
+    poly_DateCurrent: string | null;
+    mission: string | null;
+    source: string | null;
+    type: string | null; // "Heat Perimeter" | "Intense Heat" | "Isolated Heat"
+    incident_id: string | null;
+  };
+};
+export type FirisSet = {
+  type: "FeatureCollection";
+  features: FirisFeature[];
+  count: number;
+  matched: number;
+  source: string;
+  note: string;
+  fetched_at: string;
+};
+
+export const fetchFiris = () => get<FirisSet>("/firis");
+
 export type MeshNode = {
   node_id: string;
   long_name: string | null;
