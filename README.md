@@ -52,6 +52,95 @@ instead — then no GPU is needed at all.
 ledger and raw-content archive grow unbounded by design, so budget storage for
 long-running use.
 
+## Install & run
+
+**Prerequisites:** Docker Desktop (Windows: WSL2 backend enabled); for NVIDIA GPUs, the
+WSL2 GPU driver (Windows) or NVIDIA Container Toolkit (Linux) so containers can see the
+GPU; `git`; and Node 20+ only if you run the UI outside Docker.
+
+```bash
+# 1. Get the code
+git clone https://github.com/Fablestarexpanse/ToastReportOps.git
+cd ToastReportOps
+
+# 2. Create config (works as-is with the local LLM; optional keys unlock more sources
+#    and social publishing — see docs/API-KEYS.md). Never commit .env.
+cp .env.example .env
+
+# 3. Start the stack. FIRST BOOT downloads ~10 GB of models (qwen3:14b +
+#    nomic-embed-text) into the ollama_models volume — later boots are instant.
+docker compose --profile desktop up -d
+
+# 4. Seed the source list into the fresh database
+docker compose exec api python -m toast.seed
+```
+
+Then open the workstation at **http://localhost:3005** (API at `http://localhost:8400`,
+public-site preview at `http://localhost:8400/site/`).
+
+**Windows one-click:** instead of steps 3–4 you can double-click **`ToastReport.cmd`** —
+it brings up the Docker stack, starts the operator UI on port 3005, and opens it in a
+standalone app window (`scripts/launch.ps1`).
+
+**Verify:**
+```bash
+docker compose ps                       # every service "healthy"
+curl http://127.0.0.1:8400/healthz      # {"service":"api","ok":true,...}
+docker compose exec llm ollama list     # qwen3:14b + nomic-embed-text present
+```
+
+**Stop:** `docker compose --profile desktop down` (add `-v` to also drop the DB and
+downloaded models). **UI outside Docker:** `npm --prefix operator-ui run dev -- -p 3005`
+(proxies `/api/*` to `:8400`).
+
+**No NVIDIA GPU?** Either set `LLM_MODEL=qwen3:8b` (fits ~8 GB / slower on CPU) or point
+`LLM_BASE_URL` at a cloud OpenAI-compatible endpoint with `LLM_API_KEY`, and remove the
+`deploy.resources` GPU reservation from the `llm` service in `docker-compose.yml`.
+
+### One-shot AI-agent setup prompt
+
+Paste this into an AI coding agent with shell access (e.g. Claude Code) to install and
+configure the stack on a fresh machine:
+
+```text
+Set up "Toast Report OPs", a local-first, Docker-based California wildfire
+intelligence system, on this machine — end to end — and report status at each step.
+
+Facts:
+- Repo (private): https://github.com/Fablestarexpanse/ToastReportOps
+- Runs as a Docker Compose stack (profile "desktop", 8 services) plus a Next.js
+  operator UI on port 3005. API on 8400. Localhost-only, single operator, no auth.
+- Local LLM via in-stack Ollama: qwen3:14b + nomic-embed-text, auto-pulled on first
+  boot (~10 GB). NVIDIA GPU with >=12 GB VRAM strongly recommended.
+
+Do this:
+1. Check prerequisites; ask me before installing any system software:
+   - Docker Desktop installed and running (Windows: WSL2 backend on).
+   - If an NVIDIA GPU is present, confirm containers can use it:
+     `docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi`.
+   - git present; Node 20+ if the UI will run outside Docker.
+2. Clone the repo (I'll authorize access if prompted) and cd into it.
+3. `cp .env.example .env`. Keep the local-LLM defaults. Do NOT invent secrets —
+   leave every optional key blank.
+4. If this machine has NO usable NVIDIA GPU, stop and tell me, then either set
+   LLM_MODEL=qwen3:8b, or (if I provide one) set LLM_BASE_URL + LLM_API_KEY to a
+   cloud OpenAI-compatible endpoint and remove the deploy.resources GPU reservation
+   from the `llm` service in docker-compose.yml. Confirm the choice with me first.
+5. `docker compose --profile desktop up -d`. First boot pulls ~10 GB of models —
+   poll `docker compose exec llm ollama list` until BOTH qwen3:14b and
+   nomic-embed-text appear.
+6. Seed sources: `docker compose exec api python -m toast.seed`.
+7. Verify: `docker compose ps` all healthy; `curl http://127.0.0.1:8400/healthz`
+   returns ok; UI answers on http://localhost:3005 (start it with
+   `npm --prefix operator-ui run dev -- -p 3005` if needed; on Windows you may run
+   ToastReport.cmd instead).
+8. Report the workstation URL, the API URL, which LLM is active, and anything needing
+   my attention (missing GPU, blank optional keys).
+
+Rules: do not commit or push; do not fabricate keys or credentials; bind everything to
+localhost; if a step fails, show the exact error and stop for my input.
+```
+
 ## Core principles
 
 1. **Local-first, append-only.** SQLite is the primary store. The fact ledger is
