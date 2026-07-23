@@ -1746,6 +1746,22 @@ def get_graphic(request: Request, draft_id: str):
     return Response(content=data, media_type="image/png")
 
 
+@router.get("/incidents/{incident_id}/evac-graphic.png")
+def get_evac_graphic(request: Request, incident_id: str):
+    """Render a shareable evacuation card for a fire, straight from the Cal OES
+    zones — official statuses verbatim. Generated on demand (no draft needed) so
+    the operator can push it out the moment an order lands."""
+    from fastapi import Response
+
+    from toast.pipeline.graphics import generate_evac_card
+
+    try:
+        png = generate_evac_card(_conn(request), incident_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return Response(content=png, media_type="image/png")
+
+
 @router.get("/publish/channels")
 def publish_channels(request: Request) -> dict:
     """Which social channels have working credentials — the release checkboxes."""

@@ -97,3 +97,45 @@ def test_draft_without_incident_is_refused(seeded):
     )
     with pytest.raises(ValueError, match="no incident"):
         graphics.attach_card(seeded, draft_id)
+
+
+def _zone_cache(db, statuses):
+    import json
+
+    from toast.core.db import utcnow
+
+    features = [
+        {
+            "geometry": {"type": "Point", "coordinates": [-121.6, 39.76]},
+            "properties": {
+                "ZONE_ID": f"US-CA-XBU-Z{i}",
+                "ZONE_NAME": f"Zone {i}",
+                "STATUS": s,
+                "issued_at": "2026-07-19T00:00:00.000Z",
+                "incident_id": "i1",
+            },
+        }
+        for i, s in enumerate(statuses)
+    ]
+    db.execute(
+        "INSERT OR REPLACE INTO map_cache (key, payload, fetched_at) VALUES (?, ?, ?)",
+        ("evaczones:ca", json.dumps({"features": features}), utcnow()),
+    )
+
+
+def test_evac_card_renders_from_official_zones(seeded):
+    _zone_cache(seeded, ["Evacuation Order", "Evacuation Warning", "Evacuation Warning"])
+    png = graphics.generate_evac_card(seeded, "i1")
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    assert len(png) > 1000
+
+
+def test_evac_card_handles_no_active_zones(seeded):
+    # no zone cache at all → the card still renders, saying nothing is in effect
+    png = graphics.generate_evac_card(seeded, "i1")
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_evac_card_unknown_incident_raises(seeded):
+    with pytest.raises(ValueError):
+        graphics.generate_evac_card(seeded, "does-not-exist")

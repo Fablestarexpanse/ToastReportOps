@@ -628,3 +628,134 @@ def generate_state_card(conn: sqlite3.Connection) -> bytes:
     img.save(buf, format="PNG", optimize=True)
     get_logger("graphics").info("state_card_rendered", fires=len(fires), bytes=buf.tell())
     return buf.getvalue()
+
+
+# --------------------------------------------------------------- evacuation card
+
+# status -> the public alarm convention, matching the map and the workstation
+WARN = (245, 190, 70)
+SIP = (120, 170, 255)
+ADVISORY = (150, 160, 172)
+_EVAC_RANK = {"order": 4, "shelter_in_place": 3, "warning": 2, "advisory": 1}
+
+
+def _evac_color(status: str | None) -> tuple[int, int, int]:
+    return {
+        "order": EVAC,
+        "warning": WARN,
+        "shelter_in_place": SIP,
+        "advisory": ADVISORY,
+    }.get(status or "", DIM)
+
+
+def _evac_word(status: str | None) -> str:
+    return {
+        "order": "EVACUATION ORDER",
+        "warning": "EVACUATION WARNING",
+        "shelter_in_place": "SHELTER IN PLACE",
+        "advisory": "ADVISORY",
+    }.get(status or "", (status or "UNKNOWN").upper())
+
+
+def generate_evac_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
+    """A shareable card of a fire's CURRENT evacuation zones, rendered verbatim
+    from the Cal OES layer. This is the one graphic where every pixel is an
+    official instruction — zone ids and statuses exactly as the county published
+    them, no invention, with a 'verify with your county' line and a generation
+    timestamp so a screenshot seen later says when it was true."""
+    inc = conn.execute(
+        "SELECT canonical_name, county FROM incidents WHERE id = ?", (incident_id,)
+    ).fetchone()
+    if inc is None:
+        raise ValueError("incident not found")
+
+    from toast.pipeline.evacstate import evac_state
+
+    state = evac_state(conn, incident_id)
+    zones = sorted(
+        state.zones,
+        key=lambda z: (-_EVAC_RANK.get(z.get("status") or "", 0), z.get("zone_id") or ""),
+    )
+
+    img = Image.new("RGB", (W, H), BG)
+    d = ImageDraw.Draw(img)
+    y = 34
+    d.text((40, y), inc["canonical_name"].upper(), font=_font(46), fill=TXT)
+    y += 60
+    sub = " - ".join(
+        s for s in [f"{inc['county']} County" if inc["county"] else None, "California"] if s
+    )
+    header = f"EVACUATION STATUS - {sub}" if sub else "EVACUATION STATUS"
+    d.text((40, y), header, font=_font(20), fill=DIM)
+    y += 44
+
+    if not zones:
+        d.rectangle([(40, y), (W - 40, y + 60)], outline=OK, width=2)
+        d.text((58, y + 16), "NO ACTIVE EVACUATION ZONES", font=_font(26), fill=OK)
+        y += 78
+        d.text(
+            (40, y),
+            "No zones are currently elevated for this fire in the Cal OES layer.",
+            font=_font(18), fill=DIM,
+        )
+    else:
+        counts: dict[str, int] = {}
+        for z in zones:
+            s = z.get("status") or "other"
+            counts[s] = counts.get(s, 0) + 1
+        summary = "   ".join(
+            f"{counts[k]} {_evac_word(k).replace('EVACUATION ', '').title()}"
+            for k in ("order", "shelter_in_place", "warning", "advisory")
+            if counts.get(k)
+        )
+        d.text((40, y), summary, font=_font(22), fill=TXT)
+        y += 40
+
+        shown = zones[:10]
+        for z in shown:
+            col = _evac_color(z.get("status"))
+            d.rectangle([(40, y + 4), (46, y + 30)], fill=col)
+            zid = str(z.get("zone_id") or z.get("zone_name") or "zone")
+            d.text((58, y), zid, font=_font(22), fill=TXT)
+            d.text((58 + 470, y), _evac_word(z.get("status")), font=_font(20), fill=col)
+            issued = z.get("issued_at")
+            if issued:
+                d.text(
+                    (W - 40, y + 2), f"issued {str(issued)[:10]}",
+                    font=_font(15), fill=DIM, anchor="ra",
+                )
+            y += 38
+        if len(zones) > len(shown):
+            d.text(
+                (58, y), f"+ {len(zones) - len(shown)} more zone(s) — see the workstation",
+                font=_font(16), fill=DIM,
+            )
+            y += 30
+
+    # footer: source, verify line, generation stamp, brand — the honesty band
+    fy = H - 78
+    d.line([(40, fy - 6), (W - 40, fy - 6)], fill=LINE, width=1)
+    d.text(
+        (40, fy),
+        "Source: Cal OES California Evacuation Aggregation Layer - official status,",
+        font=_font(15), fill=DIM,
+    )
+    d.text(
+        (40, fy + 20),
+        "rendered verbatim. ALWAYS follow the official county notice, not this card.",
+        font=_font(15), fill=DIM,
+    )
+    stamp = utcnow()[:16].replace("T", " ")
+    d.text((W - 40, fy), f"generated {stamp}Z", font=_font(15), fill=DIM, anchor="ra")
+    from toast.core.appsettings import brand_line
+
+    brand = brand_line(conn)
+    d.text((W - 40, fy + 42), f"TOAST REPORT OPS   {brand[:50] if brand else ''}",
+           font=_font(15), fill=EMBER, anchor="ra")
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    get_logger("graphics").info(
+        "evac_card_rendered", incident=incident_id, zones=len(zones), bytes=buf.tell()
+    )
+    return buf.getvalue()

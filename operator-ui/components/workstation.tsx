@@ -102,6 +102,7 @@ const AirMode = dynamic(() => import("@/components/air-mode"), {
   ),
 });
 import RadioMode from "@/components/radio-mode";
+import EvacMode from "@/components/evac-mode";
 import NewsroomMode from "@/components/newsroom";
 import WatchMode from "@/components/watch";
 
@@ -1719,7 +1720,7 @@ function OpsMode({
   focusIncident,
 }: {
   toast: (m: string) => void;
-  focusIncident?: { id: string; nonce: number } | null;
+  focusIncident?: { id: string; nonce: number; pullEvac?: boolean } | null;
 }) {
   const incidents = usePolling(fetchIncidents);
   const intake = usePolling(fetchIntake);
@@ -1799,8 +1800,15 @@ function OpsMode({
   // an alert was clicked in the bell: select that fire. nonce is in the dep so
   // clicking the same fire again re-focuses it (the id alone would not change).
   useEffect(() => {
-    if (focusIncident) setSelected(focusIncident.id);
-  }, [focusIncident?.id, focusIncident?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!focusIncident) return;
+    setSelected(focusIncident.id);
+    // arrived from the EVAC tab's "show on map": also fly there with the zones
+    // and roads on. Wait for the incidents list so we have coordinates.
+    if (focusIncident.pullEvac) {
+      const inc = incidents?.find((i) => i.id === focusIncident.id);
+      if (inc?.lat != null && inc?.lon != null) pullUpEvac(inc.lat, inc.lon, inc.id);
+    }
+  }, [focusIncident?.id, focusIncident?.nonce, incidents]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const kinds = useMemo(
     () => [...new Set((intake ?? []).map((f) => f.kind))].sort(),
@@ -3282,6 +3290,7 @@ function ArchiveMode({ toast }: { toast: (m: string) => void }) {
 // "arrives in a later phase" tooltip and not-allowed cursor were unreachable.
 const MODES: [string, string][] = [
   ["ops", "OPS"],
+  ["evac", "EVAC"],
   ["air", "AIR"],
   ["radio", "RADIO"],
   ["mesh", "MESH"],
@@ -3403,7 +3412,11 @@ export default function Workstation() {
   const [mode, setMode] = useState("ops");
   // an alert click routes here: a fire opens its incident in OPS (nonce bumps so
   // clicking the same fire twice re-focuses it), a watch candidate opens WATCH
-  const [focusIncident, setFocusIncident] = useState<{ id: string; nonce: number } | null>(null);
+  const [focusIncident, setFocusIncident] = useState<{
+    id: string;
+    nonce: number;
+    pullEvac?: boolean;
+  } | null>(null);
   const openAlertTarget = useCallback((target: { incidentId?: string; watchKey?: string }) => {
     if (target.incidentId) {
       setFocusIncident({ id: target.incidentId, nonce: Date.now() });
@@ -3411,6 +3424,12 @@ export default function Workstation() {
     } else if (target.watchKey) {
       setMode("watch");
     }
+  }, []);
+  // the EVAC tab's "show on map": jump to OPS, select the fire, and pull its
+  // evacuation up (fly there, zones + roads on) in one move
+  const showEvacOnMap = useCallback((incidentId: string) => {
+    setFocusIncident({ id: incidentId, nonce: Date.now(), pullEvac: true });
+    setMode("ops");
   }, []);
   const health = usePolling(fetchHealth);
   const [showDead, setShowDead] = useState(false);
@@ -3559,6 +3578,7 @@ export default function Workstation() {
       )}
 
       {mode === "ops" && <OpsMode key={uiKey} toast={toast} focusIncident={focusIncident} />}
+      {mode === "evac" && <EvacMode toast={toast} onShowOnMap={showEvacOnMap} />}
       {mode === "air" && <AirMode toast={toast} />}
       {mode === "radio" && <RadioMode toast={toast} />}
       {mode === "mesh" && <MeshMode toast={toast} />}

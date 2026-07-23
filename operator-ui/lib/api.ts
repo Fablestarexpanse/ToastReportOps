@@ -1307,6 +1307,10 @@ export type EvacZoneSet = {
 
 export const fetchEvacZones = () => get<EvacZoneSet>("/evac-zones");
 
+/** On-demand evacuation card for a fire, rendered verbatim from Cal OES zones. */
+export const evacGraphicUrl = (incidentId: string) =>
+  `/api/incidents/${encodeURIComponent(incidentId)}/evac-graphic.png`;
+
 // FIRIS infrared heat perimeters (CAL FIRE) — the flown fire footprint
 export type FirisFeature = {
   type: "Feature";
