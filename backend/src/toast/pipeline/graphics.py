@@ -746,12 +746,23 @@ def generate_evac_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
         font=_font(15), fill=DIM,
     )
     stamp = utcnow()[:16].replace("T", " ")
-    d.text((W - 40, fy), f"generated {stamp}Z", font=_font(15), fill=DIM, anchor="ra")
+    d.text((40, fy + 44), f"generated {stamp}Z", font=_font(14), fill=DIM)
     from toast.core.appsettings import brand_line
 
     brand = brand_line(conn)
-    d.text((W - 40, fy + 42), f"TOAST REPORT OPS   {brand[:50] if brand else ''}",
-           font=_font(15), fill=EMBER, anchor="ra")
+    # the logo badge rides the bottom-right, with the brand name to its left, so
+    # a screenshot of an evacuation is unmistakably ours (same badge as the
+    # incident and statewide cards)
+    bx = W - 40
+    badge_path = Path(__file__).resolve().parents[1] / "assets" / "ops-badge.png"
+    if badge_path.exists():
+        badge = Image.open(badge_path).convert("RGBA")
+        badge.thumbnail((50, 50), Image.LANCZOS)
+        img.paste(badge, (bx - badge.width, fy + 4), badge)
+        bx = bx - badge.width - 12
+    d.text((bx, fy + 8), "TOAST REPORT OPS", font=_font(20), fill=EMBER, anchor="ra")
+    if brand:
+        d.text((bx, fy + 34), brand[:50], font=_font(13), fill=DIM, anchor="ra")
 
     buf = io.BytesIO()
     img.save(buf, format="PNG", optimize=True)
