@@ -100,19 +100,26 @@ def _draw_perimeter(
     w: int,
     h: int,
     off_y: int,
+    off_x: int = 0,
+    scale: float = 1.0,
 ) -> bool:
-    """Overlay the cached mapped perimeter, if this fire has one."""
+    """Overlay the cached mapped perimeter, if this fire has one. `scale`
+    matches a fractionally-zoomed strip (stitched at `zoom`, downscaled by
+    `scale`) — deltas from the centre shrink by the same factor. off_x/off_y
+    are where the strip sits on the card."""
     import json as _json
 
     row = conn.execute("SELECT payload FROM map_cache WHERE key = 'perimeters:ca'").fetchone()
     if not row:
         return False
     cx, cy = _tile_frac(lat, lon, zoom)
-    px0, py0 = cx * TILE - w / 2, cy * TILE - h / 2
 
     def to_px(pt: list[float]) -> tuple[float, float]:
         fx, fy = _tile_frac(pt[1], pt[0], zoom)
-        return fx * TILE - px0, fy * TILE - py0 + off_y
+        return (
+            (fx - cx) * TILE * scale + w / 2 + off_x,
+            (fy - cy) * TILE * scale + h / 2 + off_y,
+        )
 
     drew = False
     for feature in _json.loads(row["payload"]).get("features", []):
@@ -298,34 +305,46 @@ def generate_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
         # back the zoom off as the acreage grows.
         map_w = W - 80
         c_lat, c_lon, zoom = inc["lat"], inc["lon"], 11
+        scale = 1.0  # <1 when the strip is stitched deeper and downscaled
         bbox = _perimeter_bbox(conn, incident_id)
         if bbox:
+            # FRACTIONAL zoom: integer tile zooms halve/double the scale, so a
+            # fire that just misses one level fell a whole level out and floated
+            # in an empty frame. Instead: compute the exact scale that makes the
+            # perimeter fill ~90% of the strip, stitch at the next-deeper integer
+            # zoom, and downscale — the fire always fills the frame.
             min_lat, min_lon, max_lat, max_lon = bbox
             c_lat, c_lon = (min_lat + max_lat) / 2, (min_lon + max_lon) / 2
-            for z in range(12, 6, -1):
-                x0, y0 = _tile_frac(max_lat, min_lon, z)
-                x1, y1 = _tile_frac(min_lat, max_lon, z)
-                if (x1 - x0) * TILE <= map_w * 0.84 and (y1 - y0) * TILE <= map_h * 0.8:
-                    zoom = z
-                    break
-            else:
-                zoom = 7
+            zr = 12  # reference zoom for measuring the bbox in pixels
+            x0, y0 = _tile_frac(max_lat, min_lon, zr)
+            x1, y1 = _tile_frac(min_lat, max_lon, zr)
+            bw, bh = max((x1 - x0) * TILE, 1.0), max((y1 - y0) * TILE, 1.0)
+            fit = min(map_w * 0.90 / bw, map_h * 0.86 / bh)
+            ze = zr + math.log2(max(fit, 1e-6))  # exact (fractional) zoom
+            ze = max(7.0, min(14.0, ze))  # sanity: stay within useful imagery
+            zoom = min(15, math.ceil(ze))
+            scale = 2 ** (ze - zoom)  # <= 1: how much to shrink the deep stitch
         elif acreage:
-            zoom = 12 if acreage < 300 else 11 if acreage < 3000 else 10 if acreage < 20000 else 9
+            zoom = 13 if acreage < 300 else 12 if acreage < 3000 else 10 if acreage < 20000 else 9
         # satellite imagery for a single fire's snapshot — real terrain reads
         # better than the dark base (operator decision; statewide stays dark)
-        strip = _stitch_map(c_lat, c_lon, zoom=zoom, w=map_w, h=map_h, url=SAT_TILE_URL)
+        if scale < 0.999:
+            big_w, big_h = math.ceil(map_w / scale), math.ceil(map_h / scale)
+            big = _stitch_map(c_lat, c_lon, zoom=zoom, w=big_w, h=big_h, url=SAT_TILE_URL)
+            strip = big.resize((map_w, map_h), Image.LANCZOS)
+        else:
+            strip = _stitch_map(c_lat, c_lon, zoom=zoom, w=map_w, h=map_h, url=SAT_TILE_URL)
         img.paste(strip, (40, map_top))
         d2 = ImageDraw.Draw(img)
         _draw_perimeter(
             conn, d2, incident_id, c_lat, c_lon,
-            zoom=zoom, w=map_w, h=map_h, off_y=map_top,
+            zoom=zoom, w=map_w, h=map_h, off_y=map_top, off_x=40, scale=scale,
         )
         # origin ring at the fire's true position in this frame
         ocx, ocy = _tile_frac(c_lat, c_lon, zoom)
         ofx, ofy = _tile_frac(inc["lat"], inc["lon"], zoom)
-        cxp = 40 + map_w / 2 + (ofx - ocx) * TILE
-        cyp = map_top + map_h / 2 + (ofy - ocy) * TILE
+        cxp = 40 + map_w / 2 + (ofx - ocx) * TILE * scale
+        cyp = map_top + map_h / 2 + (ofy - ocy) * TILE * scale
         if 40 < cxp < W - 40 and map_top < cyp < map_top + map_h:
             for r, col in ((14, EVAC if evac_active else EMBER), (7, TXT)):
                 d2.ellipse([(cxp - r, cyp - r), (cxp + r, cyp + r)], outline=col, width=3)
