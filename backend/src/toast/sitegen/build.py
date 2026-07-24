@@ -20,6 +20,7 @@ import markdown as md
 
 from toast.core.db import utcnow
 from toast.core.sanitize import clean_html
+from toast.core.timefmt import civilian
 
 SITE_TITLE = "Toast Report OPs"
 SITE_TAGLINE = "California wildfire updates — verified, sourced, human-reviewed"
@@ -78,13 +79,14 @@ and summarizes; officials are authoritative.</div>
 {nav}
 {body}
 </main>
-<footer>Toast Report OPs · generated {utcnow()[:16].replace("T", " ")} UTC ·
+<footer>Toast Report OPs · generated {civilian(utcnow())} ·
 static site, no tracking</footer>
 </body></html>"""
 
 
 def _stamp(iso: str | None) -> str:
-    return (iso or "")[:16].replace("T", " ") + " UTC" if iso else "—"
+    # civilian AM/PM Pacific — the public site is read by the public
+    return civilian(iso) if iso else "—"
 
 
 def _report_html(draft: sqlite3.Row, incident_name: str | None) -> str:

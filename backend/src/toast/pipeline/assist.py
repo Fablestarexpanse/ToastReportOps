@@ -41,10 +41,15 @@ OPS: dict[str, str] = {
     ),
     "spanish": (
         "Translate the text into clear, natural Latin American Spanish for a "
-        "California audience. Keep the markdown structure and the Sources "
-        "section. Remember the evacuation rule: translate evacuation sentences "
-        "but keep zone ids and road names exactly as written, appending the "
-        "original English sentence in parentheses."
+        "California audience. Translate ONLY the prose a reader needs in "
+        "Spanish: URLs, markdown link destinations, [#n] citation markers, "
+        "source names, agency names (CAL FIRE, Cal OES), fire names, zone ids, "
+        "and road designations stay EXACTLY as written. Keep the markdown "
+        "structure and the Sources section (translate only the word 'Sources' "
+        "to 'Fuentes' and each entry's sentence text, never its link). "
+        "Remember the evacuation rule: translate evacuation sentences but keep "
+        "zone ids and road names exactly as written, appending the original "
+        "English sentence in parentheses."
     ),
 }
 

@@ -363,9 +363,11 @@ def generate_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
     if wx:
         d.text((40, fy), wx, font=_font(17), fill=DIM)
         fy += 26
-    stamp = utcnow()[:16].replace("T", " ")
+    from toast.core.timefmt import civilian
+
+    stamp = civilian(utcnow())
     newest = _newest_observed(conn, incident_id)
-    asof = f"data as of {newest[:16].replace('T', ' ')}Z - " if newest else ""
+    asof = f"data as of {civilian(newest)} - " if newest else ""
     badge_path = Path(__file__).resolve().parents[1] / "assets" / "ops-badge.png"
     tx = 40
     if badge_path.exists():
@@ -651,8 +653,10 @@ def generate_state_card(conn: sqlite3.Connection) -> bytes:
     brand = brand_line(conn)
     if brand:
         d.text((tx, fy + 34), brand[:70], font=_font(14), fill=DIM)
+    from toast.core.timefmt import civilian as _civ
+
     d.text(
-        (W - 40, fy + 11), f"ledger data - generated {utcnow()[:16].replace('T', ' ')}Z",
+        (W - 40, fy + 11), f"ledger data - generated {_civ(utcnow())}",
         font=_font(15), fill=DIM, anchor="ra",
     )
 

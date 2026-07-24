@@ -28,7 +28,8 @@ def test_build_site_writes_index_and_report(seeded, tmp_path):
     report = (tmp_path / "report" / "d1.html").read_text(encoding="utf-8")
     assert "1,200 acres" in report  # body rendered
     assert "Sources" in report  # provenance carried through
-    assert "Published 2026-07-20 04:00 UTC" in report  # burned-in timestamp
+    # burned-in timestamp, civilian AM/PM Pacific (04:00Z = 9:00 PM PDT the day before)
+    assert "Published Jul 19, 9:00 PM PDT" in report
 
 
 def test_only_published_drafts_appear(seeded, tmp_path):

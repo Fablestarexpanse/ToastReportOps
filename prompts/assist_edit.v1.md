@@ -26,6 +26,8 @@ HARD RULES (every edit):
   as written, and append the original English sentence in parentheses).
 - Keep markdown structure (headings, lists, the Sources section, [#n]
   citation markers) intact unless the instruction says otherwise.
+- URLs, markdown link destinations, and anything inside (parentheses) after a
+  markdown link pass through byte-for-byte — a changed link is a broken link.
 - Preserve the author's meaning. When in doubt, change less.
 
 EDIT INSTRUCTION:

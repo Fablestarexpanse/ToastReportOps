@@ -79,13 +79,16 @@ def _sources_section(conn: sqlite3.Connection, facts: list[sqlite3.Row]) -> str:
             )
             if r["url"]
         }
+    from toast.core.timefmt import civilian
+
     lines = ["", "---", "", "**Sources**", ""]
     for i, f in enumerate(facts, start=1):
         name, tier = src_names.get(f["source_id"], (f["source_id"], f["tier"]))
-        observed = (f["observed_at"] or "")[:16].replace("T", " ")
+        # civilian AM/PM Pacific — readers of a published article are the public
+        observed = civilian(f["observed_at"])
         url = urls.get(f["raw_ref"] or "")
         link = f" — {url}" if url else ""
-        lines.append(f"{i}. {name} (T{tier}) — {f['content']} — observed {observed} UTC{link}")
+        lines.append(f"{i}. {name} (T{tier}) — {f['content']} — observed {observed}{link}")
     # the operator's links ride at the very end of every article, so the
     # byline follows the report wherever it is pasted or rewritten
     from toast.core.appsettings import brand_line
@@ -268,11 +271,13 @@ def generate_statewide_roundup(conn: sqlite3.Connection) -> dict[str, Any]:
     newest_official = conn.execute(
         "SELECT MAX(observed_at) AS t FROM facts WHERE tier <= 2"
     ).fetchone()["t"]
+    from toast.core.timefmt import civilian
+
     asof = (
-        f"*Data as of {newest_official[:16].replace('T', ' ')}Z · "
-        f"official sources re-polled and drafted {now[:16].replace('T', ' ')}Z.*"
+        f"*Data as of {civilian(newest_official)} · "
+        f"official sources re-polled and drafted {civilian(now)}.*"
         if newest_official
-        else f"*Drafted {now[:16].replace('T', ' ')}Z.*"
+        else f"*Drafted {civilian(now)}.*"
     )
 
     lines = [
