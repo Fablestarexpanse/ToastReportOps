@@ -27,6 +27,13 @@ def test_keyword_gate():
     assert not _looks_fire("anyone near the lake this weekend?")
 
 
+def test_fire_emoji_trips_the_gate():
+    # a 🔥 alone is enough — people type it before they type the word
+    assert _looks_fire("🔥 up on the ridge")
+    assert _looks_fire("something's off on Skyway 🚒")
+    assert not _looks_fire("great BBQ today 🎉")
+
+
 def test_fire_message_feeds_watch_with_position(db):
     _node(db, "!aa", lat=39.75, lon=-121.61, name="Paradise Node")
     mid = _msg(db, "!aa", "Heavy smoke and flames off Skyway, spreading fast")

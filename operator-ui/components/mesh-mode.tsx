@@ -485,8 +485,8 @@ export default function MeshMode({ toast }: { toast: (m: string) => void }) {
             style={{ width: "100%", background: C.bg, border: `1px solid ${C.line}`, borderRadius: 4, color: C.txt, fontFamily: font.mono, fontSize: 9, padding: "3px 7px", marginBottom: 6 }}
           />
           <div style={{ fontFamily: font.mono, fontSize: 7.5, color: C.faint, marginBottom: 5, lineHeight: 1.5 }}>
-            every text is scanned for fire words on arrival; a hit becomes a T5 WATCH
-            signal (the AI judges it there) and is pinned to the sender node.
+            every text is scanned for fire words — and a 🔥 emoji — on arrival; a hit
+            becomes a T5 WATCH signal (the AI judges it there), pinned to the sender node.
           </div>
           {messages && messages.count === 0 && (
             <div style={{ fontFamily: font.mono, fontSize: 9, color: C.dim }}>

@@ -58,6 +58,9 @@ FIRE_WORDS = (
     "fire", "smoke", "wildfire", "flames", "burning", "spot fire", "ember",
     "evac", "evacuat", "structure", "brush", "grass fire", "column",
 )
+# emoji people actually type when they see one — a 🔥 in mesh chat is as good a
+# flag as the word. Matched as-is (not lowercased) so they survive the fold.
+FIRE_EMOJI = ("🔥", "🚒")
 
 
 def _in_bbox(lat: float, lon: float) -> bool:
@@ -66,7 +69,7 @@ def _in_bbox(lat: float, lon: float) -> bool:
 
 def _looks_fire(text: str) -> bool:
     low = text.lower()
-    return any(w in low for w in FIRE_WORDS)
+    return any(w in low for w in FIRE_WORDS) or any(e in text for e in FIRE_EMOJI)
 
 
 class MeshListener:
