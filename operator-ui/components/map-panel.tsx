@@ -1103,10 +1103,11 @@ export default function MapPanel({
     }
     if (!showCounties || !countyLines?.features?.length) return;
     const group = L.layerGroup();
-    // thin dim lines that sit under everything else and never eat a click
+    // clearly visible reference lines that still never eat a click — bright
+    // enough to read against dark AND satellite basemaps
     L.geoJSON(
       { type: "FeatureCollection", features: countyLines.features.filter((f) => f.geometry) } as GeoJSON.FeatureCollection,
-      { style: { color: C.dim, weight: 1, opacity: 0.55, fill: false }, interactive: false },
+      { style: { color: C.txt, weight: 1.6, opacity: 0.8, fill: false }, interactive: false },
     ).addTo(group);
     // one name label per county, at the vertex centroid of its largest ring
     const best: Record<string, { pts: number; lat: number; lon: number }> = {};
@@ -1131,9 +1132,10 @@ export default function MapPanel({
         icon: L.divIcon({
           className: "",
           html:
-            `<div style="font-family:var(--font-mono,monospace);font-size:9px;letter-spacing:1px;` +
-            `color:${C.dim};text-shadow:0 0 3px #000,0 0 3px #000;white-space:nowrap;` +
-            `transform:translate(-50%,-50%);text-transform:uppercase;pointer-events:none">${escHtml(name)}</div>`,
+            `<div style="font-family:var(--font-mono,monospace);font-size:10px;letter-spacing:1.5px;` +
+            `color:${C.txt};opacity:0.85;text-shadow:0 0 4px #000,0 0 4px #000,0 1px 3px #000;` +
+            `white-space:nowrap;transform:translate(-50%,-50%);text-transform:uppercase;` +
+            `pointer-events:none">${escHtml(name)}</div>`,
           iconSize: [0, 0],
         }),
       }).addTo(group);
