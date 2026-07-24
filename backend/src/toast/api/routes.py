@@ -801,6 +801,15 @@ def radio_channel_delete(request: Request, channel_id: str) -> dict:
     return {"ok": True}
 
 
+@router.get("/county-lines")
+def county_lines(request: Request, refresh: bool = False) -> dict:
+    """California county boundaries, generalized — the map's reference overlay.
+    Fires are dispatched and evacuations ordered county by county."""
+    from toast.pipeline.countylines import get_county_lines
+
+    return get_county_lines(_conn(request), refresh=refresh)
+
+
 @router.get("/evac-zones")
 def evac_zones(request: Request, refresh: bool = False) -> dict:
     """Elevated evacuation zones statewide from Cal OES — statuses VERBATIM.

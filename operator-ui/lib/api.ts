@@ -1307,6 +1307,21 @@ export type EvacZoneSet = {
 
 export const fetchEvacZones = () => get<EvacZoneSet>("/evac-zones");
 
+/* California county boundaries — the map's reference overlay (static, cached
+   30 days server-side). */
+export type CountyLineSet = {
+  type: "FeatureCollection";
+  features: {
+    type: "Feature";
+    geometry: GeoJSON.Geometry | null;
+    properties: { COUNTY_NAME: string | null };
+  }[];
+  count: number;
+  source?: string;
+  unavailable?: boolean;
+};
+export const fetchCountyLines = () => get<CountyLineSet>("/county-lines");
+
 /** On-demand evacuation card for a fire, rendered verbatim from Cal OES zones. */
 export const evacGraphicUrl = (incidentId: string) =>
   `/api/incidents/${encodeURIComponent(incidentId)}/evac-graphic.png`;

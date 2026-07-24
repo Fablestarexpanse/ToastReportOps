@@ -9,6 +9,7 @@ import {
   Camera,
   CameraSet,
   ClosureSet,
+  CountyLineSet,
   EvacZoneSet,
   FirisSet,
   FireWeatherSet,
@@ -21,6 +22,7 @@ import {
   fetchAircraft,
   fetchCameras,
   fetchClosures,
+  fetchCountyLines,
   fetchEvacZones,
   fetchFiris,
   fetchFireWeather,
@@ -325,6 +327,10 @@ export default function MapPanel({
   const [showFiris, setShowFiris] = useState(false);
   const [closures, setClosures] = useState<ClosureSet | null>(null);
   const [showClosures, setShowClosures] = useState(false);
+  // county boundaries: static reference layer, fetched once on first toggle
+  const [countyLines, setCountyLines] = useState<CountyLineSet | null>(null);
+  const [showCounties, setShowCounties] = useState(false);
+  const countyLayerRef = useRef<L.LayerGroup | null>(null);
   // the in-tool frame viewer: which camera, and a nonce so REFRESH re-asks
   const [viewCam, setViewCam] = useState<Camera | null>(null);
   const [frameNonce, setFrameNonce] = useState(0);
@@ -1082,6 +1088,60 @@ export default function MapPanel({
     closureLayerRef.current = group;
   }, [closures, showClosures, ready]);
 
+  // county boundaries: static — fetch once, the first time the layer turns on
+  useEffect(() => {
+    if (!showCounties || countyLines) return;
+    fetchCountyLines().then(setCountyLines).catch(() => {});
+  }, [showCounties, countyLines]);
+
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+    if (countyLayerRef.current) {
+      m.removeLayer(countyLayerRef.current);
+      countyLayerRef.current = null;
+    }
+    if (!showCounties || !countyLines?.features?.length) return;
+    const group = L.layerGroup();
+    // thin dim lines that sit under everything else and never eat a click
+    L.geoJSON(
+      { type: "FeatureCollection", features: countyLines.features.filter((f) => f.geometry) } as GeoJSON.FeatureCollection,
+      { style: { color: C.dim, weight: 1, opacity: 0.55, fill: false }, interactive: false },
+    ).addTo(group);
+    // one name label per county, at the vertex centroid of its largest ring
+    const best: Record<string, { pts: number; lat: number; lon: number }> = {};
+    for (const f of countyLines.features) {
+      const name = (f.properties?.COUNTY_NAME || "").replace(/ County$/i, "");
+      const g = f.geometry;
+      if (!name || !g) continue;
+      const polys = g.type === "Polygon" ? [g.coordinates] : g.type === "MultiPolygon" ? g.coordinates : [];
+      for (const poly of polys) {
+        const ring = poly?.[0];
+        if (!Array.isArray(ring) || ring.length < 3) continue;
+        let sx = 0, sy = 0;
+        for (const p of ring) { sx += p[0]; sy += p[1]; }
+        if (!best[name] || ring.length > best[name].pts) {
+          best[name] = { pts: ring.length, lat: sy / ring.length, lon: sx / ring.length };
+        }
+      }
+    }
+    for (const [name, c] of Object.entries(best)) {
+      L.marker([c.lat, c.lon], {
+        interactive: false,
+        icon: L.divIcon({
+          className: "",
+          html:
+            `<div style="font-family:var(--font-mono,monospace);font-size:9px;letter-spacing:1px;` +
+            `color:${C.dim};text-shadow:0 0 3px #000,0 0 3px #000;white-space:nowrap;` +
+            `transform:translate(-50%,-50%);text-transform:uppercase;pointer-events:none">${escHtml(name)}</div>`,
+          iconSize: [0, 0],
+        }),
+      }).addTo(group);
+    }
+    group.addTo(m);
+    countyLayerRef.current = group;
+  }, [countyLines, showCounties, ready]);
+
   // wind at each fire (authoritative NWS) + the ambient field (Open-Meteo grid)
   // — both refreshed on the servers' own caches
   useEffect(() => {
@@ -1371,6 +1431,12 @@ export default function MapPanel({
     {
       group: "BASE",
       rows: [
+        {
+          label: "County lines", accent: C.dim, on: showCounties,
+          toggle: () => setShowCounties((v) => !v),
+          avail: true, detail: countyLines ? `${countyLines.count}` : undefined,
+          note: "all 58 CA county boundaries + names — fires are dispatched and evacs ordered by county",
+        },
         { label: "Place labels", accent: C.txt, ...ov("labels"), avail: true, note: "names on top of any basemap" },
         { label: "Water", accent: C.txt, ...ov("water"), avail: true, note: "USGS streams and lakes" },
       ],
