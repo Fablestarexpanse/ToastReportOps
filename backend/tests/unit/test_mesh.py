@@ -89,9 +89,18 @@ class TestRegionGating:
         row = seeded.execute("SELECT * FROM mesh_nodes").fetchone()
         assert row["node_id"] == "!00000001" and row["in_region"] == 1
 
+    def test_socal_position_is_now_in_region(self, seeded):
+        # the statewide widening: a San Diego node is admitted just like a
+        # NorCal one — it would have been dropped under the old NorCal box
+        li = self._listener(seeded)
+        li._handle(_envelope(0x03, 7, _pos_data(32.72, -117.16)))  # San Diego
+        row = seeded.execute("SELECT * FROM mesh_nodes").fetchone()
+        assert row is not None and row["in_region"] == 1
+
     def test_far_position_with_unknown_gateway_is_dropped(self, seeded):
         li = self._listener(seeded)
-        li._handle(_envelope(0x02, 2, _pos_data(34.05, -118.24)))  # LA
+        # Columbus OH — well outside the statewide CA box, no local gateway
+        li._handle(_envelope(0x02, 2, _pos_data(39.96, -82.99)))
         assert seeded.execute("SELECT COUNT(*) FROM mesh_nodes").fetchone()[0] == 0
         assert li.dropped == 1
 

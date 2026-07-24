@@ -543,7 +543,7 @@ def incident_aqi(request: Request, incident_id: str, refresh: bool = False) -> d
 
 @router.get("/mesh/nodes")
 def mesh_nodes(request: Request, hours: int = Query(24, le=168)) -> dict:
-    """NorCal Meshtastic nodes heard recently, freshest first."""
+    """California Meshtastic nodes heard recently, freshest first."""
     rows = _conn(request).execute(
         """SELECT * FROM mesh_nodes
            WHERE unixepoch('now') - unixepoch(last_heard) < ? * 3600

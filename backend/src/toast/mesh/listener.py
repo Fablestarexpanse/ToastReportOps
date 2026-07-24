@@ -2,7 +2,7 @@
 
 Runs as its own compose service (a persistent subscription does not fit the
 job queue). Subscribes to the US LongFast topic on the public broker and keeps
-a NorCal picture:
+a statewide California picture:
 
 - a node becomes in_region when it reports a position inside the bbox;
 - a GATEWAY that is in-region hears its neighbourhood by RF, so everything it
@@ -42,8 +42,10 @@ PASSWORD = os.environ.get("MESH_MQTT_PASS", "large4cats")
 # regional roots too (msh/US/CA/..., msh/US/2/...), and pinning missed them all
 TOPIC = os.environ.get("MESH_MQTT_TOPIC", "msh/US/#")
 
-# NorCal: Sacramento valley + northern Sierra + coast range
-BBOX = (38.0, 42.0, -124.5, -119.5)  # lat min/max, lon min/max
+# All of California: from the Oregon line down to the Mexican border, coast to
+# the Nevada/Arizona edge. Wider than the old NorCal box on purpose — a mesh
+# node in Malibu or San Diego is as worth hearing as one on Paradise ridge.
+BBOX = (32.5, 42.1, -124.5, -114.0)  # lat min/max, lon min/max
 MESSAGE_RETAIN_H = 48
 PRUNE_EVERY_S = 600
 
@@ -184,7 +186,7 @@ class MeshListener:
         self.conn.execute(
             """INSERT INTO sources (id, name, type, adapter, tier, config, schedule,
                                     enabled, tos_notes, created_at, updated_at)
-               VALUES (?, 'NorCal Meshtastic mesh', 'community', 'mesh', 5, '{}', 'manual',
+               VALUES (?, 'California Meshtastic mesh', 'community', 'mesh', 5, '{}', 'manual',
                        1, 'Public MQTT relay of LoRa mesh chat; T5 community signal.', ?, ?)""",
             (sid, now, now),
         )
