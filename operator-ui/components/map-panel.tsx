@@ -363,6 +363,44 @@ export default function MapPanel({
   }, []);
   const effective = override ?? chosen;
 
+  // map screen-grab: ask the backend to render the CURRENT view (same centre,
+  // zoom, basemap) into a branded PNG — badge upper-left, tag band along the
+  // bottom — then pop it up centered with a download. Server-side render avoids
+  // the browser tile-CORS taint that breaks canvas capture of Leaflet.
+  const [snapUrl, setSnapUrl] = useState<string | null>(null);
+  const [snapping, setSnapping] = useState(false);
+  const closeSnap = useCallback(() => {
+    setSnapUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+  }, []);
+  const doSnapshot = useCallback(async () => {
+    const m = map.current;
+    if (!m || snapping) return;
+    setSnapping(true);
+    try {
+      const c = m.getCenter();
+      const size = m.getSize();
+      const zoom = Math.round(m.getZoom());
+      const w = Math.min(2000, Math.max(320, Math.round(size.x)));
+      const h = Math.min(1400, Math.max(240, Math.round(size.y)));
+      const q = `lat=${c.lat.toFixed(5)}&lon=${c.lng.toFixed(5)}&zoom=${zoom}&w=${w}&h=${h}&basemap=${encodeURIComponent(effective)}`;
+      const res = await fetch(`/api/map/snapshot.png?${q}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(String(res.status));
+      const blob = await res.blob();
+      setSnapUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return URL.createObjectURL(blob);
+      });
+    } catch {
+      setTileError(true); // reuse the map's soft-error banner; never throw
+    } finally {
+      setSnapping(false);
+    }
+  }, [effective, snapping]);
+  useEffect(() => () => closeSnap(), [closeSnap]); // revoke on unmount
+
   // create once
   useEffect(() => {
     if (map.current || !holder.current) return;
@@ -1668,6 +1706,20 @@ export default function MapPanel({
           >
             {layersOpen ? "▾" : "▸"} LAYERS{activeLayers ? ` (${activeLayers})` : ""}
           </span>
+          <span
+            onClick={doSnapshot}
+            title="save a shareable image of the current map view — logo + tags baked in"
+            style={{
+              cursor: snapping ? "wait" : "pointer",
+              color: snapping ? C.faint : C.txt,
+              border: `1px solid ${C.line}`,
+              borderRadius: 3,
+              padding: "1px 6px",
+              fontWeight: 700,
+            }}
+          >
+            {snapping ? "…RENDERING" : "◉ SNAPSHOT"}
+          </span>
           <span>{placed.length} fires · click a pin</span>
           {evacCount > 0 && (
             <span style={{ color: C.evac, display: "flex", alignItems: "center", gap: 4 }}>
@@ -1679,6 +1731,71 @@ export default function MapPanel({
       </div>
 
       <MapKey open={showKey} onToggle={() => setShowKey((v) => !v)} />
+
+      {/* map snapshot: centered preview with a download. Click the backdrop or
+          CLOSE to dismiss; the object URL is revoked so nothing leaks. */}
+      {snapUrl && (
+        <div
+          onClick={closeSnap}
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: Z.mapControl + 100,
+            background: "#000b",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: C.panel,
+              border: `1px solid ${C.line}`,
+              borderRadius: 8,
+              padding: 12,
+              maxWidth: "94%",
+              maxHeight: "94%",
+              display: "flex",
+              flexDirection: "column",
+              gap: 9,
+              boxShadow: "0 12px 48px #000d",
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={snapUrl}
+              alt="map snapshot"
+              style={{ maxWidth: "100%", maxHeight: "74vh", objectFit: "contain", borderRadius: 4, display: "block" }}
+            />
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <span style={{ flex: 1, fontFamily: font.mono, fontSize: 9, color: C.dim }}>
+                current map view · logo &amp; tags baked in · save or drag out
+              </span>
+              <a
+                href={snapUrl}
+                download={`toast-map-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "")}.png`}
+                style={{
+                  fontFamily: font.mono, fontSize: 10, fontWeight: 700, textDecoration: "none",
+                  color: C.bg, background: C.ember, borderRadius: 4, padding: "5px 14px",
+                }}
+              >
+                ⇩ DOWNLOAD PNG
+              </a>
+              <span
+                onClick={closeSnap}
+                style={{
+                  cursor: "pointer", fontFamily: font.mono, fontSize: 10, color: C.dim,
+                  border: `1px solid ${C.line}`, borderRadius: 4, padding: "5px 12px",
+                }}
+              >
+                CLOSE
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {viewCam && cameras && (
         /* In-tool frame viewer. The image loads in THIS browser directly from

@@ -2040,6 +2040,30 @@ def get_evac_graphic(request: Request, incident_id: str):
     return Response(content=png, media_type="image/png")
 
 
+@router.get("/map/snapshot.png")
+def map_snapshot(
+    request: Request,
+    lat: float,
+    lon: float,
+    zoom: float = 8,
+    w: int = 1200,
+    h: int = 700,
+    basemap: str = "dark",
+):
+    """A shareable grab of the OPS map at the operator's current view — same
+    centre, zoom and basemap, stitched server-side (no browser tile-CORS taint).
+    Active fires ride on top from the ledger; brand badge upper-left; a tag band
+    with brand line, tile credit and generation time along the bottom."""
+    from fastapi import Response
+
+    from toast.pipeline.graphics import generate_map_snapshot
+
+    png = generate_map_snapshot(
+        _conn(request), lat, lon, int(round(zoom)), w, h, basemap
+    )
+    return Response(content=png, media_type="image/png")
+
+
 @router.get("/publish/channels")
 def publish_channels(request: Request) -> dict:
     """Which social channels have working credentials — the release checkboxes."""

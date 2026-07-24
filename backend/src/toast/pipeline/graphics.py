@@ -666,6 +666,138 @@ def generate_state_card(conn: sqlite3.Connection) -> bytes:
     return buf.getvalue()
 
 
+# ------------------------------------------------------- live map snapshot
+
+# basemap key -> (tile url, credit line). Mirrors the on-map basemap switcher so
+# a snapshot looks like what the operator was looking at. USGS services put the
+# row before the column ({z}/{y}/{x}); the XYZ tile servers use {z}/{x}/{y}.
+SNAP_BASEMAPS: dict[str, tuple[str, str]] = {
+    "dark": (TILE_URL, "(c) OpenStreetMap  (c) CARTO"),
+    "satellite": (SAT_TILE_URL, "Imagery: USGS The National Map (public domain)"),
+    "osm": ("https://a.tile.openstreetmap.org/{z}/{x}/{y}.png", "(c) OpenStreetMap"),
+    "street": ("https://a.tile.openstreetmap.org/{z}/{x}/{y}.png", "(c) OpenStreetMap"),
+    "terrain": ("https://a.tile.opentopomap.org/{z}/{x}/{y}.png", "(c) OpenTopoMap (CC-BY-SA)"),
+    "topo": (
+        "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/"
+        "MapServer/tile/{z}/{y}/{x}",
+        "USGS The National Map (public domain)",
+    ),
+}
+
+
+def generate_map_snapshot(
+    conn: sqlite3.Connection,
+    lat: float,
+    lon: float,
+    zoom: int,
+    w: int,
+    h: int,
+    basemap: str = "dark",
+) -> bytes:
+    """A shareable grab of the OPS map exactly where the operator is looking —
+    same centre, zoom and basemap, freshly stitched server-side so no browser
+    tile-CORS taint. Active fires are drawn on top from the ledger (ring sized by
+    acres, pink under evacuation), the brand badge rides the upper-left, and a
+    tag band along the bottom carries the brand line, tile credit and the
+    generation time so a screenshot seen later still says when it was true."""
+    w = max(320, min(2400, int(w)))
+    h = max(240, min(1600, int(h)))
+    zoom = max(3, min(17, int(zoom)))
+    url, credit = SNAP_BASEMAPS.get(basemap, SNAP_BASEMAPS["dark"])
+
+    strip = _stitch_map(lat, lon, zoom=zoom, w=w, h=h, url=url)
+    d = ImageDraw.Draw(strip)
+
+    # active fires from the ledger, placed in the frame — the same picture the
+    # OPS map paints, so the snapshot matches what was on screen
+    from toast.pipeline.evacstate import evac_state, zone_index
+
+    rows = conn.execute(
+        "SELECT id, canonical_name, lat, lon FROM incidents"
+        " WHERE status = 'active' AND lat IS NOT NULL AND lon IS NOT NULL"
+    ).fetchall()
+    zidx = zone_index(conn)
+    cx, cy = _tile_frac(lat, lon, zoom)
+    px0, py0 = cx * TILE - w / 2, cy * TILE - h / 2
+    # place fires biggest-first so the largest fires win the scarce label slots
+    placed: list[dict] = []
+    for r in rows:
+        fx, fy = _tile_frac(r["lat"], r["lon"], zoom)
+        x, yv = fx * TILE - px0, fy * TILE - py0
+        if not (0 < x < w and 0 < yv < h):
+            continue
+        acres = _latest(conn, r["id"], "acreage", "acreage") or 0
+        evac = evac_state(conn, r["id"], zone_index=zidx).status
+        placed.append({"x": x, "y": yv, "acres": acres, "evac": evac, "name": r["canonical_name"]})
+    placed.sort(key=lambda p: p["acres"], reverse=True)
+
+    lbl_font = _font(15)
+    label_boxes: list[tuple[float, float, float, float]] = []
+    for p in placed:
+        x, yv, acres = p["x"], p["y"], p["acres"]
+        col = EVAC if p["evac"] in ("order", "warning", "shelter_in_place") else EMBER
+        rad = max(5, min(18, 4 + math.log10(acres + 1) * 2.7))
+        for rr, cc, wdt in ((rad, col, 3), (max(3, rad - 7), TXT, 2)):
+            d.ellipse([(x - rr, yv - rr), (x + rr, yv + rr)], outline=cc, width=wdt)
+        name = (p["name"] or "").upper()[:22]
+        right = x < w - 150
+        tw = d.textlength(name, font=lbl_font)
+        lx = x + rad + 5 if right else x - rad - 5 - tw
+        bx0, by0, bx1, by1 = lx, yv - 9, lx + tw, yv + 9
+        # skip a label that would land on one already drawn — the ring still shows
+        if any(bx0 < b[2] and bx1 > b[0] and by0 < b[3] and by1 > b[1] for b in label_boxes):
+            continue
+        box = (bx0, by0, bx1, by1)
+        label_boxes.append(box)
+        d.text((lx if right else x - rad - 5, yv - 8), name, font=lbl_font, fill=TXT,
+               anchor="la" if right else "ra")
+    drawn = len(placed)
+
+    # translucent chrome: a backing for the logo, a band for the tags — one
+    # alpha-composite so both sit cleanly over any basemap
+    base = strip.convert("RGBA")
+    band_h = 34
+    overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    od = ImageDraw.Draw(overlay)
+    od.rectangle([(0, 0), (min(w, 360), 58)], fill=(16, 20, 26, 170))
+    od.rectangle([(0, h - band_h), (w, h)], fill=(16, 20, 26, 200))
+    base = Image.alpha_composite(base, overlay)
+    d = ImageDraw.Draw(base)
+
+    # logo, upper-left
+    from toast.core.appsettings import brand_line
+    from toast.core.timefmt import civilian
+
+    badge_path = Path(__file__).resolve().parents[1] / "assets" / "ops-badge.png"
+    tx = 14
+    if badge_path.exists():
+        badge = Image.open(badge_path).convert("RGBA")
+        badge.thumbnail((40, 40), Image.LANCZOS)
+        base.paste(badge, (14, 9), badge)
+        tx = 14 + badge.width + 10
+    d.text((tx, 14), "TOAST REPORT OPS", font=_font(20), fill=EMBER)
+    d.text((tx, 38), "CALIFORNIA WILDFIRE OPS", font=_font(12), fill=DIM)
+
+    # tag band, along the bottom: brand line left, tile credit centre-right,
+    # generation stamp far right
+    by = h - band_h + 9
+    brand = brand_line(conn)
+    d.text((14, by), (brand or "Toast Report OPS")[:64], font=_font(15), fill=TXT)
+    d.text((w - 250, by + 2), credit, font=_font(12), fill=DIM, anchor="ra")
+    d.text(
+        (w - 14, by + 2), f"generated {civilian(utcnow())}",
+        font=_font(13), fill=DIM, anchor="ra",
+    )
+
+    out = base.convert("RGB")
+    buf = io.BytesIO()
+    out.save(buf, format="PNG", optimize=True)
+    get_logger("graphics").info(
+        "map_snapshot_rendered", fires=drawn, zoom=zoom, size=f"{w}x{h}", bytes=buf.tell()
+    )
+    return buf.getvalue()
+
+
 # --------------------------------------------------------------- evacuation card
 
 # status -> the public alarm convention, matching the map and the workstation:
