@@ -30,11 +30,12 @@ function batteryColor(b: number | null): string {
   return C.emberHot;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export default function MeshMode({ toast }: { toast: (m: string) => void }) {
   const [nodes, setNodes] = useState<MeshNodes | null>(null);
   const [messages, setMessages] = useState<MeshMessages | null>(null);
   const [selNode, setSelNode] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [fireOnly, setFireOnly] = useState(false);
 
   const holder = useRef<HTMLDivElement | null>(null);
   const map = useRef<L.Map | null>(null);
@@ -45,7 +46,7 @@ export default function MeshMode({ toast }: { toast: (m: string) => void }) {
     let live = true;
     const tick = () => {
       fetchMeshNodes().then((n) => live && setNodes(n)).catch(() => undefined);
-      fetchMeshMessages().then((m) => live && setMessages(m)).catch(() => undefined);
+      fetchMeshMessages({ search, fireOnly }).then((m) => live && setMessages(m)).catch(() => undefined);
     };
     tick();
     const t = setInterval(tick, POLL_MS);
@@ -53,7 +54,7 @@ export default function MeshMode({ toast }: { toast: (m: string) => void }) {
       live = false;
       clearInterval(t);
     };
-  }, []);
+  }, [search, fireOnly]);
 
   useEffect(() => {
     if (map.current || !holder.current) return;
@@ -107,6 +108,16 @@ export default function MeshMode({ toast }: { toast: (m: string) => void }) {
     setSelNode(nodeId);
     const n = nodes?.nodes.find((x) => x.node_id === nodeId);
     if (n && n.lat != null && n.lon != null) map.current?.setView([n.lat, n.lon], 12);
+  };
+
+  // a fire message pins to the sender's node — click it to fly there
+  const flyToMessage = (m: { node_id: string; lat: number | null; lon: number | null }) => {
+    if (m.lat != null && m.lon != null) {
+      setSelNode(m.node_id);
+      map.current?.setView([m.lat, m.lon], 12);
+    } else {
+      toast("this sender hasn't reported a position yet — no pin to fly to");
+    }
   };
 
   return (
@@ -166,21 +177,81 @@ export default function MeshMode({ toast }: { toast: (m: string) => void }) {
         </div>
 
         <div style={{ padding: "8px 12px" }}>
-          <div style={{ fontFamily: font.disp, fontSize: 11, letterSpacing: 2, color: C.faint, marginBottom: 4 }}>
-            MESH TRAFFIC {messages ? `(${messages.count})` : ""}
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 5 }}>
+            <span style={{ fontFamily: font.disp, fontSize: 11, letterSpacing: 2, color: C.faint }}>
+              MESH TRAFFIC {messages ? `(${messages.count})` : ""}
+            </span>
+            {messages && messages.fire_count > 0 && (
+              <span
+                onClick={() => setFireOnly((v) => !v)}
+                title="the always-on scan escalated these to WATCH"
+                style={{ fontFamily: font.mono, fontSize: 8, color: C.evac, cursor: "pointer" }}
+              >
+                🔥 {messages.fire_count} fire
+              </span>
+            )}
+            <span
+              onClick={() => setFireOnly((v) => !v)}
+              style={{
+                marginLeft: "auto", fontFamily: font.mono, fontSize: 8, cursor: "pointer",
+                padding: "1px 6px", borderRadius: 3,
+                border: `1px solid ${fireOnly ? C.evac : C.line}`, color: fireOnly ? C.evac : C.dim,
+              }}
+            >
+              🔥 FIRE ONLY
+            </span>
+          </div>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="⌕ search mesh text…"
+            style={{ width: "100%", background: C.bg, border: `1px solid ${C.line}`, borderRadius: 4, color: C.txt, fontFamily: font.mono, fontSize: 9, padding: "3px 7px", marginBottom: 6 }}
+          />
+          <div style={{ fontFamily: font.mono, fontSize: 7.5, color: C.faint, marginBottom: 5, lineHeight: 1.5 }}>
+            every text is scanned for fire words on arrival; a hit becomes a T5 WATCH
+            signal (the AI judges it there) and is pinned to the sender node.
           </div>
           {messages && messages.count === 0 && (
             <div style={{ fontFamily: font.mono, fontSize: 9, color: C.dim }}>
-              no text heard yet — most mesh traffic is position beacons
+              {fireOnly || search
+                ? "nothing matches — clear the filter"
+                : "no text heard yet; most mesh traffic is position beacons"}
             </div>
           )}
-          {(messages?.messages ?? []).map((msg) => (
-            <div key={msg.id} style={{ padding: "4px 0", fontFamily: font.mono, fontSize: 9.5, borderBottom: `1px solid ${C.line}33` }}>
-              <span style={{ color: "#7bd88f" }}>{msg.long_name ?? msg.short_name ?? msg.node_id}</span>
-              <span style={{ color: C.faint, fontSize: 8 }}> · {fmtStamp(msg.rx_at)}</span>
-              <div style={{ color: C.dim, marginTop: 1 }}>{msg.text}</div>
-            </div>
-          ))}
+          {(messages?.messages ?? []).map((msg) => {
+            const fire = msg.is_fire === 1;
+            return (
+              <div
+                key={msg.id}
+                onClick={() => fire && flyToMessage(msg)}
+                style={{
+                  padding: "4px 6px",
+                  margin: "0 -4px",
+                  fontFamily: font.mono,
+                  fontSize: 9.5,
+                  borderBottom: `1px solid ${C.line}33`,
+                  borderLeft: fire ? `2px solid ${C.evac}` : "2px solid transparent",
+                  background: fire ? C.evac + "10" : undefined,
+                  cursor: fire ? "pointer" : "default",
+                }}
+                title={fire ? "fire mention — click to fly to the sender's node" : undefined}
+              >
+                <span style={{ color: fire ? C.evac : "#7bd88f" }}>
+                  {msg.long_name ?? msg.short_name ?? msg.node_id}
+                </span>
+                <span style={{ color: C.faint, fontSize: 8 }}> · {fmtStamp(msg.rx_at)}</span>
+                {fire && (
+                  <span
+                    title="fed the WATCH board as a T5 possible-new-start signal"
+                    style={{ color: C.violet, marginLeft: 6, fontSize: 7.5, border: `1px solid ${C.violet}66`, borderRadius: 3, padding: "0 4px" }}
+                  >
+                    → WATCH
+                  </span>
+                )}
+                <div style={{ color: fire ? C.txt : C.dim, marginTop: 1 }}>{msg.text}</div>
+              </div>
+            );
+          })}
         </div>
       </div>
 

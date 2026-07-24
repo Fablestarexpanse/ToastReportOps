@@ -22,6 +22,7 @@ The MESH tab says so.
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import time
@@ -46,9 +47,24 @@ BBOX = (38.0, 42.0, -124.5, -119.5)  # lat min/max, lon min/max
 MESSAGE_RETAIN_H = 48
 PRUNE_EVERY_S = 600
 
+# The always-on scan. A mesh text that trips one of these is escalated to the
+# WATCH board as a T5 signal, where the existing AI (classify_watch) judges it
+# new-vs-old — the same path radio transcripts take. Cheap keyword gate first
+# because this rides a firehose; the model work happens once, in WATCH, on
+# what survives clustering, not on every position beacon.
+FIRE_WORDS = (
+    "fire", "smoke", "wildfire", "flames", "burning", "spot fire", "ember",
+    "evac", "evacuat", "structure", "brush", "grass fire", "column",
+)
+
 
 def _in_bbox(lat: float, lon: float) -> bool:
     return BBOX[0] <= lat <= BBOX[1] and BBOX[2] <= lon <= BBOX[3]
+
+
+def _looks_fire(text: str) -> bool:
+    low = text.lower()
+    return any(w in low for w in FIRE_WORDS)
 
 
 class MeshListener:
@@ -142,14 +158,103 @@ class MeshListener:
             fields["hops"] = decoded.get("hops")
             self._upsert(node, fields, gateway=gateway)
             if kind == "text":
-                self.conn.execute(
+                cur = self.conn.execute(
                     """INSERT INTO mesh_messages (node_id, gateway_id, channel, text, rx_at)
                        VALUES (?, ?, ?, ?, ?)""",
                     (node, gateway, decoded.get("channel"), decoded["text"], utcnow()),
                 )
+                if _looks_fire(decoded["text"]):
+                    self._feed_watch(cur.lastrowid, node, decoded["text"])
             self.kept += 1
         self.conn.commit()
         self._maybe_prune()
+
+    def _mesh_source(self) -> str:
+        """The single sources row mesh-watch facts hang off. Tier 5 — community
+        RF, quarantined from drafts and evac displays like every T5 source."""
+        row = self.conn.execute(
+            "SELECT id FROM sources WHERE adapter = 'mesh' LIMIT 1"
+        ).fetchone()
+        if row:
+            return row["id"]
+        from toast.core.ids import ulid
+
+        sid = ulid()
+        now = utcnow()
+        self.conn.execute(
+            """INSERT INTO sources (id, name, type, adapter, tier, config, schedule,
+                                    enabled, tos_notes, created_at, updated_at)
+               VALUES (?, 'NorCal Meshtastic mesh', 'community', 'mesh', 5, '{}', 'manual',
+                       1, 'Public MQTT relay of LoRa mesh chat; T5 community signal.', ?, ?)""",
+            (sid, now, now),
+        )
+        return sid
+
+    def _feed_watch(self, message_id: int, node: str, text: str) -> None:
+        """A fire-worded mesh text becomes a T5 fact so WATCH can cluster and
+        the AI can judge it — the same shape radio transcripts use. Best-effort:
+        a WATCH-feed failure must never drop the message or kill the listener.
+
+        The sender's last known position rides along so a promoted watch can pin
+        to the map, and the node's name is carried for the operator to eyeball.
+        """
+        try:
+            from toast.core.ids import ulid
+
+            src = self._mesh_source()
+            pos = self.conn.execute(
+                "SELECT lat, lon, long_name, short_name FROM mesh_nodes WHERE node_id = ?",
+                (node,),
+            ).fetchone()
+            now = utcnow()
+            env_id = ulid()
+            self.conn.execute(
+                """INSERT INTO envelopes (id, source_id, external_id, kind, payload,
+                                          content_hash, fetched_at)
+                   VALUES (?, ?, ?, 'report', ?, ?, ?)""",
+                (
+                    env_id,
+                    src,
+                    f"mesh:{message_id}",
+                    json.dumps(
+                        {
+                            "node": node,
+                            "text": text,
+                            "lat": pos["lat"] if pos else None,
+                            "lon": pos["lon"] if pos else None,
+                        }
+                    ),
+                    f"mesh-{message_id}",
+                    now,
+                ),
+            )
+            fact_id = ulid()
+            who = (pos and (pos["long_name"] or pos["short_name"])) or node
+            content = f"[mesh {who}] {text}"[:500]
+            self.conn.execute(
+                """INSERT INTO facts (id, incident_id, envelope_id, source_id, tier, content,
+                                      kind, structured, confidence, observed_at, ingested_at,
+                                      lat, lon, geo_method)
+                   VALUES (?, NULL, ?, ?, 5, ?, 'start', '{}', 0.3, ?, ?, ?, ?, ?)""",
+                (
+                    fact_id,
+                    env_id,
+                    src,
+                    content,
+                    now,
+                    now,
+                    pos["lat"] if pos else None,
+                    pos["lon"] if pos else None,
+                    "source_fixed" if (pos and pos["lat"] is not None) else None,
+                ),
+            )
+            self.conn.execute(
+                "UPDATE mesh_messages SET is_fire = 1, watch_fact_id = ? WHERE id = ?",
+                (fact_id, message_id),
+            )
+            self.log.info("mesh_fire_watch", node=node, message_id=message_id)
+        except Exception as exc:
+            self.log.warning("mesh_watch_feed_error", error=str(exc)[:120])
 
     def _maybe_prune(self) -> None:
         if time.monotonic() - self._last_prune < PRUNE_EVERY_S:

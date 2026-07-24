@@ -559,16 +559,36 @@ def mesh_nodes(request: Request, hours: int = Query(24, le=168)) -> dict:
 
 
 @router.get("/mesh/messages")
-def mesh_messages(request: Request, limit: int = Query(100, le=500)) -> dict:
+def mesh_messages(
+    request: Request,
+    limit: int = Query(100, le=500),
+    search: str = Query("", max_length=100),
+    fire_only: bool = False,
+) -> dict:
     """Recent mesh text traffic (48 h retained). Community text: shown inert,
-    never rendered as markup, never treated as fact."""
+    never rendered as markup, never treated as fact. is_fire marks messages the
+    always-on scan escalated to WATCH; the sender's node position rides along so
+    a fire message can pin to the map."""
+    where = []
+    params: list[Any] = []
+    if fire_only:
+        where.append("m.is_fire = 1")
+    if search.strip():
+        where.append("m.text LIKE ?")
+        params.append(f"%{search.strip()}%")
+    clause = f"WHERE {' AND '.join(where)}" if where else ""
     rows = _conn(request).execute(
-        """SELECT m.*, n.long_name, n.short_name FROM mesh_messages m
+        f"""SELECT m.*, n.long_name, n.short_name, n.lat, n.lon FROM mesh_messages m
            LEFT JOIN mesh_nodes n ON n.node_id = m.node_id
+           {clause}
            ORDER BY m.rx_at DESC LIMIT ?""",
-        (limit,),
+        (*params, limit),
     ).fetchall()
-    return {"messages": [dict(r) for r in rows], "count": len(rows)}
+    fire_count = _conn(request).execute(
+        "SELECT COUNT(*) FROM mesh_messages WHERE is_fire = 1"
+        " AND unixepoch('now') - unixepoch(rx_at) < 48 * 3600"
+    ).fetchone()[0]
+    return {"messages": [dict(r) for r in rows], "count": len(rows), "fire_count": fire_count}
 
 
 @router.get("/radio/calls")

@@ -1439,12 +1439,22 @@ export type MeshMessage = {
   rx_at: string;
   long_name: string | null;
   short_name: string | null;
+  is_fire: number;
+  watch_fact_id: string | null;
+  lat: number | null;
+  lon: number | null;
 };
 
-export type MeshMessages = { messages: MeshMessage[]; count: number };
+export type MeshMessages = { messages: MeshMessage[]; count: number; fire_count: number };
 
 export const fetchMeshNodes = () => get<MeshNodes>("/mesh/nodes");
-export const fetchMeshMessages = () => get<MeshMessages>("/mesh/messages");
+export const fetchMeshMessages = (opts?: { search?: string; fireOnly?: boolean }) => {
+  const q = new URLSearchParams();
+  if (opts?.search?.trim()) q.set("search", opts.search.trim());
+  if (opts?.fireOnly) q.set("fire_only", "true");
+  const qs = q.toString();
+  return get<MeshMessages>(`/mesh/messages${qs ? `?${qs}` : ""}`);
+};
 
 export type RadioCall = {
   id: string;
