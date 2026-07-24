@@ -1001,6 +1001,35 @@ export type Analytics = {
     lead_time_median_s: number | null;
     superseded_rate: number | null;
   }[];
+  season: {
+    year: string;
+    fires_ytd: number;
+    acres_ytd: number;
+    weekly_starts: { week: string; fires: number }[];
+  };
+  records: {
+    biggest_fire: { name: string; acres: number } | null;
+    fastest_growth: { name: string; acres_per_hour: number } | null;
+    longest_burning: { name: string; days: number } | null;
+    busiest_day: { day: string; facts: number } | null;
+    most_corroborated: { content: string; name: string | null; n: number } | null;
+  };
+  detection: { measured: number; beats: { name: string; lead_s: number }[]; beat_count: number };
+  growth_curves: { name: string; points: { t: string; acres: number }[] }[];
+  containment_race: { name: string; pct: number; acres: number | null }[];
+  newsroom: {
+    drafted: number;
+    published: number;
+    deliveries: number;
+    median_hours_to_approve: number | null;
+  };
+  radio: { calls: number; airtime_s: number; transcribed: number; watch_hits: number };
+  dedup: { envelopes: number; facts: number; near_duplicates_flagged: number };
+  aircraft: {
+    sightings: number;
+    hulls: number;
+    busiest: { ident: string; n: number } | null;
+  };
 };
 
 export const fetchAnalytics = (days = 14) => get<Analytics>(`/analytics?days=${days}`);

@@ -82,6 +82,47 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
 
 const pct = (v: number | null) => (v == null ? "—" : `${Math.round(v * 100)}%`);
 
+const fmtLead = (s: number) =>
+  s >= 86_400 ? `${(s / 86_400).toFixed(1)}d` : s >= 3_600 ? `${(s / 3_600).toFixed(1)}h` : `${Math.round(s / 60)}m`;
+
+/* Multi-fire growth overlay: one polyline per fire, each normalized to the
+   shared time span and the biggest fire's scale — SVG, no library. */
+const CURVE_COLORS = [C.emberHot, C.blue, C.ok, C.violet, C.warn];
+
+function GrowthOverlay({ curves }: { curves: Analytics["growth_curves"] }) {
+  const W = 560;
+  const H = 130;
+  const all = curves.flatMap((c) => c.points);
+  if (!all.length) return null;
+  const t0 = Math.min(...all.map((p) => +new Date(p.t)));
+  const t1 = Math.max(...all.map((p) => +new Date(p.t)));
+  const vMax = Math.max(...all.map((p) => p.acres), 1);
+  const x = (t: string) => (t1 > t0 ? ((+new Date(t) - t0) / (t1 - t0)) * (W - 8) + 4 : W / 2);
+  const y = (a: number) => H - 6 - (a / vMax) * (H - 16);
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }}>
+        {curves.map((c, i) => (
+          <polyline
+            key={c.name}
+            fill="none"
+            stroke={CURVE_COLORS[i % CURVE_COLORS.length]}
+            strokeWidth={1.8}
+            points={c.points.map((p) => `${x(p.t).toFixed(1)},${y(p.acres).toFixed(1)}`).join(" ")}
+          />
+        ))}
+      </svg>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 4 }}>
+        {curves.map((c, i) => (
+          <span key={c.name} style={{ fontFamily: font.mono, fontSize: 8.5, color: CURVE_COLORS[i % CURVE_COLORS.length] }}>
+            ━ {c.name} ({Math.round(c.points[c.points.length - 1].acres).toLocaleString()} ac)
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function AnalyticsMode() {
   const [data, setData] = useState<Analytics | null>(null);
   const [days, setDays] = useState(14);
@@ -157,6 +198,108 @@ export default function AnalyticsMode() {
           sub={`${q.assessed} assessed`}
           color={C.ok}
         />
+        <Stat
+          label={`FIRES ${data.season.year}`}
+          value={String(data.season.fires_ytd)}
+          sub="year to date"
+          color={C.ember}
+        />
+        <Stat
+          label={`ACRES ${data.season.year}`}
+          value={Math.round(data.season.acres_ytd).toLocaleString()}
+          sub="peak acreage summed, YTD"
+          color={C.emberHot}
+        />
+      </div>
+
+      {/* -------- the record board + the race we exist to win -------- */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 12, marginBottom: 12 }}>
+        <Section title="🏆 RECORD BOARD" hint="real rows, never estimates">
+          <div style={{ display: "grid", gap: 6 }}>
+            {([
+              ...(data.records.biggest_fire
+                ? [{ label: "BIGGEST FIRE", value: `${data.records.biggest_fire.name} — ${Math.round(data.records.biggest_fire.acres).toLocaleString()} ac`, color: C.emberHot }]
+                : []),
+              ...(data.records.fastest_growth
+                ? [{ label: "FASTEST RUN", value: `${data.records.fastest_growth.name} — ${Math.round(data.records.fastest_growth.acres_per_hour).toLocaleString()} ac/hr`, color: C.evac }]
+                : []),
+              ...(data.records.longest_burning
+                ? [{ label: "LONGEST BURNING", value: `${data.records.longest_burning.name} — day ${data.records.longest_burning.days + 1}`, color: C.warn }]
+                : []),
+              ...(data.records.busiest_day
+                ? [{ label: "BUSIEST LEDGER DAY", value: `${data.records.busiest_day.day} — ${data.records.busiest_day.facts.toLocaleString()} facts`, color: C.blue }]
+                : []),
+              ...(data.records.most_corroborated
+                ? [{ label: "MOST-CONFIRMED FACT", value: `${data.records.most_corroborated.n} sources agree${data.records.most_corroborated.name ? ` (${data.records.most_corroborated.name})` : ""}`, color: C.ok }]
+                : []),
+            ] as { label: string; value: string; color: string }[])
+              .map((r) => (
+                <div key={r.label} style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+                  <span style={{ fontFamily: font.mono, fontSize: 8, color: C.faint, letterSpacing: 1, width: 130, flexShrink: 0 }}>
+                    {r.label}
+                  </span>
+                  <span style={{ fontFamily: font.disp, fontSize: 13, fontWeight: 700, color: r.color }}>
+                    {r.value}
+                  </span>
+                </div>
+              ))}
+          </div>
+        </Section>
+
+        <Section
+          title="⚡ WE KNEW FIRST"
+          hint={`ledger vs first official record · ${data.detection.beat_count} of ${data.detection.measured} fires beaten`}
+        >
+          {data.detection.beats.length ? (
+            data.detection.beats.map((b) => (
+              <div key={b.name} style={{ display: "flex", gap: 8, alignItems: "baseline", padding: "3px 0" }}>
+                <span style={{ fontFamily: font.disp, fontSize: 13, fontWeight: 700, color: C.ok }}>
+                  +{fmtLead(b.lead_s)}
+                </span>
+                <span style={{ fontSize: 11 }}>{b.name}</span>
+                <span style={{ fontFamily: font.mono, fontSize: 8, color: C.faint }}>
+                  ahead of the first official record
+                </span>
+              </div>
+            ))
+          ) : (
+            <div style={{ fontFamily: font.mono, fontSize: 9.5, color: C.faint }}>
+              no beats measured yet — watch/radio signals are how this number grows
+            </div>
+          )}
+          <div style={{ fontFamily: font.mono, fontSize: 7.5, color: C.faint, marginTop: 6 }}>
+            honest caveat: fires first learned FROM an official listing count as ties, not beats
+          </div>
+        </Section>
+
+        <Section title="🏁 CONTAINMENT RACE" hint="active fires, race to 100%">
+          {data.containment_race.map((f) => (
+            <div key={f.name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "2px 0" }}>
+              <span style={{ fontFamily: font.mono, fontSize: 9, color: C.dim, width: 110, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {f.name}
+              </span>
+              <div style={{ flex: 1, height: 8, background: C.line + "66", borderRadius: 3, overflow: "hidden" }}>
+                <div
+                  style={{
+                    width: `${f.pct}%`,
+                    height: "100%",
+                    background: f.pct >= 90 ? C.ok : f.pct >= 50 ? C.warn : C.emberHot,
+                    borderRadius: 3,
+                  }}
+                />
+              </div>
+              <span style={{ fontFamily: font.mono, fontSize: 9, color: C.txt, width: 34, textAlign: "right" }}>
+                {Math.round(f.pct)}%
+              </span>
+            </div>
+          ))}
+        </Section>
+
+        {data.growth_curves.length > 0 && (
+          <Section title="📈 GROWTH CURVES" hint="largest active fires — supersession IS the history">
+            <GrowthOverlay curves={data.growth_curves} />
+          </Section>
+        )}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 12 }}>
@@ -268,6 +411,95 @@ export default function AnalyticsMode() {
             </div>
           ))}
         </Section>
+
+        <Section title="🗑 NOISE EATEN" hint={`last ${data.window_days} days — dedup earning its keep`}>
+          <div style={{ display: "grid", gap: 7 }}>
+            {[
+              { label: "RAW ITEMS INGESTED", value: data.dedup.envelopes.toLocaleString(), color: C.dim },
+              { label: "BECAME FACTS", value: data.dedup.facts.toLocaleString(), color: C.txt },
+              {
+                label: "NEAR-DUPLICATES FLAGGED",
+                value: data.dedup.near_duplicates_flagged.toLocaleString(),
+                color: C.ok,
+              },
+            ].map((r) => (
+              <div key={r.label} style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                <span style={{ fontFamily: font.mono, fontSize: 9, color: C.dim, width: 175 }}>{r.label}</span>
+                <span style={{ fontFamily: font.disp, fontSize: 17, fontWeight: 700, color: r.color }}>{r.value}</span>
+              </div>
+            ))}
+          </div>
+        </Section>
+
+        <Section title="📰 NEWSROOM PACE" hint={`last ${data.window_days} days`}>
+          <div style={{ display: "grid", gap: 7 }}>
+            {[
+              { label: "DRAFTS WRITTEN", value: String(data.newsroom.drafted), color: C.txt },
+              { label: "PUBLISHED", value: String(data.newsroom.published), color: C.ok },
+              { label: "CHANNEL DELIVERIES", value: String(data.newsroom.deliveries), color: C.blue },
+              {
+                label: "MEDIAN DRAFT → APPROVE",
+                value: data.newsroom.median_hours_to_approve != null ? `${data.newsroom.median_hours_to_approve}h` : "—",
+                color: C.dim,
+              },
+            ].map((r) => (
+              <div key={r.label} style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                <span style={{ fontFamily: font.mono, fontSize: 9, color: C.dim, width: 175 }}>{r.label}</span>
+                <span style={{ fontFamily: font.disp, fontSize: 17, fontWeight: 700, color: r.color }}>{r.value}</span>
+              </div>
+            ))}
+          </div>
+        </Section>
+
+        <Section title="✈ SKY TRAFFIC" hint={`aircraft near fires, last ${data.window_days} days`}>
+          <div style={{ display: "grid", gap: 7 }}>
+            {([
+              { label: "POSITION SIGHTINGS", value: data.aircraft.sightings.toLocaleString(), color: C.txt },
+              { label: "DISTINCT AIRCRAFT", value: data.aircraft.hulls.toLocaleString(), color: C.blue },
+              ...(data.aircraft.busiest
+                ? [
+                    {
+                      label: "HARDEST-WORKING HULL",
+                      value: `${data.aircraft.busiest.ident} (${data.aircraft.busiest.n} fixes)`,
+                      color: C.ok,
+                    },
+                  ]
+                : []),
+            ] as { label: string; value: string; color: string }[])
+              .map((r) => (
+                <div key={r.label} style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                  <span style={{ fontFamily: font.mono, fontSize: 9, color: C.dim, width: 175 }}>{r.label}</span>
+                  <span style={{ fontFamily: font.disp, fontSize: 16, fontWeight: 700, color: r.color }}>{r.value}</span>
+                </div>
+              ))}
+          </div>
+        </Section>
+
+        <Section title="📻 SCANNER" hint={`own SDR, last ${data.window_days} days`}>
+          <div style={{ display: "grid", gap: 7 }}>
+            {[
+              { label: "CALLS CAPTURED", value: String(data.radio.calls), color: C.txt },
+              {
+                label: "AIRTIME",
+                value: data.radio.airtime_s >= 60 ? `${Math.round(data.radio.airtime_s / 60)}m` : `${Math.round(data.radio.airtime_s)}s`,
+                color: C.dim,
+              },
+              { label: "TRANSCRIBED", value: String(data.radio.transcribed), color: C.blue },
+              { label: "FED WATCH", value: String(data.radio.watch_hits), color: C.violet },
+            ].map((r) => (
+              <div key={r.label} style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                <span style={{ fontFamily: font.mono, fontSize: 9, color: C.dim, width: 175 }}>{r.label}</span>
+                <span style={{ fontFamily: font.disp, fontSize: 16, fontWeight: 700, color: r.color }}>{r.value}</span>
+              </div>
+            ))}
+          </div>
+        </Section>
+
+        {data.season.weekly_starts.length > 1 && (
+          <Section title="🔥 FIRE STARTS BY WEEK" hint="last 12 weeks">
+            <Bars rows={data.season.weekly_starts.map((w) => ({ label: w.week, n: w.fires }))} />
+          </Section>
+        )}
       </div>
     </div>
   );
