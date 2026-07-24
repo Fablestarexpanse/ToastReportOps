@@ -1,12 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  AssistResult,
   Draft,
   DraftDetail,
   Incident,
   ResearchJob,
+  assistDraft,
   cancelResearch,
+  createDraft,
   createSocialDraft,
   fetchDraft,
   buildSiteNow,
@@ -70,6 +73,7 @@ export default function NewsroomMode({
   const [queueFilter, setQueueFilter] = useState<
     "all" | "update" | "social" | "research" | "published" | "archived"
   >("all");
+  const [queueSearch, setQueueSearch] = useState(""); // title match, any case
   const [archivedDrafts, setArchivedDrafts] = useState<Draft[]>([]);
   const [titleEdit, setTitleEdit] = useState("");
 
@@ -164,6 +168,11 @@ export default function NewsroomMode({
     // the incident selector doubles as the queue's fire filter — the queue
     // follows the fire you are working; "All fires" shows everything
     if (genIncident && dr.incident_id !== genIncident) return false;
+    if (
+      queueSearch.trim() &&
+      !(dr.title ?? "").toLowerCase().includes(queueSearch.trim().toLowerCase())
+    )
+      return false;
     if (queueFilter === "all" || queueFilter === "archived") return true;
     if (queueFilter === "published") return dr.status === "published";
     if (queueFilter === "research") return dr.kind === "analysis";
@@ -222,6 +231,74 @@ export default function NewsroomMode({
     toast("saved");
     refresh();
   };
+
+  // ---- operator-authored report: a blank draft, same gates as everything ----
+  const newReport = async () => {
+    try {
+      const r = await createDraft({
+        incident_id: genIncident || null,
+        title: fireName ? `${fireName} — report` : "Untitled report",
+      });
+      await refresh();
+      setSelId(r.draft_id);
+      toast("blank report created — yours to write");
+    } catch (e) {
+      toast(`could not create report: ${e instanceof Error ? e.message : e}`);
+    }
+  };
+
+  // ---- writing tools: markdown splices around the textarea selection ----
+  const bodyRef = useRef<HTMLTextAreaElement | null>(null);
+  const spliceMd = (before: string, after: string, placeholder: string) => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const s = el.selectionStart ?? 0;
+    const e = el.selectionEnd ?? 0;
+    const selected = bodyEdit.slice(s, e) || placeholder;
+    const next = bodyEdit.slice(0, s) + before + selected + after + bodyEdit.slice(e);
+    setBodyEdit(next);
+    // put the caret back around what was just wrapped
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(s + before.length, s + before.length + selected.length);
+    });
+  };
+
+  // ---- AI assists: SUGGESTIONS only — nothing saves until the operator does.
+  // Runs on the selection when one exists, else the whole buffer; APPLY splices
+  // it back into the editor, and SAVE/review/approve stay fully manual. ----
+  const [assistBusy, setAssistBusy] = useState<string | null>(null);
+  const [assist, setAssist] = useState<
+    (AssistResult & { selStart: number; selEnd: number }) | null
+  >(null);
+  const runAssist = async (op: string) => {
+    if (!detail || assistBusy) return;
+    const el = bodyRef.current;
+    const s = el?.selectionStart ?? 0;
+    const e = el?.selectionEnd ?? 0;
+    const hasSel = e > s && op !== "headlines"; // headlines always read the whole draft
+    const text = hasSel ? bodyEdit.slice(s, e) : bodyEdit;
+    if (!text.trim()) {
+      toast("nothing to work with — write something first");
+      return;
+    }
+    setAssistBusy(op);
+    try {
+      const r = await assistDraft(detail.draft.id, op, text);
+      setAssist({ ...r, selStart: hasSel ? s : 0, selEnd: hasSel ? e : bodyEdit.length });
+    } catch (err) {
+      toast(`assist failed: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setAssistBusy(null);
+    }
+  };
+  const applyAssist = () => {
+    if (!assist?.text) return;
+    setBodyEdit(bodyEdit.slice(0, assist.selStart) + assist.text + bodyEdit.slice(assist.selEnd));
+    setAssist(null);
+    toast("applied — review it, then SAVE");
+  };
+
 
   const copyBody = async () => {
     await navigator.clipboard.writeText(bodyEdit);
@@ -453,6 +530,13 @@ export default function NewsroomMode({
           <button onClick={generate} style={{ width: "100%", background: busy ? C.faint : C.ember, color: C.bg, border: "none", borderRadius: 5, fontFamily: font.disp, fontWeight: 700, fontSize: 12, letterSpacing: 1, padding: "7px 0", cursor: "pointer" }}>
             {busy ? "drafting…" : genIncident ? "✎ DRAFT FROM LEDGER" : "✎ STATEWIDE ROUNDUP"}
           </button>
+          <button
+            onClick={newReport}
+            title="a blank report you write yourself — the AI never touches it unless you ask; same review and approval gates"
+            style={{ width: "100%", marginTop: 5, background: "transparent", color: C.txt, border: `1px solid ${C.line}`, borderRadius: 5, fontFamily: font.disp, fontWeight: 600, fontSize: 11, letterSpacing: 1, padding: "6px 0", cursor: "pointer" }}
+          >
+            ＋ NEW REPORT — WRITE MY OWN
+          </button>
         </div>
         {upcoming.length > 0 && (
           <div style={{ padding: "7px 12px", borderBottom: `1px solid ${C.line}`, background: C.warn + "0d" }}>
@@ -512,6 +596,14 @@ export default function NewsroomMode({
               {label}
             </span>
           ))}
+        </div>
+        <div style={{ padding: "0 12px 6px" }}>
+          <input
+            value={queueSearch}
+            onChange={(e) => setQueueSearch(e.target.value)}
+            placeholder="⌕ search titles…"
+            style={{ width: "100%", background: C.bg, border: `1px solid ${C.line}`, borderRadius: 4, color: C.txt, fontFamily: font.mono, fontSize: 9.5, padding: "4px 7px" }}
+          />
         </div>
         <div style={{ flex: 1, overflowY: "auto" }}>
           {visibleResearch.map((r) => {
@@ -725,7 +817,7 @@ export default function NewsroomMode({
                   </div>
                 </div>
               )}
-              <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+              <div style={{ display: "flex", gap: 4, marginBottom: 8, alignItems: "center", flexWrap: "wrap" }}>
                 {(["EDIT", "PREVIEW"] as const).map((m) => {
                   const active = (m === "PREVIEW") === previewMode;
                   return (
@@ -739,7 +831,117 @@ export default function NewsroomMode({
                     </span>
                   );
                 })}
+                {/* writing tools: markdown splices around the selection */}
+                {!previewMode && d.status !== "published" && (
+                  <span style={{ display: "flex", gap: 3, marginLeft: 8 }}>
+                    {([
+                      ["H2", "## ", "", "Heading"],
+                      ["B", "**", "**", "bold text"],
+                      ["I", "*", "*", "italic text"],
+                      ["•", "- ", "", "list item"],
+                      ["❝", "> ", "", "quoted line"],
+                      ["🔗", "[", "](https://)", "link text"],
+                    ] as const).map(([label, pre, post, ph]) => (
+                      <span
+                        key={label}
+                        onClick={() => spliceMd(pre, post, ph)}
+                        title={`insert ${ph}`}
+                        style={{ fontFamily: font.mono, fontSize: 9.5, padding: "2px 7px", borderRadius: 3, cursor: "pointer", border: `1px solid ${C.line}`, color: C.txt, userSelect: "none" }}
+                      >
+                        {label}
+                      </span>
+                    ))}
+                  </span>
+                )}
+                {/* AI assists — suggestions only; you APPLY and SAVE */}
+                {!previewMode && d.status !== "published" && (
+                  <span style={{ display: "flex", gap: 3, marginLeft: 8, alignItems: "center" }}>
+                    <span style={{ fontFamily: font.mono, fontSize: 8, color: C.faint, letterSpacing: 1 }}>AI</span>
+                    {([
+                      ["tighten", "TIGHTEN", "cut filler, keep every fact — selection or whole draft"],
+                      ["polish", "POLISH", "grammar + AP style, minimal changes"],
+                      ["simplify", "SIMPLIFY", "plain language for the public"],
+                      ["spanish", "ESPAÑOL", "Spanish translation (evac zone ids kept verbatim + English original)"],
+                      ["headlines", "HEADLINES", "5 headline options from the draft"],
+                    ] as const).map(([op, label, hint]) => (
+                      <span
+                        key={op}
+                        onClick={() => runAssist(op)}
+                        title={`${hint} — a suggestion appears below; nothing changes until you APPLY and SAVE`}
+                        style={{
+                          fontFamily: font.mono, fontSize: 8.5, padding: "2px 7px", borderRadius: 3,
+                          cursor: "pointer", letterSpacing: 0.5, userSelect: "none",
+                          border: `1px solid ${assistBusy === op ? C.warn : C.violet + "66"}`,
+                          color: assistBusy === op ? C.warn : C.violet,
+                        }}
+                      >
+                        {assistBusy === op ? "…" : label}
+                      </span>
+                    ))}
+                  </span>
+                )}
+                {/* live counts — and the social budgets when they matter */}
+                <span style={{ marginLeft: "auto", fontFamily: font.mono, fontSize: 8.5, color: C.faint }}>
+                  {bodyEdit.trim() ? bodyEdit.trim().split(/\s+/).length : 0} words · {bodyEdit.length} chars
+                  {d.kind === "social" && (
+                    <span style={{ color: bodyEdit.length > 300 ? C.warn : C.ok }}>
+                      {" "}· BSky 300 / X 280
+                    </span>
+                  )}
+                </span>
               </div>
+              {/* the assist's suggestion — reviewed here, applied only by hand */}
+              {assist && (
+                <div style={{ border: `1px solid ${C.violet}55`, borderRadius: 6, padding: "8px 10px", marginBottom: 8, background: C.violet + "0d" }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
+                    <span style={{ fontFamily: font.mono, fontSize: 8.5, color: C.violet, letterSpacing: 1 }}>
+                      AI SUGGESTION · {assist.op.toUpperCase()}
+                    </span>
+                    <span style={{ fontFamily: font.mono, fontSize: 7.5, color: C.faint }}>
+                      {assist.prompt_version} · facts and evac text are contractually untouched — verify anyway
+                    </span>
+                    <span style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+                      {assist.text && (
+                        <span onClick={applyAssist} style={{ cursor: "pointer", fontFamily: font.mono, fontSize: 9, fontWeight: 700, color: C.ok, border: `1px solid ${C.ok}66`, borderRadius: 3, padding: "1px 8px" }}>
+                          ✓ APPLY
+                        </span>
+                      )}
+                      <span
+                        onClick={() => navigator.clipboard.writeText(assist.text ?? (assist.headlines ?? []).join("\n"))}
+                        style={{ cursor: "pointer", fontFamily: font.mono, fontSize: 9, color: C.dim }}
+                      >
+                        ⧉
+                      </span>
+                      <span onClick={() => setAssist(null)} style={{ cursor: "pointer", fontFamily: font.mono, fontSize: 9, color: C.faint }}>
+                        ✕ DISCARD
+                      </span>
+                    </span>
+                  </div>
+                  {assist.text && (
+                    <div style={{ maxHeight: 220, overflowY: "auto", whiteSpace: "pre-wrap", fontFamily: font.body, fontSize: 12.5, color: C.txt, lineHeight: 1.6 }}>
+                      {assist.text}
+                    </div>
+                  )}
+                  {assist.headlines && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      {assist.headlines.map((h, i) => (
+                        <span
+                          key={i}
+                          onClick={() => {
+                            setTitleEdit(h);
+                            setAssist(null);
+                            toast("headline applied to the title — SAVE to keep it");
+                          }}
+                          title="use this as the title"
+                          style={{ cursor: "pointer", fontFamily: font.body, fontSize: 12.5, color: C.txt, padding: "2px 6px", border: `1px solid ${C.line}`, borderRadius: 4 }}
+                        >
+                          {h}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               {previewMode ? (
                 <div
                   onClick={(e) => {
@@ -764,6 +966,7 @@ export default function NewsroomMode({
                 />
               ) : (
                 <textarea
+                  ref={bodyRef}
                   value={bodyEdit}
                   onChange={(e) => setBodyEdit(e.target.value)}
                   readOnly={d.status === "published"}

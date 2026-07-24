@@ -269,6 +269,21 @@ export async function deleteDraft(id: string): Promise<void> {
 }
 export const fetchDraft = (id: string) => get<DraftDetail>(`/drafts/${id}`);
 
+/** A blank operator-authored report — same review/approve gates as everything. */
+export const createDraft = (body: { title?: string; incident_id?: string | null; body_md?: string }) =>
+  post<{ ok: boolean; draft_id: string }>("/drafts", body);
+
+/** Editor AI assists: suggestions only — nothing saves until the operator does. */
+export type AssistResult = {
+  op: string;
+  text?: string;
+  chars?: number;
+  headlines?: string[];
+  prompt_version: string;
+};
+export const assistDraft = (id: string, op: string, text: string) =>
+  post<AssistResult>(`/drafts/${id}/assist`, { op, text });
+
 async function post<T>(path: string, body: unknown): Promise<T> {
   let res: Response;
   try {

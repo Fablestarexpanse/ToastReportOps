@@ -1829,6 +1829,58 @@ def create_social(request: Request, draft_id: str) -> dict:
         raise HTTPException(503, f"LLM unavailable: {exc}") from exc
 
 
+@router.post("/drafts")
+def create_manual_draft(request: Request, body: dict) -> dict:
+    """A blank, OPERATOR-AUTHORED report. The AI never touches it unless asked;
+    it walks the same review -> approve -> publish gates as everything else."""
+    from toast.core.db import utcnow
+    from toast.core.ids import ulid as _ulid
+
+    conn = _conn(request)
+    incident_id = (body.get("incident_id") or "").strip() or None
+    if incident_id and conn.execute(
+        "SELECT 1 FROM incidents WHERE id = ?", (incident_id,)
+    ).fetchone() is None:
+        raise HTTPException(404, "incident not found")
+    did = _ulid()
+    now = utcnow()
+    conn.execute(
+        """INSERT INTO drafts (id, incident_id, kind, status, body_md, cited_fact_ids,
+                               title, created_at, updated_at)
+           VALUES (?, ?, 'update', 'draft', ?, '[]', ?, ?, ?)""",
+        (
+            did,
+            incident_id,
+            str(body.get("body_md") or ""),
+            (str(body.get("title") or "").strip() or "Untitled report")[:200],
+            now,
+            now,
+        ),
+    )
+    return {"ok": True, "draft_id": did}
+
+
+@router.post("/drafts/{draft_id}/assist")
+def assist_draft_route(request: Request, draft_id: str, body: dict) -> dict:
+    """Editor AI assists (tighten/polish/simplify/spanish/headlines). Takes the
+    text from the client (a selection or the whole buffer), returns a SUGGESTION
+    only — nothing is saved until the operator applies it and hits SAVE."""
+    from toast.pipeline.assist import assist_text
+
+    conn = _conn(request)
+    row = conn.execute("SELECT status FROM drafts WHERE id = ?", (draft_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "draft not found")
+    if row["status"] == "published":
+        raise HTTPException(409, "published drafts are immutable")
+    try:
+        return assist_text(conn, str(body.get("op") or ""), str(body.get("text") or ""))
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except Exception as exc:  # LLM down/misbehaving — say so, never 500 opaque
+        raise HTTPException(502, f"assist failed: {exc}") from exc
+
+
 @router.put("/drafts/{draft_id}")
 def edit_draft(request: Request, draft_id: str, body: dict) -> dict:
     """Edit the draft body/title. Only allowed before publish."""
