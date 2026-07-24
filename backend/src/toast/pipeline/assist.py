@@ -64,10 +64,16 @@ def assist_text(
         raise ValueError("text too long for an assist pass")
     client = client or client_for(conn)
 
+    # a full article through a local 14B takes real time — scale the deadline
+    # with the text instead of dying at the default 120 s on long drafts
+    timeout_s = max(180.0, min(600.0, len(text) / 10))
+
     if op == "headlines":
         prompt = load_prompt("assist_headlines", conn=conn)
         raw = client.chat_json(
-            [{"role": "system", "content": prompt.render(text=text)}], temperature=0.5
+            [{"role": "system", "content": prompt.render(text=text)}],
+            temperature=0.5,
+            timeout_s=timeout_s,
         )
         heads = [str(h).strip() for h in (raw.get("headlines") or []) if str(h).strip()]
         if not heads:
@@ -80,6 +86,7 @@ def assist_text(
     raw = client.chat_json(
         [{"role": "system", "content": prompt.render(instruction=OPS[op], text=text)}],
         temperature=0.3,
+        timeout_s=timeout_s,
     )
     out = str(raw.get("text") or "").strip()
     if not out:

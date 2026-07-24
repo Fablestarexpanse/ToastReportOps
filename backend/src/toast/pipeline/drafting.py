@@ -263,12 +263,25 @@ def generate_statewide_roundup(conn: sqlite3.Connection) -> dict[str, Any]:
     total_acres = sum(int(e["acreage"]) for e in entries if e["acreage"] is not None)
     now = utcnow()
     datestr = now[:10]
+    # the honesty line: when the newest official observation actually is — a
+    # roundup generated at 9 PM from a 2 PM ledger must say so out loud
+    newest_official = conn.execute(
+        "SELECT MAX(observed_at) AS t FROM facts WHERE tier <= 2"
+    ).fetchone()["t"]
+    asof = (
+        f"*Data as of {newest_official[:16].replace('T', ' ')}Z · "
+        f"official sources re-polled and drafted {now[:16].replace('T', ' ')}Z.*"
+        if newest_official
+        else f"*Drafted {now[:16].replace('T', ' ')}Z.*"
+    )
 
     lines = [
         f"{len(entries)} active fires are burning across California, totalling "
         f"{total_acres:,} mapped acres. {len(evac_entries)} "
         f"{'fire has' if len(evac_entries) == 1 else 'fires have'} active evacuation "
         "instructions.",
+        "",
+        asof,
         "",
     ]
     if evac_entries:

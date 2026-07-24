@@ -204,17 +204,21 @@ export default function NewsroomMode({
     if (busy) return;
     setBusy(true);
     try {
+      const freshNote = (f?: { polled?: string[]; took_s?: number }) =>
+        f?.polled?.length ? ` · fresh pull: ${f.polled.length} official sources in ${f.took_s}s` : "";
       if (!genIncident) {
         // "All fires" selected: the statewide roundup — mechanical, cited
         const r = await generateStatewide();
-        toast(`statewide roundup — ${r.fires} fires, ${r.under_evac} under evac, ${r.cited} cited`);
+        toast(
+          `statewide roundup — ${r.fires} fires, ${r.under_evac} under evac, ${r.cited} cited${freshNote(r.freshened)}`,
+        );
         await refresh();
         setSelId(r.draft_id);
       } else {
         const w: { window_start?: string } = {};
         if (genWindow) w.window_start = new Date(Date.now() - genWindow * 3600_000).toISOString();
         const r = await generateDraft(genIncident, w);
-        toast(`draft generated — ${r.facts_used} facts, ${r.cited} cited`);
+        toast(`draft generated — ${r.facts_used} facts, ${r.cited} cited${freshNote(r.freshened)}`);
         await refresh();
         setSelId(r.draft_id);
       }
@@ -268,9 +272,18 @@ export default function NewsroomMode({
   // Runs on the selection when one exists, else the whole buffer; APPLY splices
   // it back into the editor, and SAVE/review/approve stay fully manual. ----
   const [assistBusy, setAssistBusy] = useState<string | null>(null);
+  const [assistChars, setAssistChars] = useState(0);
+  const [assistElapsed, setAssistElapsed] = useState(0);
   const [assist, setAssist] = useState<
     (AssistResult & { selStart: number; selEnd: number }) | null
   >(null);
+  // the model working is invisible by nature — count the seconds out loud
+  useEffect(() => {
+    if (!assistBusy) return;
+    setAssistElapsed(0);
+    const t = setInterval(() => setAssistElapsed((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [assistBusy]);
   const runAssist = async (op: string) => {
     if (!detail || assistBusy) return;
     const el = bodyRef.current;
@@ -282,6 +295,7 @@ export default function NewsroomMode({
       toast("nothing to work with — write something first");
       return;
     }
+    setAssistChars(text.length);
     setAssistBusy(op);
     try {
       const r = await assistDraft(detail.draft.id, op, text);
@@ -890,6 +904,19 @@ export default function NewsroomMode({
                   )}
                 </span>
               </div>
+              {/* the model at work — visible, counted, honest about the wait */}
+              {assistBusy && (
+                <div style={{ border: `1px solid ${C.violet}55`, borderRadius: 6, padding: "8px 10px", marginBottom: 8, background: C.violet + "0d", display: "flex", gap: 8, alignItems: "center" }}>
+                  <span className="tr-blink" style={{ color: C.violet, fontSize: 11 }}>⟳</span>
+                  <span style={{ fontFamily: font.mono, fontSize: 9.5, color: C.violet, letterSpacing: 0.5 }}>
+                    {assistBusy.toUpperCase()} running on {assistChars.toLocaleString()} chars — local model working
+                  </span>
+                  <span style={{ fontFamily: font.mono, fontSize: 9.5, color: C.txt }}>{assistElapsed}s</span>
+                  <span style={{ fontFamily: font.mono, fontSize: 8, color: C.faint }}>
+                    long drafts can take 1–3 min · the suggestion appears here when it lands
+                  </span>
+                </div>
+              )}
               {/* the assist's suggestion — reviewed here, applied only by hand */}
               {assist && (
                 <div style={{ border: `1px solid ${C.violet}55`, borderRadius: 6, padding: "8px 10px", marginBottom: 8, background: C.violet + "0d" }}>

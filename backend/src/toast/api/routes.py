@@ -1589,7 +1589,11 @@ def create_draft(request: Request, incident_id: str, body: dict) -> dict:
     from toast.core.fetch import FetchError
     from toast.llm.client import LLMError
     from toast.pipeline.drafting import generate_draft
+    from toast.pipeline.freshen import freshen_official_sources
 
+    # a report is a moment of publication — re-poll the official sources first
+    # so it never opens on yesterday's ledger
+    fresh = freshen_official_sources(_conn(request))
     try:
         result = generate_draft(
             _conn(request),
@@ -1603,6 +1607,7 @@ def create_draft(request: Request, incident_id: str, body: dict) -> dict:
         raise HTTPException(503, f"LLM unavailable: {exc}") from exc
     if not result.get("created"):
         raise HTTPException(422, result.get("reason", "nothing to draft"))
+    result["freshened"] = fresh
     return result
 
 
@@ -1768,8 +1773,12 @@ def statewide_draft(request: Request) -> dict:
     from the ledger (zero invention risk), every figure cited. The statewide
     graphic attaches via the normal GRAPHIC button."""
     from toast.pipeline.drafting import generate_statewide_roundup
+    from toast.pipeline.freshen import freshen_official_sources
 
-    return generate_statewide_roundup(_conn(request))
+    fresh = freshen_official_sources(_conn(request))
+    result = generate_statewide_roundup(_conn(request))
+    result["freshened"] = fresh
+    return result
 
 
 @router.post("/drafts/{draft_id}/archive")

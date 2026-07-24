@@ -304,8 +304,17 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return res.json();
 }
 
+/** What the pre-draft fresh pull of official sources did. */
+export type Freshened = {
+  polled: string[];
+  normalized: number;
+  errors: string[];
+  data_as_of: string | null;
+  took_s: number;
+};
+
 export const generateDraft = (incidentId: string, window?: { window_start?: string }) =>
-  post<{ draft_id: string; title: string; facts_used: number; cited: number }>(
+  post<{ draft_id: string; title: string; facts_used: number; cited: number; freshened?: Freshened }>(
     `/incidents/${incidentId}/draft`,
     window ?? {},
   );
@@ -333,10 +342,14 @@ export const renderMarkdown = (body_md: string) =>
   post<{ html: string }>("/render/markdown", { body_md });
 
 export const generateStatewide = () =>
-  post<{ draft_id: string; title: string; fires: number; under_evac: number; cited: number }>(
-    "/drafts/statewide",
-    {},
-  );
+  post<{
+    draft_id: string;
+    title: string;
+    fires: number;
+    under_evac: number;
+    cited: number;
+    freshened?: Freshened;
+  }>("/drafts/statewide", {});
 
 export const transitionDraft = (id: string, status: string) =>
   post<{ status: string }>(`/drafts/${id}/status`, { status });
