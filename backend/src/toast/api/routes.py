@@ -2049,17 +2049,21 @@ def map_snapshot(
     w: int = 1200,
     h: int = 700,
     basemap: str = "dark",
+    layers: str = "",
 ):
     """A shareable grab of the OPS map at the operator's current view — same
     centre, zoom and basemap, stitched server-side (no browser tile-CORS taint).
-    Active fires ride on top from the ledger; brand badge upper-left; a tag band
-    with brand line, tile credit and generation time along the bottom."""
+    Active fires ride on top from the ledger; any overlays the operator has on
+    (`layers` CSV: perimeters, evacZones, firewx, firis, closures, counties,
+    hotspots, aircraft) are drawn too, so nothing enabled to show something is
+    lost; brand badge upper-left; a tag band with brand line, tile credit and
+    generation time along the bottom."""
     from fastapi import Response
 
     from toast.pipeline.graphics import generate_map_snapshot
 
     png = generate_map_snapshot(
-        _conn(request), lat, lon, int(round(zoom)), w, h, basemap
+        _conn(request), lat, lon, int(round(zoom)), w, h, basemap, layers
     )
     return Response(content=png, media_type="image/png")
 

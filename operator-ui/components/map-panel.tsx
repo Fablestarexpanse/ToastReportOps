@@ -378,6 +378,7 @@ export default function MapPanel({
   const doSnapshot = useCallback(async () => {
     const m = map.current;
     if (!m || snapping) return;
+    setLayersOpen(false); // close the menu — chrome out of the way — but keep the layers ON
     setSnapping(true);
     try {
       const c = m.getCenter();
@@ -385,7 +386,19 @@ export default function MapPanel({
       const zoom = Math.round(m.getZoom());
       const w = Math.min(2000, Math.max(320, Math.round(size.x)));
       const h = Math.min(1400, Math.max(240, Math.round(size.y)));
-      const q = `lat=${c.lat.toFixed(5)}&lon=${c.lng.toFixed(5)}&zoom=${zoom}&w=${w}&h=${h}&basemap=${encodeURIComponent(effective)}`;
+      // whatever the operator has enabled rides into the image — a layer turned
+      // on to show something must not vanish from the grab
+      const layers = [
+        showPerimeters && "perimeters",
+        showFiris && "firis",
+        showFirewx && "firewx",
+        showEvacZones && "evacZones",
+        showClosures && "closures",
+        showCounties && "counties",
+        showHotspots && "hotspots",
+        showAircraft && "aircraft",
+      ].filter(Boolean).join(",");
+      const q = `lat=${c.lat.toFixed(5)}&lon=${c.lng.toFixed(5)}&zoom=${zoom}&w=${w}&h=${h}&basemap=${encodeURIComponent(effective)}${layers ? `&layers=${layers}` : ""}`;
       const res = await fetch(`/api/map/snapshot.png?${q}`, { cache: "no-store" });
       if (!res.ok) throw new Error(String(res.status));
       const blob = await res.blob();
@@ -398,7 +411,7 @@ export default function MapPanel({
     } finally {
       setSnapping(false);
     }
-  }, [effective, snapping]);
+  }, [effective, snapping, showPerimeters, showFiris, showFirewx, showEvacZones, showClosures, showCounties, showHotspots, showAircraft]);
   useEffect(() => () => closeSnap(), [closeSnap]); // revoke on unmount
 
   // create once

@@ -685,6 +685,122 @@ SNAP_BASEMAPS: dict[str, tuple[str, str]] = {
 }
 
 
+def _evac_status_color(st: str) -> tuple[int, int, int]:
+    s = (st or "").lower()
+    if "order" in s:
+        return EVAC
+    if "warn" in s:
+        return WARN
+    if "shelter" in s:
+        return SIP
+    if "advis" in s:
+        return ADVISORY
+    return DIM
+
+
+def _draw_overlays(
+    conn: sqlite3.Connection,
+    d: ImageDraw.ImageDraw,
+    enabled: set[str],
+    *,
+    clat: float,
+    clon: float,
+    zoom: int,
+    w: int,
+    h: int,
+) -> list[str]:
+    """Draw the operator's enabled vector overlays into the snapshot, reusing the
+    exact GeoJSON/point data the live layers fetch — so a layer turned on to show
+    something survives into the image. Each layer is best-effort: an outage or a
+    bad shape skips THAT layer, never the whole card. Returns the layers drawn."""
+    cx, cy = _tile_frac(clat, clon, zoom)
+    px0, py0 = cx * TILE - w / 2, cy * TILE - h / 2
+
+    def to_px(la: float, lo: float) -> tuple[float, float]:
+        fx, fy = _tile_frac(la, lo, zoom)
+        return fx * TILE - px0, fy * TILE - py0
+
+    def in_frame(pts: list[tuple[float, float]]) -> bool:
+        xs = [p[0] for p in pts]
+        ys = [p[1] for p in pts]
+        return max(xs) >= -30 and min(xs) <= w + 30 and max(ys) >= -30 and min(ys) <= h + 30
+
+    def rings_of(geom: dict) -> list[list]:
+        gt = geom.get("type")
+        coords = geom.get("coordinates") or []
+        if gt == "Polygon":
+            return coords
+        if gt == "MultiPolygon":
+            return [ring for poly in coords for ring in poly]
+        if gt == "LineString":
+            return [coords]
+        if gt == "MultiLineString":
+            return coords
+        return []
+
+    def draw_shape(features, color, width, *, status_key=None, closed=True):
+        for feat in features:
+            col = color
+            if status_key:
+                col = _evac_status_color((feat.get("properties") or {}).get(status_key, ""))
+            for ring in rings_of(feat.get("geometry") or {}):
+                pts = [to_px(p[1], p[0]) for p in ring if isinstance(p, list) and len(p) >= 2]
+                if len(pts) < 2 or not in_frame(pts):
+                    continue
+                d.line(pts + ([pts[0]] if closed and len(pts) > 2 else []), fill=col, width=width)
+
+    def draw_points(rows, color, r=3):
+        for row in rows:
+            la, lo = row.get("lat"), row.get("lon")
+            if la is None or lo is None:
+                continue
+            x, yv = to_px(la, lo)
+            if -20 < x < w + 20 and -20 < yv < h + 20:
+                d.ellipse([(x - r, yv - r), (x + r, yv + r)], fill=color)
+
+    drawn: list[str] = []
+    log = get_logger("graphics")
+
+    # bottom-up: reference boundaries first, alarm layers last (most visible)
+    def _try(name: str, fn) -> None:
+        if name not in enabled:
+            return
+        try:
+            fn()
+            drawn.append(name)
+        except Exception as exc:  # one layer's outage never breaks the card
+            log.info("snapshot_overlay_skipped", layer=name, error=str(exc)[:100])
+
+    _try("counties", lambda: draw_shape(
+        __import__("toast.pipeline.countylines", fromlist=["get_county_lines"])
+        .get_county_lines(conn).get("features", []), (92, 102, 116), 1))
+    _try("perimeters", lambda: draw_shape(
+        __import__("toast.pipeline.perimeters", fromlist=["get_perimeters"])
+        .get_perimeters(conn).get("features", []), EMBER, 2))
+    _try("firis", lambda: draw_shape(
+        __import__("toast.pipeline.firis", fromlist=["get_firis"])
+        .get_firis(conn).get("features", []), (255, 180, 70), 2))
+    _try("firewx", lambda: draw_shape(
+        __import__("toast.pipeline.firewx", fromlist=["get_fire_weather"])
+        .get_fire_weather(conn).get("features", []), WARN, 2))
+    _try("evacZones", lambda: draw_shape(
+        __import__("toast.pipeline.evaczones", fromlist=["get_evac_zones"])
+        .get_evac_zones(conn).get("features", []), DIM, 3, status_key="STATUS"))
+    _try("closures", lambda: draw_points(
+        __import__("toast.pipeline.closures", fromlist=["get_closures"])
+        .get_closures(conn).get("closures", []), (255, 90, 90), 4))
+    _try("hotspots", lambda: draw_points(
+        [dict(r) for r in conn.execute(
+            "SELECT f.lat, f.lon FROM facts f JOIN sources s ON s.id = f.source_id"
+            " WHERE s.type = 'satellite' AND f.lat IS NOT NULL"
+            " AND unixepoch('now') - unixepoch(f.observed_at) < 86400")],
+        (255, 140, 40), 2))
+    _try("aircraft", lambda: draw_points(
+        __import__("toast.pipeline.aircraft", fromlist=["current_aircraft"])
+        .current_aircraft(conn).get("aircraft", []), (120, 200, 255), 3))
+    return drawn
+
+
 def generate_map_snapshot(
     conn: sqlite3.Connection,
     lat: float,
@@ -693,6 +809,7 @@ def generate_map_snapshot(
     w: int,
     h: int,
     basemap: str = "dark",
+    layers: str = "",
 ) -> bytes:
     """A shareable grab of the OPS map exactly where the operator is looking —
     same centre, zoom and basemap, freshly stitched server-side so no browser
@@ -707,6 +824,15 @@ def generate_map_snapshot(
 
     strip = _stitch_map(lat, lon, zoom=zoom, w=w, h=h, url=url)
     d = ImageDraw.Draw(strip)
+
+    # the operator's enabled overlays, drawn under the fire pins so nothing they
+    # turned on to SHOW something is missing from the image
+    enabled = {s for s in (layers or "").split(",") if s}
+    overlays_drawn = (
+        _draw_overlays(conn, d, enabled, clat=lat, clon=lon, zoom=zoom, w=w, h=h)
+        if enabled
+        else []
+    )
 
     # active fires from the ledger, placed in the frame — the same picture the
     # OPS map paints, so the snapshot matches what was on screen
@@ -793,7 +919,8 @@ def generate_map_snapshot(
     buf = io.BytesIO()
     out.save(buf, format="PNG", optimize=True)
     get_logger("graphics").info(
-        "map_snapshot_rendered", fires=drawn, zoom=zoom, size=f"{w}x{h}", bytes=buf.tell()
+        "map_snapshot_rendered", fires=drawn, zoom=zoom, size=f"{w}x{h}",
+        overlays=",".join(overlays_drawn), bytes=buf.tell(),
     )
     return buf.getvalue()
 
