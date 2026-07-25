@@ -2068,6 +2068,20 @@ def map_snapshot(
     return Response(content=png, media_type="image/png")
 
 
+@router.get("/incidents/{incident_id}/fire-timeline")
+def fire_timeline_route(request: Request, incident_id: str) -> dict:
+    """A fire's whole life on one time axis for the TIMELINE tab: start, every
+    acreage/containment revision, evacuation notices verbatim, cause, damage,
+    articles at release time, perimeter maps, and lifecycle marks — all real
+    ledger records. (Distinct from the compact OPS-panel /timeline.)"""
+    from toast.pipeline.timeline import fire_timeline
+
+    try:
+        return fire_timeline(_conn(request), incident_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
 @router.get("/brand")
 def brand_info(request: Request) -> dict:
     """The operator's brand line for stamping onto a client-captured map grab."""

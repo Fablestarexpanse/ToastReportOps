@@ -71,6 +71,7 @@ import {
 import { C, TIER, TIER_TITLES, confColor, font, Z } from "@/lib/theme";
 import AlertBell from "@/components/alerts";
 import AnalyticsMode from "@/components/analytics";
+import TimelineMode from "@/components/timeline-mode";
 import SettingsPanel, { loadDisplayPrefs, syncDisplayPrefs } from "@/components/settings";
 import { age, ageColor, fmtFull, fmtStamp, getTzMode, lag, leadTime } from "@/lib/time";
 // Leaflet reads `window` at import time, so it must never be evaluated during
@@ -3372,6 +3373,7 @@ const MODES: [string, string][] = [
   ["air", "AIR"],
   ["radio", "RADIO"],
   ["mesh", "MESH"],
+  ["timeline", "TIMELINE"],
   ["news", "NEWSROOM"],
   ["watch", "WATCH"],
   ["archive", "ARCHIVE"],
@@ -3716,6 +3718,7 @@ export default function Workstation() {
       {mode === "air" && <AirMode toast={toast} />}
       {mode === "radio" && <RadioMode toast={toast} />}
       {mode === "mesh" && <MeshMode toast={toast} />}
+      {mode === "timeline" && <TimelineMode toast={toast} focusIncident={focusIncident} />}
       {mode === "news" && <NewsroomMode toast={toast} focusIncident={newsroomFocus} />}
       {mode === "watch" && <WatchMode toast={toast} />}
       {mode === "archive" && <ArchiveMode toast={toast} />}

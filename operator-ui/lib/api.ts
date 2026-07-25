@@ -1287,6 +1287,38 @@ export type IncidentHistory = {
 export const fetchHistory = (incidentId: string) =>
   get<IncidentHistory>(`/incidents/${incidentId}/history`);
 
+export type TimelineEvent = {
+  at: string;
+  ingested_at?: string | null;
+  category: string;
+  title: string;
+  detail: string | null;
+  source: string | null;
+  tier: number | null;
+  confidence?: number | null;
+  starred?: boolean;
+  superseded?: boolean;
+  url: string | null;
+};
+export type IncidentTimeline = {
+  incident: {
+    id: string;
+    name: string;
+    county: string | null;
+    status: string;
+    lat: number | null;
+    lon: number | null;
+  };
+  start: string | null;
+  finish: string | null;
+  ongoing: boolean;
+  counts: Record<string, number>;
+  event_count: number;
+  events: TimelineEvent[];
+};
+export const fetchFireTimeline = (incidentId: string) =>
+  get<IncidentTimeline>(`/incidents/${incidentId}/fire-timeline`);
+
 export type LocateResult = {
   lat: number;
   lon: number;
