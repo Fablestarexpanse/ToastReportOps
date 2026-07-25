@@ -55,6 +55,147 @@ function statusColor(inc: { status: string; evac_status?: string | null }): stri
   return C.emberHot;
 }
 
+/* The graphic model up top: the whole fire on one horizontal axis — acreage
+   growth as an area, containment as a climbing line, and every event a tick in
+   its category colour (evacuations taller and pink). Honours the same category
+   filter as the list below; always time-linear (oldest → newest), whatever the
+   list's sort. */
+function TimelineGraphic({
+  tl,
+  hidden,
+}: {
+  tl: IncidentTimeline;
+  hidden: Set<string>;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [w, setW] = useState(900);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setW(Math.max(320, el.clientWidth)));
+    ro.observe(el);
+    setW(Math.max(320, el.clientWidth));
+    return () => ro.disconnect();
+  }, []);
+
+  const H = 108;
+  const padL = 10;
+  const padR = 10;
+  const top = 16; // acreage peak
+  const base = 74; // acreage baseline / axis
+  const tickBot = 100;
+  const t0 = tl.start ? new Date(tl.start).getTime() : Date.now();
+  const t1 = (tl.finish ? new Date(tl.finish) : new Date()).getTime();
+  const span = Math.max(1, t1 - t0);
+  const X = (iso: string) => padL + ((new Date(iso).getTime() - t0) / span) * (w - padL - padR);
+
+  const evs = tl.events.filter((e) => !hidden.has(e.category));
+
+  const num = (s: string, re: RegExp) => {
+    const m = s.match(re);
+    return m ? parseFloat(m[1].replace(/,/g, "")) : null;
+  };
+  const acre = evs
+    .filter((e) => e.category === "acreage")
+    .map((e) => ({ x: X(e.at), v: num(e.title, /([\d,]+)\s*acre/) }))
+    .filter((p): p is { x: number; v: number } => p.v != null && p.v > 0)
+    .sort((a, b) => a.x - b.x);
+  const maxAcre = Math.max(1, ...acre.map((p) => p.v));
+  const aY = (v: number) => base - (v / maxAcre) * (base - top);
+  // stepped: a value holds until the next observation
+  let acreArea = "";
+  let acreLine = "";
+  if (acre.length) {
+    acreArea = `M ${acre[0].x},${base} `;
+    acreLine = `M ${acre[0].x},${aY(acre[0].v)} `;
+    let py = aY(acre[0].v);
+    for (const p of acre) {
+      const y = aY(p.v);
+      acreArea += `L ${p.x},${py} L ${p.x},${y} `;
+      acreLine += `L ${p.x},${py} L ${p.x},${y} `;
+      py = y;
+    }
+    const lastX = acre[acre.length - 1].x;
+    acreArea += `L ${lastX},${base} Z`;
+  }
+
+  const cont = evs
+    .filter((e) => e.category === "containment")
+    .map((e) => ({ x: X(e.at), v: num(e.title, /(\d+)%/) }))
+    .filter((p): p is { x: number; v: number } => p.v != null)
+    .sort((a, b) => a.x - b.x);
+  const cY = (v: number) => base - (v / 100) * (base - top);
+  let contLine = "";
+  if (cont.length) {
+    contLine = `M ${cont[0].x},${cY(cont[0].v)} `;
+    let py = cY(cont[0].v);
+    for (const p of cont) {
+      const y = cY(p.v);
+      contLine += `L ${p.x},${py} L ${p.x},${y} `;
+      py = y;
+    }
+  }
+
+  const fmtDay = (iso: string) => iso.slice(5, 10);
+
+  return (
+    <div ref={ref} style={{ padding: "8px 16px 6px", borderBottom: `1px solid ${C.line}` }}>
+      <svg width={w} height={H} style={{ display: "block" }}>
+        {/* acreage growth */}
+        {acreArea && <path d={acreArea} fill={C.ember + "22"} stroke="none" />}
+        {acreLine && <path d={acreLine} fill="none" stroke={C.ember} strokeWidth={1.5} />}
+        {/* containment climb */}
+        {contLine && <path d={contLine} fill="none" stroke={C.ok} strokeWidth={1.3} strokeDasharray="3 2" opacity={0.9} />}
+        {/* axis */}
+        <line x1={padL} y1={base} x2={w - padR} y2={base} stroke={C.line} strokeWidth={1} />
+        {/* event ticks by category */}
+        {evs.map((e, i) => {
+          const meta = catOf(e.category);
+          const x = X(e.at);
+          const tall = e.category === "evac" || e.category === "article" || e.category === "report";
+          return (
+            <line
+              key={i}
+              x1={x}
+              y1={base + 3}
+              x2={x}
+              y2={tall ? tickBot : tickBot - 8}
+              stroke={meta.color}
+              strokeWidth={e.category === "evac" ? 2 : 1.2}
+              opacity={0.9}
+            >
+              <title>{`${fmtStamp(e.at)} · ${meta.label} · ${e.title}`}</title>
+            </line>
+          );
+        })}
+        {/* now marker when the fire is still burning */}
+        {tl.ongoing && (
+          <line x1={w - padR} y1={top} x2={w - padR} y2={tickBot} stroke={C.emberHot} strokeWidth={1} strokeDasharray="2 2" opacity={0.6} />
+        )}
+        {/* labels */}
+        {maxAcre > 1 && (
+          <text x={padL + 2} y={top + 8} fill={C.ember} fontFamily="ui-monospace, monospace" fontSize={9}>
+            {maxAcre.toLocaleString()} ac peak
+          </text>
+        )}
+        {cont.length > 0 && (
+          <text x={padL + 2} y={top + 20} fill={C.ok} fontFamily="ui-monospace, monospace" fontSize={9}>
+            {Math.round(cont[cont.length - 1].v)}% contained
+          </text>
+        )}
+        {tl.start && (
+          <text x={padL} y={H - 1} fill={C.faint} fontFamily="ui-monospace, monospace" fontSize={8}>
+            {fmtDay(tl.start)}
+          </text>
+        )}
+        <text x={w - padR} y={H - 1} fill={C.faint} fontFamily="ui-monospace, monospace" fontSize={8} textAnchor="end">
+          {tl.ongoing ? "now" : tl.finish ? fmtDay(tl.finish) : ""}
+        </text>
+      </svg>
+    </div>
+  );
+}
+
 export default function TimelineMode({
   toast,
   focusIncident,
@@ -259,6 +400,9 @@ export default function TimelineMode({
                 </span>
               </div>
             </div>
+
+            {/* the graphic model: whole fire on one axis */}
+            <TimelineGraphic tl={timeline} hidden={hidden} />
 
             {/* body */}
             <div style={{ overflowY: "auto", flex: 1, padding: "6px 0 30px" }}>
