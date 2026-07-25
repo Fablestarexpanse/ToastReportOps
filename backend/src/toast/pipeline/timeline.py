@@ -83,6 +83,7 @@ def fire_timeline(conn: sqlite3.Connection, incident_id: str) -> dict[str, Any]:
                   f.starred, s.name AS source_name, s.type AS source_type
            FROM facts f LEFT JOIN sources s ON s.id = f.source_id
            WHERE f.incident_id = ? AND f.observed_at IS NOT NULL
+             AND (s.type IS NULL OR s.type != 'satellite')
            ORDER BY f.observed_at ASC""",
         (incident_id,),
     ).fetchall()
