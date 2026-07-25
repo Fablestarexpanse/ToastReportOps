@@ -68,13 +68,13 @@ function TimelineGraphic({
   hidden: Set<string>;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const [w, setW] = useState(900);
+  const [paneW, setPaneW] = useState(900);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setW(Math.max(320, el.clientWidth)));
+    const ro = new ResizeObserver(() => setPaneW(Math.max(320, el.clientWidth)));
     ro.observe(el);
-    setW(Math.max(320, el.clientWidth));
+    setPaneW(Math.max(320, el.clientWidth));
     return () => ro.disconnect();
   }, []);
 
@@ -87,6 +87,15 @@ function TimelineGraphic({
   const t0 = tl.start ? new Date(tl.start).getTime() : Date.now();
   const t1 = (tl.finish ? new Date(tl.finish) : new Date()).getTime();
   const span = Math.max(1, t1 - t0);
+  // A long fire crammed into the pane overlaps everything. Give each day real
+  // room (and each event a floor of pixels), then let it scroll sideways — so a
+  // three-week fire is legible instead of a smear. When it fits, use the pane.
+  const days = span / 86_400_000;
+  const w = Math.min(
+    9000,
+    Math.max(paneW, Math.round(days * 56), tl.events.length * 11 + padL + padR),
+  );
+  const scrolls = w > paneW + 4;
   const X = (iso: string) => padL + ((new Date(iso).getTime() - t0) / span) * (w - padL - padR);
 
   const evs = tl.events.filter((e) => !hidden.has(e.category));
@@ -138,9 +147,39 @@ function TimelineGraphic({
 
   const fmtDay = (iso: string) => iso.slice(5, 10);
 
+  // day/week gridlines so the stretched axis stays readable
+  const step = days > 45 ? 7 : days > 14 ? 2 : 1; // days between marks
+  const gridlines: { x: number; label: string }[] = [];
+  if (tl.start) {
+    const d0 = new Date(tl.start);
+    d0.setUTCHours(0, 0, 0, 0);
+    for (let t = d0.getTime(); t <= t1; t += step * 86_400_000) {
+      const iso = new Date(t).toISOString();
+      const x = X(iso);
+      if (x >= padL && x <= w - padR) gridlines.push({ x, label: iso.slice(5, 10) });
+    }
+  }
+
   return (
-    <div ref={ref} style={{ padding: "8px 16px 6px", borderBottom: `1px solid ${C.line}` }}>
+    <div
+      ref={ref}
+      style={{ padding: "8px 16px 6px", borderBottom: `1px solid ${C.line}`, overflowX: scrolls ? "auto" : "hidden" }}
+    >
+      {scrolls && (
+        <div style={{ fontFamily: font.mono, fontSize: 8, color: C.faint, marginBottom: 3 }}>
+          {Math.round(days)} days · scroll sideways to see it all →
+        </div>
+      )}
       <svg width={w} height={H} style={{ display: "block" }}>
+        {/* day / week gridlines */}
+        {gridlines.map((g, i) => (
+          <g key={`grid-${i}`}>
+            <line x1={g.x} y1={top} x2={g.x} y2={base} stroke={C.line} strokeWidth={1} opacity={0.4} />
+            <text x={g.x + 2} y={H - 2} fill={C.faint} fontFamily="ui-monospace, monospace" fontSize={7.5}>
+              {g.label}
+            </text>
+          </g>
+        ))}
         {/* acreage growth */}
         {acreArea && <path d={acreArea} fill={C.ember + "22"} stroke="none" />}
         {acreLine && <path d={acreLine} fill="none" stroke={C.ember} strokeWidth={1.5} />}
@@ -183,12 +222,8 @@ function TimelineGraphic({
             {Math.round(cont[cont.length - 1].v)}% contained
           </text>
         )}
-        {tl.start && (
-          <text x={padL} y={H - 1} fill={C.faint} fontFamily="ui-monospace, monospace" fontSize={8}>
-            {fmtDay(tl.start)}
-          </text>
-        )}
-        <text x={w - padR} y={H - 1} fill={C.faint} fontFamily="ui-monospace, monospace" fontSize={8} textAnchor="end">
+        {/* gridlines carry the day labels; just mark the live edge */}
+        <text x={w - padR} y={top + 8} fill={C.emberHot} fontFamily="ui-monospace, monospace" fontSize={8} textAnchor="end">
           {tl.ongoing ? "now" : tl.finish ? fmtDay(tl.finish) : ""}
         </text>
       </svg>
