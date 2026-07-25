@@ -686,6 +686,7 @@ SNAP_BASEMAPS: dict[str, tuple[str, str]] = {
 
 
 def _evac_status_color(st: str) -> tuple[int, int, int]:
+    # mirror the live map: order red, warning amber, shelter blue, else dim
     s = (st or "").lower()
     if "order" in s:
         return EVAC
@@ -698,9 +699,27 @@ def _evac_status_color(st: str) -> tuple[int, int, int]:
     return DIM
 
 
+def _age_short(iso: str | None) -> str:
+    """Relative age the way the live map's labels show it: 45m, 6h, 2d."""
+    if not iso:
+        return ""
+    from datetime import UTC, datetime
+
+    try:
+        dt = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return ""
+    secs = max(0.0, (datetime.now(UTC) - dt).total_seconds())
+    if secs < 3600:
+        return f"{int(secs // 60)}m"
+    if secs < 86400:
+        return f"{int(secs // 3600)}h"
+    return f"{int(secs // 86400)}d"
+
+
 def _draw_overlays(
     conn: sqlite3.Connection,
-    d: ImageDraw.ImageDraw,
+    img: Image.Image,
     enabled: set[str],
     *,
     clat: float,
@@ -708,11 +727,12 @@ def _draw_overlays(
     zoom: int,
     w: int,
     h: int,
-) -> list[str]:
-    """Draw the operator's enabled vector overlays into the snapshot, reusing the
-    exact GeoJSON/point data the live layers fetch — so a layer turned on to show
-    something survives into the image. Each layer is best-effort: an outage or a
-    bad shape skips THAT layer, never the whole card. Returns the layers drawn."""
+) -> tuple[Image.Image, list[str]]:
+    """Draw the operator's enabled overlays so the snapshot MATCHES the live map:
+    polygons are filled translucently (not just outlined) and evacuation zones
+    carry their on-map label — `A - WARNING - 6h` — exactly like the workstation.
+    Reuses the same GeoJSON/point data the live layers fetch. Each layer is
+    best-effort: an outage skips THAT layer, never the whole card."""
     cx, cy = _tile_frac(clat, clon, zoom)
     px0, py0 = cx * TILE - w / 2, cy * TILE - h / 2
 
@@ -725,43 +745,79 @@ def _draw_overlays(
         ys = [p[1] for p in pts]
         return max(xs) >= -30 and min(xs) <= w + 30 and max(ys) >= -30 and min(ys) <= h + 30
 
-    def rings_of(geom: dict) -> list[list]:
+    def polys_of(geom: dict) -> list[list]:
         gt = geom.get("type")
-        coords = geom.get("coordinates") or []
+        c = geom.get("coordinates") or []
         if gt == "Polygon":
-            return coords
+            return [c]  # [outer, hole...]
         if gt == "MultiPolygon":
-            return [ring for poly in coords for ring in poly]
-        if gt == "LineString":
-            return [coords]
-        if gt == "MultiLineString":
-            return coords
+            return c
         return []
 
-    def draw_shape(features, color, width, *, status_key=None, closed=True):
-        for feat in features:
-            col = color
-            if status_key:
-                col = _evac_status_color((feat.get("properties") or {}).get(status_key, ""))
-            for ring in rings_of(feat.get("geometry") or {}):
-                pts = [to_px(p[1], p[0]) for p in ring if isinstance(p, list) and len(p) >= 2]
-                if len(pts) < 2 or not in_frame(pts):
-                    continue
-                d.line(pts + ([pts[0]] if closed and len(pts) > 2 else []), fill=col, width=width)
+    def lines_of(geom: dict) -> list[list]:
+        gt = geom.get("type")
+        c = geom.get("coordinates") or []
+        if gt == "LineString":
+            return [c]
+        if gt == "MultiLineString":
+            return c
+        if gt in ("Polygon", "MultiPolygon"):
+            return [ring for poly in polys_of(geom) for ring in poly]
+        return []
 
-    def draw_points(rows, color, r=3):
+    base = img.convert("RGBA")
+    fills = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    fd = ImageDraw.Draw(fills)
+    # deferred so outlines and labels land ON TOP of every fill
+    outlines: list[tuple[list, tuple, int]] = []
+    labels: list[tuple[float, float, str, tuple, int]] = []
+    points: list[tuple[float, float, tuple, int]] = []
+    drawn: list[str] = []
+    log = get_logger("graphics")
+
+    def add_polys(features, color, width, fill_alpha, *, status_key=None, label=False):
+        for feat in features:
+            props = feat.get("properties") or {}
+            col = _evac_status_color(props.get(status_key, "")) if status_key else color
+            geom = feat.get("geometry") or {}
+            for poly in polys_of(geom):
+                for ri, ring in enumerate(poly):
+                    pts = [to_px(p[1], p[0]) for p in ring if isinstance(p, list) and len(p) >= 2]
+                    if len(pts) < 3 or not in_frame(pts):
+                        continue
+                    if fill_alpha and ri == 0:  # fill outer ring only (holes stay open)
+                        fd.polygon(pts, fill=(*col, fill_alpha))
+                    outlines.append((pts + [pts[0]], col, width))
+            if not label:
+                continue
+            # label at the outer-ring vertex centroid, like the live map
+            poly0 = polys_of(geom)
+            ring0 = poly0[0][0] if poly0 and poly0[0] else None
+            if not ring0:
+                continue
+            sx = sum(p[0] for p in ring0) / len(ring0)
+            sy = sum(p[1] for p in ring0) / len(ring0)
+            lx, ly = to_px(sy, sx)
+            if not (0 < lx < w and 0 < ly < h):
+                continue
+            zid = str(props.get("ZONE_ID") or props.get("ZONE_NAME") or "?")
+            short = zid.split("-")[-1] or zid
+            st = (props.get("STATUS") or "").lower()
+            word = "ORDER" if "order" in st else "WARNING" if "warn" in st else (
+                (props.get("STATUS") or "").upper()[:12])
+            aged = _age_short(props.get("ISSUED_AT") or props.get("issued_at"))
+            text = f"{short} - {word}" + (f" - {aged}" if aged else "")
+            labels.append((lx, ly, text, col, 15))
+
+    def add_points(rows, color, r=3):
         for row in rows:
             la, lo = row.get("lat"), row.get("lon")
             if la is None or lo is None:
                 continue
             x, yv = to_px(la, lo)
             if -20 < x < w + 20 and -20 < yv < h + 20:
-                d.ellipse([(x - r, yv - r), (x + r, yv + r)], fill=color)
+                points.append((x, yv, color, r))
 
-    drawn: list[str] = []
-    log = get_logger("graphics")
-
-    # bottom-up: reference boundaries first, alarm layers last (most visible)
     def _try(name: str, fn) -> None:
         if name not in enabled:
             return
@@ -771,34 +827,52 @@ def _draw_overlays(
         except Exception as exc:  # one layer's outage never breaks the card
             log.info("snapshot_overlay_skipped", layer=name, error=str(exc)[:100])
 
-    _try("counties", lambda: draw_shape(
-        __import__("toast.pipeline.countylines", fromlist=["get_county_lines"])
-        .get_county_lines(conn).get("features", []), (92, 102, 116), 1))
-    _try("perimeters", lambda: draw_shape(
+    # counties: reference outline only, no fill
+    _try("counties", lambda: outlines.extend(
+        (pts, (92, 102, 116), 1)
+        for feat in __import__("toast.pipeline.countylines", fromlist=["get_county_lines"])
+        .get_county_lines(conn).get("features", [])
+        for ring in lines_of(feat.get("geometry") or {})
+        if len(pts := [to_px(p[1], p[0]) for p in ring if isinstance(p, list) and len(p) >= 2]) > 1
+        and in_frame(pts)))
+    _try("perimeters", lambda: add_polys(
         __import__("toast.pipeline.perimeters", fromlist=["get_perimeters"])
-        .get_perimeters(conn).get("features", []), EMBER, 2))
-    _try("firis", lambda: draw_shape(
+        .get_perimeters(conn).get("features", []), EMBER, 2, 46))
+    _try("firis", lambda: add_polys(
         __import__("toast.pipeline.firis", fromlist=["get_firis"])
-        .get_firis(conn).get("features", []), (255, 180, 70), 2))
-    _try("firewx", lambda: draw_shape(
+        .get_firis(conn).get("features", []), (255, 154, 60), 2, 46))
+    _try("firewx", lambda: add_polys(
         __import__("toast.pipeline.firewx", fromlist=["get_fire_weather"])
-        .get_fire_weather(conn).get("features", []), WARN, 2))
-    _try("evacZones", lambda: draw_shape(
+        .get_fire_weather(conn).get("features", []), WARN, 2, 30))
+    _try("evacZones", lambda: add_polys(
         __import__("toast.pipeline.evaczones", fromlist=["get_evac_zones"])
-        .get_evac_zones(conn).get("features", []), DIM, 3, status_key="STATUS"))
-    _try("closures", lambda: draw_points(
+        .get_evac_zones(conn).get("features", []), DIM, 2, 56, status_key="STATUS", label=True))
+    _try("closures", lambda: add_points(
         __import__("toast.pipeline.closures", fromlist=["get_closures"])
         .get_closures(conn).get("closures", []), (255, 90, 90), 4))
-    _try("hotspots", lambda: draw_points(
+    _try("hotspots", lambda: add_points(
         [dict(r) for r in conn.execute(
             "SELECT f.lat, f.lon FROM facts f JOIN sources s ON s.id = f.source_id"
             " WHERE s.type = 'satellite' AND f.lat IS NOT NULL"
             " AND unixepoch('now') - unixepoch(f.observed_at) < 86400")],
         (255, 140, 40), 2))
-    _try("aircraft", lambda: draw_points(
+    _try("aircraft", lambda: add_points(
         __import__("toast.pipeline.aircraft", fromlist=["current_aircraft"])
         .current_aircraft(conn).get("aircraft", []), (120, 200, 255), 3))
-    return drawn
+
+    out = Image.alpha_composite(base, fills).convert("RGB")
+    d = ImageDraw.Draw(out)
+    for pts, col, width in outlines:
+        d.line(pts, fill=col, width=width)
+    for x, yv, col, r in points:
+        d.ellipse([(x - r, yv - r), (x + r, yv + r)], fill=col)
+    # labels last, on top of everything, with a dark halo so they read on any fill
+    for lx, ly, text, col, size in labels:
+        f = _font(size)
+        for ox, oy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            d.text((lx + ox, ly + oy), text, font=f, fill=(0, 0, 0), anchor="mm")
+        d.text((lx, ly), text, font=f, fill=col, anchor="mm")
+    return out, drawn
 
 
 def generate_map_snapshot(
@@ -823,16 +897,16 @@ def generate_map_snapshot(
     url, credit = SNAP_BASEMAPS.get(basemap, SNAP_BASEMAPS["dark"])
 
     strip = _stitch_map(lat, lon, zoom=zoom, w=w, h=h, url=url)
-    d = ImageDraw.Draw(strip)
 
-    # the operator's enabled overlays, drawn under the fire pins so nothing they
-    # turned on to SHOW something is missing from the image
+    # the operator's enabled overlays, filled + labelled like the live map so
+    # nothing they turned on to SHOW something is missing from the image
     enabled = {s for s in (layers or "").split(",") if s}
-    overlays_drawn = (
-        _draw_overlays(conn, d, enabled, clat=lat, clon=lon, zoom=zoom, w=w, h=h)
-        if enabled
-        else []
-    )
+    overlays_drawn: list[str] = []
+    if enabled:
+        strip, overlays_drawn = _draw_overlays(
+            conn, strip, enabled, clat=lat, clon=lon, zoom=zoom, w=w, h=h
+        )
+    d = ImageDraw.Draw(strip)
 
     # active fires from the ledger, placed in the frame — the same picture the
     # OPS map paints, so the snapshot matches what was on screen
