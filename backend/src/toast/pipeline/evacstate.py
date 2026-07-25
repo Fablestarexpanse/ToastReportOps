@@ -101,6 +101,10 @@ def _zone_index(conn: sqlite3.Connection) -> dict[str, list[dict[str, Any]]]:
         idx.setdefault(inc, []).append(
             {
                 "zone_id": p.get("ZONE_ID"),
+                # the public id a resident recognises (YUB-E098-A), computed in
+                # evaczones so every surface says the same thing
+                "zone_label": p.get("zone_label"),
+                "hazard": p.get("hazard"),
                 "zone_name": p.get("ZONE_NAME"),
                 "status_raw": p.get("STATUS"),
                 "status": normalize_status(p.get("STATUS")),

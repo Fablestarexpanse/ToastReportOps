@@ -1083,7 +1083,13 @@ export default function MapPanel({
     if (!showEvacZones || !evacZones?.features?.length) return;
     const zoneLabels = L.layerGroup();
     // one entry per on-map label, so a zoom/pan handler can re-fit them all
-    const labelInfos: { marker: L.Marker; bounds: L.LatLngBounds; len: number }[] = [];
+    const labelInfos: {
+      marker: L.Marker;
+      bounds: L.LatLngBounds;
+      len: number;
+      full: string;
+      idOnly: string;
+    }[] = [];
     // status colors mirror the official public convention: order = the alarm
     // color, warning = amber, shelter-in-place = blue, anything else dim
     const colorOf = (status: string | null): string => {
@@ -1103,9 +1109,13 @@ export default function MapPanel({
         onEachFeature: (feature, lyr) => {
           const p = feature.properties as EvacZoneSet["features"][number]["properties"];
           const esc = escHtml;
-          // VERBATIM: status and official text exactly as the county issued them
-          const zoneLabel = [p.ZONE_ID, p.ZONE_NAME && p.ZONE_NAME !== p.ZONE_ID ? p.ZONE_NAME : null]
-            .filter(Boolean).map((s) => esc(s)).join(" · ");
+          // VERBATIM: status and official text exactly as the county issued them.
+          // Lead with the public zone id (YUB-E098-A) — what the county's own
+          // notice calls it — and keep the full Cal OES id alongside it.
+          const zoneLabel = [
+            p.zone_label || p.ZONE_ID,
+            p.ZONE_NAME && p.ZONE_NAME !== p.ZONE_ID ? p.ZONE_NAME : null,
+          ].filter(Boolean).map((s) => esc(s)).join(" · ");
           // "in effect" is derived from the real status, never assumed. The Cal
           // OES layer carries only elevated zones, but if a downgraded or lifted
           // row ever survives upstream we must reflect its true state, not paint
@@ -1133,14 +1143,20 @@ export default function MapPanel({
           // a label ON the section: one clean line, sized to the zone below
           const b = (lyr as L.Polygon).getBounds?.();
           if (b?.isValid()) {
-            const short = esc((p.ZONE_ID || "").split("-").pop() || p.ZONE_ID || "?");
+            // The zone id the county publishes — "YUB-E098-A". This used to be
+            // ZONE_ID.split("-").pop(), which kept only the last segment: on the
+            // live layer that rendered ICU-123-A and ICU-143-A both as "A", one
+            // under an ORDER and one under a WARNING. Same label, opposite
+            // instruction. Never truncate an evacuation zone's identity.
+            const short = p.zone_label || p.ZONE_ID || "?";
             const s = (p.STATUS || "").toLowerCase();
             const word = s.includes("order")
               ? "ORDER"
               : s.includes("warning")
                 ? "WARNING"
-                : esc((p.STATUS || "").toUpperCase().slice(0, 12));
+                : (p.STATUS || "").toUpperCase().slice(0, 12);
             const col = colorOf(p.STATUS);
+            // raw for textContent (auto-escaping); escaped only for the divIcon HTML
             const text = `${short} · ${word}${p.issued_at ? ` · ${age(p.issued_at)}` : ""}`;
             // sit on the polygon's own vertex centroid, not the bounding-box
             // centre — for an L-shaped or diagonal zone the box centre lands
@@ -1169,11 +1185,14 @@ export default function MapPanel({
                 html:
                   `<div style="transform:translate(-50%,-50%);pointer-events:none;` +
                   `white-space:nowrap;font-family:ui-monospace,monospace;font-weight:700;` +
-                  `color:${col};text-shadow:0 0 4px #000,0 0 7px #000,0 1px 4px #000">${text}</div>`,
+                  `color:${col};text-shadow:0 0 4px #000,0 0 7px #000,0 1px 4px #000">${esc(text)}</div>`,
               }),
             });
             zoneLabels.addLayer(marker);
-            labelInfos.push({ marker, bounds: b, len: text.length });
+            // a tight zone drops the status/age before it drops its IDENTITY —
+            // the fill colour already carries the status, but nothing else on
+            // the map says WHICH zone this is
+            labelInfos.push({ marker, bounds: b, len: text.length, full: text, idOnly: short });
           }
         },
       },
@@ -1184,7 +1203,7 @@ export default function MapPanel({
     // WITH the map instead of sitting at a fixed pixel size, and hide labels
     // for zones too small to read at the current zoom (statewide = clutter).
     const sizeZoneLabels = () => {
-      for (const { marker, bounds, len } of labelInfos) {
+      for (const { marker, bounds, len, full, idOnly } of labelInfos) {
         const el = marker.getElement()?.firstElementChild as HTMLElement | undefined;
         if (!el) continue;
         const ne = m.latLngToContainerPoint(bounds.getNorthEast());
@@ -1193,8 +1212,17 @@ export default function MapPanel({
         const h = Math.abs(sw.y - ne.y);
         // the label must fit the zone BOTH ways: across ~72% of its width
         // (monospace char ≈ 0.6em wide) and within ~40% of its height, so a
-        // wide-but-thin or tall-but-narrow zone still holds it inside
-        const byWidth = (w * 0.72) / (len * 0.6);
+        // wide-but-thin or tall-but-narrow zone still holds it inside.
+        // Full zone ids are longer than the old truncated ones, so when the
+        // whole line won't fit, shed the status/age and keep the id.
+        let useLen = len;
+        let useText = full;
+        if ((w * 0.72) / (len * 0.6) < 8 && idOnly.length < len) {
+          useLen = idOnly.length;
+          useText = idOnly;
+        }
+        if (el.textContent !== useText) el.textContent = useText;
+        const byWidth = (w * 0.72) / (useLen * 0.6);
         const byHeight = h * 0.4;
         const size = Math.min(byWidth, byHeight, 40);
         if (size < 8) {

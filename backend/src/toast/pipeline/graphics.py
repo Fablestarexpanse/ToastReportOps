@@ -800,8 +800,11 @@ def _draw_overlays(
             lx, ly = to_px(sy, sx)
             if not (0 < lx < w and 0 < ly < h):
                 continue
-            zid = str(props.get("ZONE_ID") or props.get("ZONE_NAME") or "?")
-            short = zid.split("-")[-1] or zid
+            # the public zone id, never truncated — the last dash segment alone
+            # rendered ICU-123-A and ICU-143-A both as "A" (see evaczones)
+            short = str(
+                props.get("zone_label") or props.get("ZONE_ID") or props.get("ZONE_NAME") or "?"
+            )
             st = (props.get("STATUS") or "").lower()
             word = "ORDER" if "order" in st else "WARNING" if "warn" in st else (
                 (props.get("STATUS") or "").upper()[:12])
@@ -1132,7 +1135,7 @@ def generate_evac_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
         for z in shown:
             col = _evac_color(z.get("status"))
             d.rectangle([(40, y + 4), (46, y + 30)], fill=col)
-            zid = str(z.get("zone_id") or z.get("zone_name") or "zone")
+            zid = str(z.get("zone_label") or z.get("zone_id") or z.get("zone_name") or "zone")
             d.text((58, y), zid, font=_font(22), fill=TXT)
             d.text((58 + 470, y), _evac_word(z.get("status")), font=_font(20), fill=col)
             issued = z.get("issued_at")

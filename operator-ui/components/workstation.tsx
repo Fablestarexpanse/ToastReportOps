@@ -1141,7 +1141,7 @@ function IntelPanel({
               <div key={z.zone_id ?? i} style={{ borderLeft: `2px solid ${zc}`, paddingLeft: 7 }}>
                 <div style={{ display: "flex", gap: 6, alignItems: "baseline" }}>
                   <span style={{ fontFamily: font.mono, fontSize: 10, color: C.txt }}>
-                    {z.zone_id || z.zone_name || "zone"}
+                    {z.zone_label || z.zone_id || z.zone_name || "zone"}
                   </span>
                   <span
                     style={{ fontFamily: font.mono, fontSize: 8, fontWeight: 700, color: zc, letterSpacing: 0.5 }}

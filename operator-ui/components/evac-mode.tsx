@@ -86,7 +86,7 @@ function summaryText(g: Group, fetchedAt: string): string {
   const byStatus: Record<string, string[]> = {};
   for (const z of g.zones) {
     const st = norm(z.STATUS);
-    (byStatus[st] ||= []).push(z.ZONE_ID || z.ZONE_NAME || "?");
+    (byStatus[st] ||= []).push(z.zone_label || z.ZONE_ID || z.ZONE_NAME || "?");
   }
   const lines = [`${g.name} — Evacuation status${g.county ? ` · ${g.county} County, CA` : ""}`];
   lines.push(`Per Cal OES, as of ${fmtStamp(fetchedAt)}:`);
@@ -356,7 +356,7 @@ export default function EvacMode({
                     <div key={(z.ZONE_ID || i) + "" + i} style={{ borderLeft: `2px solid ${zc}`, paddingLeft: 8 }}>
                       <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
                         <span style={{ fontFamily: font.mono, fontSize: 11, color: C.txt }}>
-                          {z.ZONE_ID || z.ZONE_NAME || "zone"}
+                          {z.zone_label || z.ZONE_ID || z.ZONE_NAME || "zone"}
                         </span>
                         <span
                           style={{ fontFamily: font.mono, fontSize: 8.5, fontWeight: 700, color: zc, letterSpacing: 0.5 }}

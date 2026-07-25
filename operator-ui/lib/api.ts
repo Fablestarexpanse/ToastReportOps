@@ -755,6 +755,9 @@ export type IncidentIntel = {
 
 export type EvacZoneSummary = {
   zone_id: string | null;
+  /** public id a county publishes ("YUB-E098-A"); prefer this for display */
+  zone_label?: string | null;
+  hazard?: string | null;
   zone_name: string | null;
   status_raw: string | null;
   status: string | null;
@@ -1377,9 +1380,16 @@ export type EvacZoneFeature = {
     NOTES?: string | null;
     issued_at?: string | null;
     last_updated_at?: string | null;
+    /** the public zone id a county publishes ("YUB-E098-A") — computed server
+        side from ZONE_ID so every surface shows the same identity */
+    zone_label?: string | null;
+    /** what this evacuation is FOR, per the zone's own official text: "fire",
+        "flood", "debris flow"… Non-fire hazards ride the same statewide layer. */
+    hazard?: string | null;
     incident_id: string | null;
     incident_name?: string;
     distance_km?: number;
+    regrouped_with?: string | null;
   };
 };
 
@@ -1389,6 +1399,8 @@ export type EvacZoneSet = {
   count: number;
   matched: number;
   statuses: Record<string, number>;
+  /** zone tally by hazard — "fire", "flood", "unstated"… */
+  hazards?: Record<string, number>;
   source: string;
   note: string;
   fetched_at: string;

@@ -34,7 +34,99 @@ SERVICE = (
 CACHE_KEY = "evaczones:ca"
 CACHE_TTL_S = 4 * 60  # the layer rebuilds every 5 minutes; never poll faster
 MATCH_RADIUS_KM = 60.0
-ACTIVE_STATUSES = ("order", "warning", "shelter in place", "shelter-in-place", "advisory")
+
+# Non-fire hazards ride this same statewide layer — Tulare's flood evacuations
+# sit next to Inyo's wildfire ones. A wildfire tool must not present a flood
+# order as a fire order, so each zone is tagged with the hazard its own official
+# text names. Checked fire-first: a wildfire note always says so.
+_HAZARD_WORDS: tuple[tuple[str, str], ...] = (
+    ("debris flow", "debris flow"),
+    ("mudslide", "mudslide"),
+    ("mud slide", "mudslide"),
+    ("flood", "flood"),
+    ("hazmat", "hazmat"),
+    ("chemical", "hazmat"),
+    ("gas leak", "gas leak"),
+    ("tsunami", "tsunami"),
+    ("earthquake", "earthquake"),
+    ("law enforcement", "law enforcement"),
+    ("shooting", "law enforcement"),
+    ("storm", "storm"),
+)
+
+
+def public_zone_id(raw: str | None) -> str | None:
+    """The zone id a county publishes and a resident recognises.
+
+    Cal OES ids are `US-CA-<county code>-<agency>-<zone>[-<sub>]`, e.g.
+    `US-CA-XYU-YUB-E098-A`. The county's own notice calls that zone
+    "YUB-E098-A" — country/state/county-code are routing, not identity. So we
+    strip that prefix and keep the agency onward.
+
+    This matters more than cosmetics: the map used to show only the LAST dash
+    segment, which collapsed `ICU-123-A` and `ICU-143-A` both to "A" — two
+    different zones, under different orders, wearing the same label.
+    """
+    if not raw:
+        return None
+    s = str(raw).strip()
+    parts = s.split("-")
+    if len(parts) >= 5 and parts[0].upper() == "US" and parts[1].upper() == "CA":
+        return "-".join(parts[3:])
+    if len(parts) >= 3 and parts[0].upper() == "US" and parts[1].upper() == "CA":
+        return "-".join(parts[2:])
+    return s
+
+
+def hazard_of(props: dict[str, Any]) -> str | None:
+    """What this evacuation is FOR, from the zone's own official text."""
+    text = " ".join(
+        str(props.get(k) or "")
+        for k in ("EVENT_TYPE", "NOTES", "CRITICAL_INFO", "PUBLIC_INFO")
+    ).lower()
+    if not text.strip():
+        return None
+    if "fire" in text:  # wildfire/wild fire/structure fire — the common case
+        return "fire"
+    for needle, label in _HAZARD_WORDS:
+        if needle in text:
+            return label
+    return None
+
+
+def _inherit_family_hazard(features: list[dict[str, Any]]) -> None:
+    """A zone split into A/B is one event. When one sibling's text names the
+    hazard ("...related to the Chutes Fire") and the other is generic
+    ("Mandatory Evacuation. Please stay out of the area."), the silent one
+    inherits — same place, same emergency. Only ever fills a blank; a zone that
+    states its own hazard is never overwritten."""
+    families: dict[str, list[dict[str, Any]]] = {}
+    for f in features:
+        p = f.get("properties") or {}
+        parent = _parent_zone(p.get("ZONE_ID"))
+        if parent:
+            families.setdefault(parent, []).append(p)
+    for members in families.values():
+        stated = {p.get("hazard") for p in members if p.get("hazard")}
+        if len(stated) != 1:
+            continue  # silent family, or siblings disagree — claim nothing
+        hazard = stated.pop()
+        for p in members:
+            if not p.get("hazard"):
+                p["hazard"] = hazard
+                p["hazard_inherited"] = True
+
+
+def _parent_zone(zone_id: str | None) -> str | None:
+    """`ICU-123-A` -> `ICU-123`. A county splitting a zone into A/B keeps them
+    adjacent on the ground, so they belong to the same fire."""
+    pid = public_zone_id(zone_id)
+    if not pid:
+        return None
+    parts = pid.split("-")
+    if len(parts) > 1 and len(parts[-1]) == 1 and parts[-1].isalpha():
+        return "-".join(parts[:-1])
+    return pid
 
 
 def _epoch_iso(ms: Any) -> str | None:
@@ -81,6 +173,7 @@ def _match_incidents(conn: sqlite3.Connection, features: list[dict[str, Any]]) -
         )
     ]
     matched = 0
+    # first pass: nearest active fire within range, per zone
     for feature in features:
         props = feature.setdefault("properties", {})
         props["incident_id"] = None
@@ -96,7 +189,28 @@ def _match_incidents(conn: sqlite3.Connection, features: list[dict[str, Any]]) -
             props["incident_id"] = best[0]["id"]
             props["incident_name"] = best[0]["canonical_name"]
             props["distance_km"] = round(best[1], 1)
-            matched += 1
+
+    # second pass: a zone a county SPLIT (ICU-123-A/B/C/D) is one place on the
+    # ground. Nearest-centroid alone scattered those siblings across two fires
+    # when both were in range, mis-attributing each fire's evacuation count.
+    # The closest sibling decides for the whole family.
+    families: dict[str, list[dict[str, Any]]] = {}
+    for feature in features:
+        props = feature["properties"]
+        parent = _parent_zone(props.get("ZONE_ID"))
+        if parent and props.get("incident_id"):
+            families.setdefault(parent, []).append(props)
+    for members in families.values():
+        if len(members) < 2:
+            continue
+        anchor = min(members, key=lambda p: p.get("distance_km") or 1e9)
+        for p in members:
+            if p["incident_id"] != anchor["incident_id"]:
+                p["incident_id"] = anchor["incident_id"]
+                p["incident_name"] = anchor.get("incident_name")
+                p["regrouped_with"] = anchor.get("ZONE_ID")
+
+    matched = sum(1 for f in features if f["properties"].get("incident_id"))
     return matched
 
 
@@ -125,11 +239,19 @@ def get_evac_zones(conn: sqlite3.Connection, *, refresh: bool = False) -> dict[s
         # county's last touch. Both official, both shown as-is.
         p["issued_at"] = p.get("CreationDate")
         p["last_updated_at"] = p.get("EditDate") or p.get("EDIT_DATE")
+        # the id a resident recognises, computed once here so every surface
+        # (map label, tooltip, EVAC tab, cards, reports) says the same thing
+        p["zone_label"] = public_zone_id(p.get("ZONE_ID"))
+        p["hazard"] = hazard_of(p)
+    _inherit_family_hazard(features)
     matched = _match_incidents(conn, features)
     statuses: dict[str, int] = {}
+    hazards: dict[str, int] = {}
     for f in features:
         s = (f["properties"].get("STATUS") or "unknown").strip()
         statuses[s] = statuses.get(s, 0) + 1
+        h = f["properties"].get("hazard") or "unstated"
+        hazards[h] = hazards.get(h, 0) + 1
 
     payload: dict[str, Any] = {
         "type": "FeatureCollection",
@@ -137,6 +259,7 @@ def get_evac_zones(conn: sqlite3.Connection, *, refresh: bool = False) -> dict[s
         "count": len(features),
         "matched": matched,
         "statuses": statuses,
+        "hazards": hazards,
         "source": "Cal OES California Evacuation Aggregation Layer (state open data)",
         "note": (
             "Official zone statuses, rendered verbatim. The layer holds only "

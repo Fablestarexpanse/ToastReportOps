@@ -65,6 +65,48 @@ def test_statuses_pass_through_verbatim_and_zones_match_fires(seeded, monkeypatc
     assert "verbatim" in out["note"]
 
 
+def test_split_siblings_stay_on_one_fire(seeded, monkeypatch):
+    """A county that splits ICU-123 into A/B/C/D describes ONE place. Matching
+    each sibling to its own nearest fire scattered them across two incidents and
+    mis-counted both fires' evacuations; the closest sibling decides for all."""
+    seeded.execute("UPDATE incidents SET lat = 37.00, lon = -118.00 WHERE id = 'i1'")
+    seeded.execute(
+        "INSERT INTO incidents (id, canonical_name, status, lat, lon, created_at, updated_at)"
+        " VALUES ('i2', 'OTHER FIRE', 'active', 37.30, -118.00,"
+        " '2026-07-19T00:00:00.000Z', '2026-07-19T00:00:00.000Z')"
+    )
+    _fake(
+        monkeypatch,
+        [
+            _zone("US-CA-XIN-ICU-123-A", "Evacuation Order", 37.05, -118.00),  # nearer i1
+            _zone("US-CA-XIN-ICU-123-D", "Evacuation Order", 37.20, -118.00),  # nearer i2
+        ],
+    )
+    out = evaczones.get_evac_zones(seeded, refresh=True)
+    ids = {f["properties"]["ZONE_ID"]: f["properties"] for f in out["features"]}
+    a = ids["US-CA-XIN-ICU-123-A"]
+    d = ids["US-CA-XIN-ICU-123-D"]
+    # both land on the fire the CLOSEST sibling picked — not one each
+    assert a["incident_id"] == d["incident_id"] == "i1"
+    assert d["regrouped_with"] == "US-CA-XIN-ICU-123-A"
+    # and each keeps its own full public identity
+    assert a["zone_label"] == "ICU-123-A"
+    assert d["zone_label"] == "ICU-123-D"
+
+
+def test_hazard_is_tagged_so_a_flood_is_not_shown_as_a_fire(seeded, monkeypatch):
+    fire = _zone("US-CA-XIN-ICU-127", "Evacuation Order", 39.75, -121.60)
+    fire["properties"]["NOTES"] = "Evacuation ORDER in place for an active wildfire."
+    flood = _zone("US-CA-XTU-PVL-E044", "Evacuation Order", 36.06, -118.93)
+    flood["properties"]["NOTES"] = "Flooding"
+    _fake(monkeypatch, [fire, flood])
+    out = evaczones.get_evac_zones(seeded, refresh=True)
+    by = {f["properties"]["ZONE_ID"]: f["properties"] for f in out["features"]}
+    assert by["US-CA-XIN-ICU-127"]["hazard"] == "fire"
+    assert by["US-CA-XTU-PVL-E044"]["hazard"] == "flood"
+    assert out["hazards"] == {"fire": 1, "flood": 1}
+
+
 def test_cache_respects_the_five_minute_upstream_cadence(seeded, monkeypatch):
     calls = _fake(monkeypatch, [])
     evaczones.get_evac_zones(seeded, refresh=True)
