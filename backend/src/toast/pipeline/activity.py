@@ -283,7 +283,8 @@ def check_active(
                 )
             ]
             try:
-                out = llm.chat_json([{"role": "system", "content": prompt.render(
+                # judgment: "is this fire still burning?" weighed over evidence
+                out = llm.judge_json([{"role": "system", "content": prompt.render(
                     name=inc["canonical_name"],
                     evidence=json.dumps(ev, indent=1),
                     recent=chr(10).join(snippets) or "(no reporting)",

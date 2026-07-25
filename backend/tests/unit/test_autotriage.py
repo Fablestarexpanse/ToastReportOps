@@ -20,6 +20,11 @@ class FakeLLM:
         self.prompts.append(messages[0]["content"])
         return self.replies.pop(0)
 
+    # triage is a judgment call — the real client routes it through judge_json
+    # (reasoning allowed) rather than chat_json
+    def judge_json(self, messages, **kw):
+        return self.chat_json(messages, **kw)
+
 
 def _claim(db, content="Fire near Paradise grows.", name=None):
     fid = ulid()
@@ -86,6 +91,9 @@ def test_llm_outage_skips_quietly(seeded):
 
     class Down:
         def chat_json(self, *a, **kw):
+            raise LLMError("connection refused")
+
+        def judge_json(self, *a, **kw):
             raise LLMError("connection refused")
 
     out = autotriage.propose_batch(seeded, client=Down())

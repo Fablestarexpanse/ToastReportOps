@@ -84,7 +84,8 @@ def propose_batch(
             candidates=json.dumps(cand_lines, indent=1) if cand_lines else "(none)",
         )
         try:
-            out = llm.chat_json([{"role": "system", "content": rendered}])
+            # judgment: does this unattributed claim belong to one of these fires?
+            out = llm.judge_json([{"role": "system", "content": rendered}])
         except LLMError as exc:
             log.warning("autotriage_llm_failed", error=str(exc)[:120])
             failed += 1

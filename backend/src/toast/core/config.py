@@ -26,6 +26,17 @@ class Settings(BaseSettings):
     # qwen3 and similar reasoning models default to slow "thinking"; the soft
     # switch below is appended to the system prompt to skip it for extraction.
     llm_no_think_token: str = "/no_think"
+    # ...but that blanket suppression was chosen for EXTRACTION and then
+    # inherited by every call. Extraction is transcription — "pull the acreage
+    # out of this sentence" — and reasoning there is pure latency on the hottest
+    # path in the system. The JUDGMENT stages are different: watch classification
+    # (new fire or old news?), activity checks (is this fire still burning?) and
+    # auto-triage (does this fact belong to that incident?) all weigh conflicting
+    # evidence, which is what reasoning is actually for.
+    #
+    # Set false to force reasoning off everywhere — if a model ignores /no_think,
+    # or if judgment latency starts backing the job queue up.
+    llm_reasoning_on_judgment: bool = True
 
     # embeddings
     embedding_model: str = "nomic-embed-text"

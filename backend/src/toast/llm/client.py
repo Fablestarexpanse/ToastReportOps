@@ -58,6 +58,7 @@ class LLMClient:
         self.api_key = s.llm_api_key
         self.default_timeout_s = s.llm_timeout_s
         self.no_think_token = s.llm_no_think_token
+        self.reasoning_on_judgment = s.llm_reasoning_on_judgment
 
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.api_key}"}
@@ -77,6 +78,14 @@ class LLMClient:
         msgs = [dict(m) for m in messages]
         if no_think and self.no_think_token and msgs:
             msgs[0]["content"] = f"{self.no_think_token}\n{msgs[0]['content']}"
+        # Every prompt in this pipeline is a single system message — the whole
+        # task, including the injection-hardened content blocks, lives there.
+        # Some chat templates REFUSE that shape: Qwen3.5's raises
+        # "No user query found in messages." and the request 400s before the
+        # model ever runs. A minimal user turn satisfies those templates without
+        # touching the system prompt or the task it states.
+        if not any(m.get("role") == "user" for m in msgs):
+            msgs.append({"role": "user", "content": "Proceed."})
         resp = httpx.post(
             f"{self.base_url}/chat/completions",
             headers=self._headers(),
@@ -92,6 +101,31 @@ class LLMClient:
             raise LLMError(f"chat failed: {resp.status_code} {resp.text[:300]}")
         content = resp.json()["choices"][0]["message"]["content"]
         return _parse_json_lenient(content)
+
+    def judge_json(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        temperature: float = 0.1,
+        timeout_s: float | None = None,
+    ) -> Any:
+        """A JUDGMENT call: the model weighs conflicting evidence and decides.
+
+        Same contract as chat_json, but reasoning is allowed through instead of
+        suppressed — these are the calls where thinking earns its latency (is
+        this a new fire or old news? is this one still burning?). Extraction and
+        the writing stages keep using chat_json and stay fast.
+
+        Reasoning output is safe here: _parse_json_lenient strips <think> blocks
+        and falls back to the first {...} span, so a preamble never breaks the
+        parse. Set llm_reasoning_on_judgment=false to force it off everywhere.
+        """
+        return self.chat_json(
+            messages,
+            temperature=temperature,
+            timeout_s=timeout_s,
+            no_think=not self.reasoning_on_judgment,
+        )
 
     def embed(self, texts: list[str], *, timeout_s: float = 120.0) -> list[list[float]]:
         resp = httpx.post(

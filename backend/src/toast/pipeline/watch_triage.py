@@ -130,7 +130,9 @@ def classify_candidate(
         excerpts=excerpts,
     )
     client = client or client_for(conn)
-    raw = client.chat_json([{"role": "system", "content": rendered}], temperature=0.1)
+    # a judgment call, not transcription: reasoning is allowed through (the
+    # verdict below is exactly the kind qwen3 got wrong without it)
+    raw = client.judge_json([{"role": "system", "content": rendered}], temperature=0.1)
 
     verdict = str(raw.get("verdict", "")).strip()
     if verdict not in VALID_VERDICTS:
