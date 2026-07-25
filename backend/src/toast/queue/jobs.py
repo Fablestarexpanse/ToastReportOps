@@ -15,6 +15,18 @@ from typing import Any
 from toast.core.db import transaction, utcnow
 from toast.core.ids import ulid
 
+# Starvation guard. Priority is ascending, and a single worker drains strictly by
+# priority — so a standing backlog of low-priority-number work (LLM extract at 6,
+# embed at 7) can hold everything below it off the CPU indefinitely. That is not
+# theoretical: it stranded the 60-second aircraft poller for three hours.
+#
+# After AGING_AFTER_S a waiting job's EFFECTIVE priority is capped at
+# AGED_PRIORITY, so it overtakes the batch tiers and runs. The cap is deliberate:
+# an aged job still never cuts ahead of the evacuation sync (2) or the realtime
+# feeds (3), because those are time-critical by nature and cheap to run.
+AGING_AFTER_S = 900
+AGED_PRIORITY = 4
+
 
 def enqueue(
     conn: sqlite3.Connection,
@@ -53,7 +65,12 @@ def claim(
                     SELECT id FROM jobs
                     WHERE state='queued' AND (run_after IS NULL OR run_after <= ?)
                     {stage_filter}
-                    ORDER BY priority, created_at LIMIT 1)
+                    ORDER BY MIN(priority,
+                                 CASE WHEN unixepoch('now') - unixepoch(created_at)
+                                           >= {AGING_AFTER_S}
+                                      THEN {AGED_PRIORITY} ELSE 99 END),
+                             created_at
+                    LIMIT 1)
                 RETURNING *""",
             [worker_id, now, *params],
         ).fetchone()

@@ -113,7 +113,25 @@ def stage_due(conn, stage: str, interval_s: int) -> bool:
 # live ingest. A few cannot: an evacuation refresh is a life-safety path and must
 # jump the queue, so it rides at ingest priority (2), the same as a reactive
 # evac sync fired by a fresh order.
-STAGE_PRIORITY = {"evac_zone_sync": 2}
+# Priority is ASCENDING — 2 runs before 5 runs before 8 (see queue/jobs.claim).
+# Everything not listed here lands on 8, BEHIND poll (5), extract (6) and embed
+# (7). That is fine for true maintenance, and fatal for a live feed: a backlog
+# of LLM extract/embed work starved the 60-second aircraft poller for hours, and
+# because stage_due() refuses to enqueue while one is already queued, the single
+# stranded job silently killed the stage instead of merely delaying it.
+#
+# So the cheap, time-critical, fast-cadence stages sit in the ingest tier with
+# the evacuation sync. They are seconds of work each; they must never queue
+# behind a model.
+STAGE_PRIORITY = {
+    "evac_zone_sync": 2,  # evacuations outrank everything
+    "aircraft": 3,  # 60 s cadence — a tanker orbit is only legible if sampled
+    "radio_ingest": 3,  # 30 s — calls land seconds after capture
+    "telegram_poll": 3,  # 15 s — operator button presses
+    "telegram_notify": 3,  # 30 s — alerts out
+    "release_due": 3,  # 60 s — scheduled posts go out on time
+    "weather_refresh": 4,  # 20 min, but cheap and feeds the wind layer
+}
 
 
 def scan_once(conn) -> int:
