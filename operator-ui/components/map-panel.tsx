@@ -257,6 +257,118 @@ function hotspotColor(frp: number | null): string {
   return C.warn; // smouldering / small
 }
 
+function loadImage(src: string): Promise<HTMLImageElement | null> {
+  return new Promise((res) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => res(img);
+    img.onerror = () => res(null);
+    img.src = src;
+  });
+}
+
+/* Capture the LIVE map exactly as displayed — the fix for "not 1 for 1".
+   The basemap is the operator's actual on-screen tiles (every tile layer is
+   crossOrigin, so the canvas never taints); the single overlay canvas carries
+   every vector layer (perimeters, evac fills, closures, pins…); marker/label
+   text is re-stamped from the DOM. Then the brand badge and tag band go on.
+   Throws if the canvas is somehow tainted, so the caller can fall back to the
+   server render. */
+async function captureBrandedMap(el: HTMLElement, brand: string): Promise<Blob> {
+  const mr = el.getBoundingClientRect();
+  const W = Math.max(1, Math.round(mr.width));
+  const H = Math.max(1, Math.round(mr.height));
+  const cv = document.createElement("canvas");
+  cv.width = W;
+  cv.height = H;
+  const ctx = cv.getContext("2d");
+  if (!ctx) throw new Error("no 2d context");
+  ctx.fillStyle = "#10141a";
+  ctx.fillRect(0, 0, W, H);
+
+  // 1. basemap tiles, in DOM order (tile panes stack bottom-to-top)
+  el.querySelectorAll<HTMLImageElement>("img.leaflet-tile").forEach((t) => {
+    if (!t.complete || !t.naturalWidth) return;
+    const r = t.getBoundingClientRect();
+    try {
+      ctx.drawImage(t, r.left - mr.left, r.top - mr.top, r.width, r.height);
+    } catch {
+      /* one bad tile never sinks the grab */
+    }
+  });
+  // 2. vector overlay canvas(es): perimeters, evac fills/outlines, closures, pins
+  el.querySelectorAll<HTMLCanvasElement>("canvas").forEach((oc) => {
+    if (oc === cv || oc.width < 1) return;
+    const r = oc.getBoundingClientRect();
+    if (r.width < 1) return;
+    try {
+      ctx.drawImage(oc, r.left - mr.left, r.top - mr.top, r.width, r.height);
+    } catch {
+      /* skip */
+    }
+  });
+  // 3. marker & label text/glyphs: zone labels, county names, aircraft/camera icons
+  ctx.textBaseline = "middle";
+  el.querySelectorAll<HTMLElement>(".leaflet-marker-pane > *, .leaflet-tooltip-pane > *").forEach((m) => {
+    const child = (m.firstElementChild as HTMLElement) || m;
+    const txt = (m.textContent || "").trim();
+    if (!txt) return;
+    let r = child.getBoundingClientRect();
+    if (r.width < 1 && r.height < 1) r = m.getBoundingClientRect();
+    const cs = getComputedStyle(child);
+    ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    ctx.fillStyle = cs.color || "#fff";
+    ctx.textAlign = "center";
+    ctx.save();
+    ctx.shadowColor = "rgba(0,0,0,0.95)";
+    ctx.shadowBlur = 4;
+    ctx.fillText(txt, r.left - mr.left + r.width / 2, r.top - mr.top + Math.max(r.height, 12) / 2);
+    ctx.restore();
+  });
+
+  // will throw if any layer tainted the canvas → caller falls back to server
+  ctx.getImageData(0, 0, 1, 1);
+
+  // 4. brand it: logo badge + wordmark upper-left, tag band along the bottom
+  const badge = await loadImage("/api/brand/badge.png");
+  ctx.fillStyle = "rgba(16,20,26,0.66)";
+  ctx.fillRect(0, 0, Math.min(W, 360), 58);
+  let tx = 14;
+  if (badge && badge.naturalWidth) {
+    const bw = 40;
+    const bh = (badge.naturalHeight / badge.naturalWidth) * 40;
+    ctx.drawImage(badge, 14, 9, bw, bh);
+    tx = 14 + bw + 10;
+  }
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = "#ff7a3d";
+  ctx.font = "700 20px ui-monospace, monospace";
+  ctx.fillText("TOAST REPORT OPS", tx, 31);
+  ctx.fillStyle = "#96a0ac";
+  ctx.font = "12px ui-monospace, monospace";
+  ctx.fillText("CALIFORNIA WILDFIRE OPS", tx, 47);
+
+  const bandH = 30;
+  ctx.fillStyle = "rgba(16,20,26,0.82)";
+  ctx.fillRect(0, H - bandH, W, bandH);
+  ctx.fillStyle = "#e8ecf1";
+  ctx.font = "13px ui-monospace, monospace";
+  ctx.textAlign = "left";
+  ctx.fillText((brand || "Toast Report OPS").slice(0, 84), 14, H - bandH + 20);
+  ctx.fillStyle = "#96a0ac";
+  ctx.font = "12px ui-monospace, monospace";
+  ctx.textAlign = "right";
+  const stamp = new Date().toLocaleString("en-US", {
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+  });
+  ctx.fillText(`generated ${stamp}`, W - 14, H - bandH + 20);
+
+  return await new Promise<Blob>((resolve, reject) =>
+    cv.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob null"))), "image/png"),
+  );
+}
+
 export default function MapPanel({
   incidents,
   selected,
@@ -369,39 +481,60 @@ export default function MapPanel({
   // the browser tile-CORS taint that breaks canvas capture of Leaflet.
   const [snapUrl, setSnapUrl] = useState<string | null>(null);
   const [snapping, setSnapping] = useState(false);
+  const brandLineRef = useRef<string | null>(null);
   const closeSnap = useCallback(() => {
     setSnapUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return null;
     });
   }, []);
+  // server-side render of the current view — the fallback if a browser capture
+  // ever taints (a basemap without CORS) or fails; keeps the button working
+  const serverSnapshot = useCallback(async (): Promise<Blob> => {
+    const m = map.current!;
+    const c = m.getCenter();
+    const size = m.getSize();
+    const zoom = Math.round(m.getZoom());
+    const w = Math.min(2000, Math.max(320, Math.round(size.x)));
+    const h = Math.min(1400, Math.max(240, Math.round(size.y)));
+    const layers = [
+      showPerimeters && "perimeters",
+      showFiris && "firis",
+      showFirewx && "firewx",
+      showEvacZones && "evacZones",
+      showClosures && "closures",
+      showCounties && "counties",
+      showHotspots && "hotspots",
+      showAircraft && "aircraft",
+    ].filter(Boolean).join(",");
+    const q = `lat=${c.lat.toFixed(5)}&lon=${c.lng.toFixed(5)}&zoom=${zoom}&w=${w}&h=${h}&basemap=${encodeURIComponent(effective)}${layers ? `&layers=${layers}` : ""}`;
+    const res = await fetch(`/api/map/snapshot.png?${q}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(String(res.status));
+    return res.blob();
+  }, [effective, showPerimeters, showFiris, showFirewx, showEvacZones, showClosures, showCounties, showHotspots, showAircraft]);
   const doSnapshot = useCallback(async () => {
+    const el = holder.current;
     const m = map.current;
-    if (!m || snapping) return;
-    setLayersOpen(false); // close the menu — chrome out of the way — but keep the layers ON
+    if (!el || !m || snapping) return;
+    setLayersOpen(false); // menu out of the way — but the layers stay ON
     setSnapping(true);
     try {
-      const c = m.getCenter();
-      const size = m.getSize();
-      const zoom = Math.round(m.getZoom());
-      const w = Math.min(2000, Math.max(320, Math.round(size.x)));
-      const h = Math.min(1400, Math.max(240, Math.round(size.y)));
-      // whatever the operator has enabled rides into the image — a layer turned
-      // on to show something must not vanish from the grab
-      const layers = [
-        showPerimeters && "perimeters",
-        showFiris && "firis",
-        showFirewx && "firewx",
-        showEvacZones && "evacZones",
-        showClosures && "closures",
-        showCounties && "counties",
-        showHotspots && "hotspots",
-        showAircraft && "aircraft",
-      ].filter(Boolean).join(",");
-      const q = `lat=${c.lat.toFixed(5)}&lon=${c.lng.toFixed(5)}&zoom=${zoom}&w=${w}&h=${h}&basemap=${encodeURIComponent(effective)}${layers ? `&layers=${layers}` : ""}`;
-      const res = await fetch(`/api/map/snapshot.png?${q}`, { cache: "no-store" });
-      if (!res.ok) throw new Error(String(res.status));
-      const blob = await res.blob();
+      if (brandLineRef.current === null) {
+        try {
+          const r = await fetch("/api/brand", { cache: "no-store" });
+          brandLineRef.current = (await r.json())?.line || "";
+        } catch {
+          brandLineRef.current = "";
+        }
+      }
+      // capture the REAL on-screen map first (true 1:1); fall back to the
+      // server render only if that ever fails
+      let blob: Blob;
+      try {
+        blob = await captureBrandedMap(el, brandLineRef.current || "");
+      } catch {
+        blob = await serverSnapshot();
+      }
       setSnapUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
         return URL.createObjectURL(blob);
@@ -411,7 +544,7 @@ export default function MapPanel({
     } finally {
       setSnapping(false);
     }
-  }, [effective, snapping, showPerimeters, showFiris, showFirewx, showEvacZones, showClosures, showCounties, showHotspots, showAircraft]);
+  }, [snapping, serverSnapshot]);
   useEffect(() => () => closeSnap(), [closeSnap]); // revoke on unmount
 
   // create once

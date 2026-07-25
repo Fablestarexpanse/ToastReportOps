@@ -2068,6 +2068,27 @@ def map_snapshot(
     return Response(content=png, media_type="image/png")
 
 
+@router.get("/brand")
+def brand_info(request: Request) -> dict:
+    """The operator's brand line for stamping onto a client-captured map grab."""
+    from toast.core.appsettings import brand_line
+
+    return {"line": brand_line(_conn(request))}
+
+
+@router.get("/brand/badge.png")
+def brand_badge():
+    """The OPS logo badge, so the browser-side map capture can stamp it on."""
+    from pathlib import Path
+
+    from fastapi import Response
+
+    p = Path(__file__).resolve().parents[1] / "assets" / "ops-badge.png"
+    if not p.exists():
+        raise HTTPException(404, "badge asset missing")
+    return Response(content=p.read_bytes(), media_type="image/png")
+
+
 @router.get("/publish/channels")
 def publish_channels(request: Request) -> dict:
     """Which social channels have working credentials — the release checkboxes."""
