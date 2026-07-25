@@ -726,9 +726,14 @@ export default function MapPanel({
     const layer = L.geoJSON(perimeters as never, {
       style: (feature) => {
         const inc = byId.get(String(feature?.properties?.incident_id ?? ""));
-        // an unmatched perimeter is real fire ground we just can't tie to a
-        // ledger incident — drawn, but visibly quieter than a known fire
-        const color = inc ? pinColor(inc) : C.dim;
+        // A perimeter is the fire's FOOTPRINT — colour it as fire ground, not by
+        // the fire's alarm state. Using pinColor() painted an evac fire's
+        // perimeter the same pink as its evacuation zones, so the two blended
+        // into one shape. Ember (matching the legend swatch) reads as burned
+        // ground and stays distinct from every evac colour (pink/amber/blue).
+        // An unmatched perimeter is real fire ground we can't tie to a ledger
+        // incident — drawn, but visibly quieter.
+        const color = inc ? C.ember : C.dim;
         return { color, weight: 1.5, opacity: 0.9, fillColor: color, fillOpacity: 0.12 };
       },
       onEachFeature: (feature, lyr) => {
