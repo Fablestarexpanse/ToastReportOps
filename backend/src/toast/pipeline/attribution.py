@@ -17,9 +17,11 @@ import sqlite3
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
+from toast.pipeline.counties import CA_COUNTY_CENTROIDS
 from toast.pipeline.incidents import haversine_km
 
 AUTO_THRESHOLD = 0.75
+NAME_MATCH_FOR_AUTO = 0.85  # the same bar the WATCH board uses to call two names one fire
 REVIEW_THRESHOLD = 0.35
 GEO_FULL_KM = 5.0  # within this distance geo signal is 1.0
 GEO_ZERO_KM = 60.0  # beyond this it is 0
@@ -125,6 +127,34 @@ def score_candidates(
     return out[:limit]
 
 
+def _stated_counties(*texts: str | None) -> set[str]:
+    """Counties a fact names outright, as "<name> County". A bare word won't do: Shasta
+    Lake and Orange Road are not statements about a county."""
+    joined = " ".join(t for t in texts if t).lower()
+    return {c for c in CA_COUNTY_CENTROIDS if re.search(rf"\b{re.escape(c)} county\b", joined)}
+
+
+def _safe_to_auto_attach(
+    conn: sqlite3.Connection, best: Candidate, claimed: str | None, *texts: str | None
+) -> bool:
+    """Attachment can't be undone, so a good score isn't enough on its own. Each of
+    these sends the fact to the operator instead of into the ledger."""
+    # a name that only resembles the incident's is a different fire (Aspen vs Lassen)
+    if claimed and best.name_score < NAME_MATCH_FOR_AUTO:
+        return False
+    # fire names repeat, so with no time overlap or location a name is all there is
+    if best.time_score == 0.0 and best.geo_score == 0.0:
+        return False
+    # the fact says where it is, and it isn't there
+    stated = _stated_counties(*texts)
+    county = conn.execute(
+        "SELECT county FROM incidents WHERE id = ?", (best.incident_id,)
+    ).fetchone()["county"]
+    if stated and county and not any(c in county.lower() for c in stated):
+        return False
+    return True
+
+
 def attribute_fact(conn: sqlite3.Connection, fact_id: str) -> tuple[str, list[Candidate]]:
     """Try to attribute one unattributed fact.
 
@@ -148,7 +178,17 @@ def attribute_fact(conn: sqlite3.Connection, fact_id: str) -> tuple[str, list[Ca
     best = candidates[0]
     runner_up = candidates[1].score if len(candidates) > 1 else 0.0
     # auto-attribute only when clearly best (no close second guessing)
-    if best.score >= AUTO_THRESHOLD and best.score - runner_up >= 0.15:
+    if (
+        best.score >= AUTO_THRESHOLD
+        and best.score - runner_up >= 0.15
+        and _safe_to_auto_attach(
+            conn,
+            best,
+            structured.get("incident_name"),
+            fact["content"],
+            structured.get("location_text"),
+        )
+    ):
         conn.execute("UPDATE facts SET incident_id = ? WHERE id = ?", (best.incident_id, fact_id))
         return "attributed", candidates
     if best.score >= REVIEW_THRESHOLD:

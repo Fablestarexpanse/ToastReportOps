@@ -23,6 +23,10 @@ Architectural decision log. Newest first. Each entry: context → decision → w
   active-only, following the 76-junk-incident lesson.
 - **The CAL FIRE adapter stopped posing as a browser.** Its requests succeed under our
   own identity, and we don't disguise the client.
+- **Auto-attachment needs more than a score.** Attachment can't be undone, and a dry run
+  of the backfill got 2 of 31 wrong. A claimed name must really match (0.85), the fact
+  must overlap the fire in time or place, and a county it states outright must agree.
+  Anything else goes to the operator.
 
 ## 2026-10-31 — Live-stack audit: threads, missing models, refused feeds
 
