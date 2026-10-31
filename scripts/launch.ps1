@@ -83,8 +83,9 @@ while (-not (Test-Port $UiPort)) {
 
 # Models are never downloaded here; just say so if they're missing (never blocks launch).
 try {
-    $models = (& docker compose --profile desktop exec -T api python -m toast.modelsetup status) -join "`n"
-    if ($models -match "not installed") {
+    # status also lists optional comparison models, which are never required
+    $models = (& docker compose --profile desktop exec -T api python -m toast.modelsetup status) | Where-Object { $_ -notmatch "optional" }
+    if (($models -join "`n") -match "not installed") {
         Write-Host "    AI models are not installed yet - double-click 'Install Models.cmd'." -ForegroundColor Yellow
     }
 } catch { }
