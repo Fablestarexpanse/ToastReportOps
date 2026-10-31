@@ -61,12 +61,20 @@ def _rank(category: str | None) -> int:
     return CATEGORY_RANK.get((category or "").lower(), 0)
 
 
+def _value(v: Any) -> float | None:
+    """NOAA writes "no reading" as -999 (or -9999), not null. Shown as a number it
+    looks like a measurement, so it becomes None here, once, for every consumer."""
+    if not isinstance(v, int | float) or isinstance(v, bool) or v <= -900:
+        return None
+    return float(v)
+
+
 def _reading(raw: dict[str, Any] | None) -> dict[str, Any] | None:
     if not raw:
         return None
     return {
-        "stage": raw.get("primary") if raw.get("primaryUnit") == "ft" else None,
-        "flow": raw.get("secondary"),
+        "stage": _value(raw.get("primary")) if raw.get("primaryUnit") == "ft" else None,
+        "flow": _value(raw.get("secondary")),
         "flow_unit": raw.get("secondaryUnit"),
         "category": raw.get("floodCategory"),
         "valid_time": raw.get("validTime"),

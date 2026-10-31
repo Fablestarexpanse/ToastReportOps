@@ -158,3 +158,14 @@ def test_gauge_reaching_moderate_alerts_once(db):
     assert water.notify_water(db, g, SET, client)["sent"] == 1
     assert water.notify_water(db, g, SET, client)["sent"] == 0
     assert "Big Creek" in sent[0]
+
+
+def test_noaa_no_reading_sentinels_become_unknown_not_numbers():
+    g = gauge("A", obs="action")
+    g["status"]["observed"]["secondary"] = -999
+    g["status"]["observed"]["primary"] = -9999
+    (shown,) = water.build_gauges([g], set())
+    assert shown["observed"]["flow"] is None and shown["observed"]["stage"] is None
+    ok = gauge("B", obs="action")
+    (fine,) = water.build_gauges([ok], set())
+    assert fine["observed"]["stage"] == 12.5 and fine["observed"]["flow"] == 4.2
