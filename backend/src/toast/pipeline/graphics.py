@@ -4,7 +4,7 @@ A social post with a map travels farther than text, and the operator should
 not need a design tool mid-incident. One call renders a 1200x675 card: fire
 name, the ledger's current numbers, the evacuation state VERBATIM when one is
 active, and a map strip — USGS satellite imagery for a single fire (real
-terrain reads better under a fire ring; operator decision), the CARTO dark
+terrain reads better under a fire ring; operator decision), the Esri dark-gray
 base for the statewide/All-California card — with the fire ring and (when we
 have it) the mapped perimeter drawn on top.
 
@@ -32,7 +32,14 @@ from toast.core.logging import get_logger
 W, H = 1200, 675
 MAP_H = 300
 TILE = 256
-TILE_URL = "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"
+# Esri World Dark Gray Canvas: public and keyless. (CARTO's dark tiles now return an
+# "API KEY REQUIRED" watermark with HTTP 200 — it would have been baked into published
+# cards.) Esri puts the row before the column: {z}/{y}/{x}.
+TILE_URL = (
+    "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base"
+    "/MapServer/tile/{z}/{y}/{x}"
+)
+DARK_CREDIT = "Basemap: Esri, HERE, Garmin, (c) OpenStreetMap"
 # USGS National Map orthoimagery — public domain, no key. The INCIDENT card
 # uses this (operator decision: a single fire's snapshot reads better on real
 # terrain); the statewide/All-California card stays on the dark base. Note the
@@ -625,7 +632,7 @@ def generate_state_card(conn: sqlite3.Connection) -> bytes:
     d2.rectangle([(40, map_top), (map_r, map_top + map_h)], outline=LINE)
     d2.text(
         (map_r - 6, map_top + map_h - 24),
-        "(c) OpenStreetMap - (c) CARTO",
+        DARK_CREDIT,
         font=_font(14),
         fill=DIM,
         anchor="ra",
@@ -703,7 +710,7 @@ def generate_state_card(conn: sqlite3.Connection) -> bytes:
 # a snapshot looks like what the operator was looking at. USGS services put the
 # row before the column ({z}/{y}/{x}); the XYZ tile servers use {z}/{x}/{y}.
 SNAP_BASEMAPS: dict[str, tuple[str, str]] = {
-    "dark": (TILE_URL, "(c) OpenStreetMap  (c) CARTO"),
+    "dark": (TILE_URL, DARK_CREDIT),
     "satellite": (SAT_TILE_URL, "Imagery: USGS The National Map (public domain)"),
     "osm": ("https://a.tile.openstreetmap.org/{z}/{x}/{y}.png", "(c) OpenStreetMap"),
     "street": ("https://a.tile.openstreetmap.org/{z}/{x}/{y}.png", "(c) OpenStreetMap"),

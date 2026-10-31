@@ -34,6 +34,7 @@ import {
   saveSettings,
 } from "@/lib/api";
 import { CA_OUTLINE } from "@/lib/california";
+import { DARK_BASEMAP, DARK_LABELS } from "@/lib/basemap";
 import { escHtml } from "@/lib/html";
 import { C, Z, font } from "@/lib/theme";
 import { age, fmtStamp } from "@/lib/time";
@@ -54,11 +55,7 @@ type BaseSpec = {
 
 const BASEMAPS: Record<string, BaseSpec | null> = {
   offline: null,
-  dark: {
-    url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-    attribution: '© <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> · © CARTO',
-    label: "DARK",
-  },
+  dark: { ...DARK_BASEMAP, label: "DARK" },
   osm: {
     url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
     attribution: '© <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> contributors',
@@ -113,11 +110,7 @@ type OverlaySpec = {
 const GIBS = "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best";
 
 const OVERLAYS: Record<string, OverlaySpec> = {
-  labels: {
-    url: "https://{s}.basemaps.cartocdn.com/rastertiles/light_only_labels/{z}/{x}/{y}{r}.png",
-    label: "LABELS",
-    attribution: "© OpenStreetMap · © CARTO",
-  },
+  labels: { ...DARK_LABELS, label: "LABELS" },
   water: {
     url: "https://basemap.nationalmap.gov/arcgis/rest/services/USGSHydroCached/MapServer/tile/{z}/{y}/{x}",
     label: "WATER",
