@@ -51,14 +51,32 @@ if (-not (Test-Port $UiPort)) {
         $ErrorActionPreference = $prev
         if ($npmCode -ne 0) { throw "installing the UI packages failed (npm exit $npmCode) - see the lines above." }
     }
+    # The workstation runs the production build: the dev server doubles every request
+    # and shows a dev overlay. Rebuild only when the UI's committed files changed.
+    $buildId = Join-Path $uiDir ".next\BUILD_ID"
+    $stamp = Join-Path $uiDir ".next\toast-ui-rev"
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $uiRev = "$(& git -C $root rev-parse HEAD:operator-ui 2>$null)".Trim()
+    $ErrorActionPreference = $prev
+    $built = if (Test-Path $stamp) { (Get-Content $stamp -Raw).Trim() } else { "" }
+    if (-not (Test-Path $buildId) -or ($uiRev -and $uiRev -ne $built)) {
+        Write-Host "    building the UI (after an update only, a minute or two)..." -ForegroundColor DarkGray
+        $ErrorActionPreference = "Continue"
+        & npm --prefix $uiDir run build 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+        $npmCode = $LASTEXITCODE
+        $ErrorActionPreference = $prev
+        if ($npmCode -ne 0) { throw "building the UI failed (npm exit $npmCode) - see the lines above." }
+        Set-Content -Path $stamp -Value $uiRev -Encoding Ascii
+    }
     # absolute paths + an explicit working folder: Start-Process does not follow
     # Set-Location, so a relative path would resolve against wherever PowerShell started
-    Start-Process -WindowStyle Hidden -WorkingDirectory $root cmd.exe -ArgumentList "/c", "npm --prefix `"$uiDir`" run dev -- -p $UiPort"
+    Start-Process -WindowStyle Hidden -WorkingDirectory $root cmd.exe -ArgumentList "/c", "npm --prefix `"$uiDir`" run start -- -H 127.0.0.1 -p $UiPort"
 }
 $deadline = (Get-Date).AddSeconds(120)
 while (-not (Test-Port $UiPort)) {
     if ((Get-Date) -gt $deadline) {
-        throw "operator UI did not start on port $UiPort. To see why, run: npm --prefix `"$uiDir`" run dev -- -p $UiPort"
+        throw "operator UI did not start on port $UiPort. To see why, run: npm --prefix `"$uiDir`" run start -- -H 127.0.0.1 -p $UiPort"
     }
     Start-Sleep -Milliseconds 700
 }

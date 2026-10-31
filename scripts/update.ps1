@@ -135,6 +135,7 @@ $changed = @()
 if ($after -ne $before) { $changed = @(& git diff --name-only $before $after) }
 $backendChanged = [bool]($changed | Where-Object { $_ -like "backend/*" -or $_ -eq "docker-compose.yml" })
 $uiDepsChanged = [bool]($changed | Where-Object { $_ -like "operator-ui/package*.json" })
+$uiChanged = [bool]($changed | Where-Object { $_ -like "operator-ui/*" })
 
 # ---- 4. rebuild what changed ----------------------------------------------------
 Step 4 $total "rebuilding what changed..."
@@ -154,7 +155,9 @@ if ($backendChanged -or $Rebuild) {
 if ($uiDepsChanged) {
     Write-Host "    UI dependencies changed - installing..." -ForegroundColor DarkGray
     if ((Invoke-Native npm @("--prefix", (Join-Path $root "operator-ui"), "ci")) -ne 0) { Stop-Update "npm install failed. To go back: git checkout $before" }
-    # the running dev server holds the old modules; the launcher starts a fresh one
+}
+if ($uiChanged) {
+    # the running UI holds the old build; the launcher rebuilds and starts a fresh one
     Get-NetTCPConnection -LocalPort $UiPort -State Listen -ErrorAction SilentlyContinue |
         ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
 }
