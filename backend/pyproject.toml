@@ -24,6 +24,10 @@ dependencies = [
     "tzdata>=2024.1",
 ]
 
+[project.scripts]
+toast = "toast.cli:main"
+toast-mcp = "toast.mcp_server:main"
+
 [dependency-groups]
 dev = [
     "pytest>=8.3",

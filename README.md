@@ -13,6 +13,10 @@ newsroom → publish), with a 9-mode operator UI, a Docker stack, and 520+ passi
 operator UI (port 3005) in its own app window. Alternative:
 `docker compose --profile desktop up`.
 
+**Agents & scripts:** the stack ships an MCP server and a `toast` CLI so Claude, Hermes
+or any MCP client can read the ledger, flood/reservoir boards and drafts — read-only
+by default, and never able to approve or publish. See [docs/AGENT-INTERFACE.md](docs/AGENT-INTERFACE.md).
+
 **Updating:** double-click `Update and Launch.cmd`. It takes a verified database
 snapshot, pulls the latest code (fast-forward only — it never overwrites local
 edits), rebuilds only what changed, restarts the stack and opens the workstation.

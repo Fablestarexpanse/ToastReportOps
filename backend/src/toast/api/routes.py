@@ -876,6 +876,29 @@ def firis_perimeters(request: Request, refresh: bool = False) -> dict:
     return get_firis(_conn(request), refresh=refresh)
 
 
+@router.get("/system/status")
+def system_status(request: Request) -> dict:
+    """One-call health picture for operators and connected agents: what is wrong
+    right now (the watchdog's view), queue depth, and the hazard profile."""
+    from toast import __version__
+    from toast.core.hazard import hazard_profile
+    from toast.llm.client import client_for
+    from toast.pipeline.watchdog import find_problems
+    from toast.queue.jobs import counts_by_state
+
+    conn = _conn(request)
+    models = client_for(conn).list_models(timeout_s=3.0)
+    problems = find_problems(conn, llm_models=models)
+    return {
+        "version": __version__,
+        "ok": not problems,
+        "problems": problems,
+        "queue": counts_by_state(conn),
+        "hazard_profile": hazard_profile(conn),
+        "llm_models_available": len(models),
+    }
+
+
 @router.get("/hazard")
 def hazard(request: Request) -> dict:
     """The active hazard profile and what the calendar suggests."""

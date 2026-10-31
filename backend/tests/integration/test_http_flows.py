@@ -118,3 +118,11 @@ class TestActivityCheckThroughTheQueue:
         assert ev["actor"] == "calfire-official"
         job = conn.execute("SELECT state FROM jobs ORDER BY created_at DESC").fetchone()
         assert job["state"] == "done"
+
+
+def test_system_status_reports_problems_and_queue(http):
+    client, _conn = http
+    body = client.get("/system/status").json()
+    assert {"version", "ok", "problems", "queue", "hazard_profile"} <= set(body)
+    assert body["hazard_profile"] == "fire"
+    assert body["ok"] is (not body["problems"])
