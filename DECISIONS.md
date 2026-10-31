@@ -2,6 +2,28 @@
 
 Architectural decision log. Newest first. Each entry: context → decision → why.
 
+## 2026-10-31 — Official lists verify New Starts; they don't create incidents
+
+- An audit found 122 facts, 3 tied to a fire and 0 corroborated, with a prescribed burn,
+  an arson-arrest story and a contained fire heading the New Starts board. The direction
+  is verified awareness first; the inbox and newsroom work build on this.
+- **Verify, don't ingest.** Turning WFIGS on as a creator would not have helped: 26
+  California wildfires in 14 days, none past the 10-acre gate. As a lookup, at any size,
+  it confirms what news reports name. CAL FIRE's full list does the same for fires that
+  closed weeks ago.
+- **Absence is only claimed when every list was read.** A list that failed or went stale
+  gives `unknown`, never "no official record".
+- **The board sorts by what a candidate is.** New, officially listed, already over,
+  prescribed, mentions. It used to count facts, so long stories beat real starts. The
+  percentage is gone from the card because it read as confidence and measured volume.
+- **Undated claims take their article's date.** Using ingest time made old stories look
+  new. Articles over 14 days old cost no fetch and no model call, and their envelopes
+  stay archived.
+- **The year backfill is operator-run, never scheduled.** The default poller stays
+  active-only, following the 76-junk-incident lesson.
+- **The CAL FIRE adapter stopped posing as a browser.** Its requests succeed under our
+  own identity, and we don't disguise the client.
+
 ## 2026-10-31 — Live-stack audit: threads, missing models, refused feeds
 
 - **One SQLite connection per API thread.** Sharing one across the threadpool caused

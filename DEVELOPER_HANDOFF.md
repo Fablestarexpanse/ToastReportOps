@@ -19,8 +19,9 @@ operator UI. 663 backend tests pass (unit + HTTP integration) and CI also gates 
 ruff, ruff format and mypy; the UI type-checks, lints and builds. It runs as a local
 Docker stack (9 services) on the operator's machine.
 
-- **Works:** all twelve UI modes; CAL FIRE + WFIGS/federal ingest; the fact
-  ledger; AI extraction/triage/activity-check; statewide + per-fire drafts and
+- **Works:** all twelve UI modes; CAL FIRE ingest, with CAL FIRE's full list and
+  WFIGS verifying WATCH candidates (`pipeline/official_lookup.py`; the WFIGS poller
+  is disabled by default); the fact ledger; AI extraction/triage/activity-check; statewide + per-fire drafts and
   graphics; site generation; Bluesky/X/Facebook/Telegram publishing
   (credential-gated); ADS-B aircraft, ALERTCalifornia cameras, Cal OES evac
   zones, NWS weather/red-flag, AirNow AQI, Meshtastic mesh (optional, GPL extra), scanner-radio

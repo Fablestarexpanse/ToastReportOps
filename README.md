@@ -1,8 +1,9 @@
 # Toast Report OPs
 
 A local-first California **wildfire and flood** intelligence workstation for one person,
-run at home. It ingests official feeds (CAL FIRE, NIFC/WFIGS, Cal OES evacuation zones,
-NWS alerts and weather, NOAA river gauges, DWR reservoirs, AirNow), satellite hotspots,
+run at home. It ingests official feeds (CAL FIRE, Cal OES evacuation zones, NWS alerts
+and weather, NOAA river gauges, DWR reservoirs, AirNow), checks reported fires against
+CAL FIRE's full list and NIFC/WFIGS, and can add satellite hotspots (with a free key),
 ADS-B aircraft, your own scanner audio, news, social and community mesh traffic. Local
 AI sifts and attributes facts to specific incidents into an append-only ledger; you
 review AI-drafted reports and decide what, if anything, gets published. Every incident
@@ -44,7 +45,7 @@ Four buttons in the install folder:
 | **MESH** | Statewide Meshtastic picture via the public MQTT broker — **optional**, off by default (set `TOAST_MESH=1`; see [License](#license)) |
 | **TIMELINE** | Per-incident event timeline |
 | **NEWSROOM** | AI drafts for review, the draft verifier's findings, approval, release to channels, the local static-site build |
-| **WATCH** | Candidate new-start fires not yet in the ledger, for triage |
+| **WATCH** | Fires named by sources but not yet tracked, checked against the official lists and sorted into new, officially listed, already over, prescribed and mentions |
 | **ARCHIVE** | Every incident ever tracked, filed by year and month; frozen fires are immutable |
 | **SOURCES** | Feeds, trust tiers (T1 official → T5 community) and their performance |
 | **ANALYTICS** | Facts per day, source performance, attribution and corroboration rates |

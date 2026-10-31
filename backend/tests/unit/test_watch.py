@@ -145,7 +145,9 @@ def test_an_officially_listed_fire_is_official(seeded, monkeypatch):
 
 def test_prescribed_burns_are_separated_by_text(seeded, monkeypatch):
     _says(monkeypatch)
-    _fact(seeded, "f1", "Klamath Project", kind="other", content="Incident type is Prescribed Fire.")
+    _fact(
+        seeded, "f1", "Klamath Project", kind="other", content="Incident type is Prescribed Fire."
+    )
     _fact(seeded, "f2", "Hayden", kind="acreage", content="70 acres were underburned at Hayden.")
     assert set(_groups(seeded).values()) == {"prescribed"}
 
