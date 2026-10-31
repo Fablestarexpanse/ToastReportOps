@@ -62,22 +62,32 @@ def _rank(category: str | None) -> int:
 
 
 def _value(v: Any) -> float | None:
-    """NOAA writes "no reading" as -999 (or -9999), not null. Shown as a number it
-    looks like a measurement, so it becomes None here, once, for every consumer."""
-    if not isinstance(v, int | float) or isinstance(v, bool) or v <= -900:
+    """NOAA writes "no reading" as -999 (or -9999), not null, and a few gauges send
+    -9.99. Small negative stages are real (tidal and low-datum gauges), so -9.99 is
+    matched exactly. Shown as a number any of these looks like a measurement, so it
+    becomes None here, once, for every consumer."""
+    if not isinstance(v, int | float) or isinstance(v, bool) or v <= -900 or v == -9.99:
         return None
     return float(v)
+
+
+def _valid_time(v: Any) -> str | None:
+    """NOAA's "no time" is Go's zero time, which would read as 2,000 years old."""
+    return None if not v or str(v).startswith("0001-01-01") else str(v)
 
 
 def _reading(raw: dict[str, Any] | None) -> dict[str, Any] | None:
     if not raw:
         return None
+    # usually stage (ft) then flow (kcfs), but some gauges report flow first
+    flow_first = raw.get("secondaryUnit") == "ft"
+    stage_at, flow_at = ("secondary", "primary") if flow_first else ("primary", "secondary")
     return {
-        "stage": _value(raw.get("primary")) if raw.get("primaryUnit") == "ft" else None,
-        "flow": _value(raw.get("secondary")),
-        "flow_unit": raw.get("secondaryUnit"),
+        "stage": _value(raw.get(stage_at)) if raw.get(f"{stage_at}Unit") == "ft" else None,
+        "flow": _value(raw.get(flow_at)),
+        "flow_unit": raw.get(f"{flow_at}Unit"),
         "category": raw.get("floodCategory"),
-        "valid_time": raw.get("validTime"),
+        "valid_time": _valid_time(raw.get("validTime")),
     }
 
 
