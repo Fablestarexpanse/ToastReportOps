@@ -9,7 +9,7 @@ review AI-drafted reports and decide what, if anything, gets published. Every in
 is permanently archived.
 
 **Status:** built and operating — ingest → ledger → AI sift → newsroom → publish, a
-12-mode operator UI, a 9-service Docker stack, 663 backend tests (lint, format, types
+12-mode operator UI, an 8-service Docker stack (plus optional MESH), 690 backend tests (lint, format, types
 and tests all gate CI), and a UI that type-checks, lints and builds clean.
 
 ## Quick start (Windows)
@@ -37,7 +37,7 @@ First time: install the prerequisites below, `cp .env.example .env`, then run
 | **AIR** | ADS-B aircraft over incidents; tanker/air-attack orbit detection |
 | **WATER** | NWS flood alerts, NOAA river gauges at or above action stage (plus ones you pin), and all ~48 DWR reservoirs with % of capacity, % of average and 7-day trend |
 | **RADIO** | Your own SDR captures and stream channels, optional transcription |
-| **MESH** | NorCal/statewide Meshtastic picture via the public MQTT broker |
+| **MESH** | Statewide Meshtastic picture via the public MQTT broker — **optional**, off by default (set `TOAST_MESH=1`; see [License](#license)) |
 | **TIMELINE** | Per-incident event timeline |
 | **NEWSROOM** | AI drafts for review, the draft verifier's findings, approval, release to channels, the local static-site build |
 | **WATCH** | Candidate new-start fires not yet in the ledger, for triage |
@@ -106,9 +106,10 @@ is OpenAI-compatible, so `LLM_BASE_URL` can point at a cloud API instead (no GPU
 **Software:** Docker Desktop (Windows: WSL2 backend + the NVIDIA WSL driver; Linux:
 NVIDIA Container Toolkit), `git`, and Node 20+ only if you run the UI outside Docker.
 
-**The stack (9 services):** `api`, `worker`, `scheduler`, `llm` (Ollama), `mesh`,
-`litestream`, `searxng` + `ldr` (optional deep research), `icecast` (radio streams).
-The `degraded` profile runs only `api` + `worker` + `scheduler` for power outages
+**The stack (8 services, plus 1 optional):** `api`, `worker`, `scheduler`, `llm`
+(Ollama), `litestream`, `searxng` + `ldr` (optional deep research), `icecast` (radio
+streams), and the optional `mesh` listener (`TOAST_MESH=1` in `.env`). The `degraded`
+profile runs only `api` + `worker` + `scheduler` for power outages
 ([OPERATIONS.md](OPERATIONS.md)).
 
 ## Install & run (any OS)
@@ -157,7 +158,7 @@ intelligence workstation, on this machine — end to end — and report status a
 
 Facts:
 - Repo (private): https://github.com/Fablestarexpanse/ToastReportOps
-- Docker Compose stack (profile "desktop", 9 services) plus a Next.js operator UI on
+- Docker Compose stack (profile "desktop", 8 services; MESH optional) plus a Next.js operator UI on
   port 3005. API on 8400. Localhost-only, single operator, no login.
 - Models are NOT auto-downloaded; they are installed and verified by:
   python -m toast.modelsetup (see docs/MODELS.md).
@@ -202,6 +203,21 @@ enable agent write access or publishing; if a step fails, show the exact error a
 7. **Plugin extensibility.** Sources and publishers are adapters behind stable
    interfaces.
 
+## License
+
+The code is licensed under the [Apache License 2.0](LICENSE); see [NOTICE](NOTICE).
+Contributions are welcome under the same license with a DCO sign-off — see
+[CONTRIBUTING.md](CONTRIBUTING.md). The *names* "Toast Report" and "Toast Report OPs"
+are not licensed for use by other instances: run your own under your own name
+([TRADEMARKS.md](TRADEMARKS.md)).
+
+- **Optional GPL component.** The MESH listener uses the Meshtastic library (GPL-3.0),
+  so it is an opt-in extra (`pip install .[mesh]`, Compose profile `mesh`). The default
+  install and Docker images contain no GPL-licensed code.
+- **Data is not code.** Feeds, news, imagery, radio and maps the tool shows or archives
+  stay under each provider's terms — some may be viewed but not stored or republished
+  (the source notes say which). Reports you publish are your own content.
+
 ## Documents
 
 | Doc | Contents |
@@ -209,6 +225,7 @@ enable agent write access or publishing; if a step fails, show the exact error a
 | [OPERATIONS.md](OPERATIONS.md) | Runbook: start/stop, updating, backup/restore, PSPS mode, publishing |
 | [DEVELOPER_HANDOFF.md](DEVELOPER_HANDOFF.md) | Developer's guide to the codebase |
 | [DECISIONS.md](DECISIONS.md) | Architectural decision log (newest first) |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute: checks, DCO sign-off, the safety rules |
 | [docs/MODELS.md](docs/MODELS.md) | Which models, safe installation, the bake-off |
 | [docs/AGENT-INTERFACE.md](docs/AGENT-INTERFACE.md) | MCP server and `toast` CLI for agents and scripts |
 | [docs/SECURITY.md](docs/SECURITY.md) | Threat model, prompt-injection posture, SSRF rules |

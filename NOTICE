@@ -1,0 +1,12 @@
+Toast Report OPs
+Copyright 2026 The Toast Report OPs Authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Optional component: the MESH service (the `mesh` extra and `mesh` Docker Compose
+profile) uses the Meshtastic Python library, which is licensed under the GNU General
+Public License v3.0. It is not part of the default install or default Docker images.
+Enabling it brings that library, and its license terms, into the mesh service only.
+
+Third-party data shown or archived by this software (official feeds, news, imagery,
+radio, maps) remains under each provider's own terms; this license covers the code.
