@@ -151,7 +151,7 @@ class Ollama:
         except httpx.HTTPError as exc:
             raise ModelSetupError(
                 f"the download of {name} was interrupted ({type(exc).__name__}). "
-                "Run the same command again — it resumes where it stopped."
+                "Run the same command again - it resumes where it stopped."
             ) from exc
 
     def embed(self, name: str, text: str) -> list[float]:
@@ -184,6 +184,7 @@ class PlanItem:
     action: str  # present | pull | too_big | unpinned
     size_bytes: int | None
     reason: str = ""
+    role: str = "chat"
 
 
 def plan(
@@ -198,25 +199,18 @@ def plan(
         entry = manifest["models"].get(name)
         if entry is None:
             raise ModelSetupError(f"'{name}' is not in model_manifest.json")
-        size = entry.get("size_bytes")
+        size, role = entry.get("size_bytes"), entry["role"]
         need = required_vram_gb(entry)
         if "manifest_sha256" not in entry:
-            items.append(PlanItem(name, "unpinned", size, "no pinned digest; run 'pin --write'"))
-        elif (
-            vram_gb is not None and need is not None and entry["role"] == "chat" and need > vram_gb
-        ):
-            items.append(
-                PlanItem(name, "too_big", size, f"needs about {need} GB; you have {vram_gb}")
-            )
+            action, reason = "unpinned", "no pinned digest; run 'pin --write'"
+        elif vram_gb is not None and need is not None and role == "chat" and need > vram_gb:
+            action, reason = "too_big", f"needs about {need} GB; you have {vram_gb}"
         elif installed.get(name, "").removeprefix("sha256:") == entry["manifest_sha256"]:
-            items.append(PlanItem(name, "present", size))
+            action, reason = "present", ""
         else:
-            replaced = name in installed
-            items.append(
-                PlanItem(
-                    name, "pull", size, "installed copy differs from the pin" if replaced else ""
-                )
-            )
+            action = "pull"
+            reason = "installed copy differs from the pin" if name in installed else ""
+        items.append(PlanItem(name, action, size, reason, role))
     return items
 
 
@@ -232,6 +226,15 @@ def format_plan(items: list[PlanItem]) -> str:
     ]
     total = sum(i.size_bytes or 0 for i in items if i.action == "pull")
     lines.append(f"  download: {_fmt_gb(total)}")
+    chats = [i for i in items if i.role == "chat"]
+    if chats and not any(i.action in ("present", "pull") for i in chats):
+        lines += [
+            "",
+            "  ! No chat model fits in the graphics memory available, so the AI features",
+            "    (extraction, drafting, triage) won't work until one is installed. Close other",
+            "    programs using the GPU and run this again, or choose a smaller profile",
+            "    (Install Models.cmd -Profile small-8gb).",
+        ]
     return "\n".join(lines)
 
 
@@ -282,7 +285,7 @@ def install(
                 warnings += 1
         if smoke and not _smoke(ollama, item.name, entry, out):
             warnings += 1
-    out("done." if not warnings else f"finished with {warnings} warning(s) — read the lines above.")
+    out("done." if not warnings else f"finished with {warnings} warning(s) - read the lines above.")
     return 3 if warnings else 0
 
 
@@ -344,17 +347,25 @@ def pin(manifest: dict[str, Any], registry: Registry, out: Any = print) -> dict[
 
 
 def status(manifest: dict[str, Any], ollama: Ollama, configured_chat: str, out: Any = print) -> int:
+    """What's installed and whether it matches its pin. The models the tool needs are
+    always listed; optional comparison models only when installed, plus a count."""
     installed = ollama.installed()
-    bad = 0
+    needed = set(manifest["profiles"]["starter"]["models"]) | {configured_chat}
+    bad = optional_missing = 0
     for name, entry in manifest["models"].items():
         have = installed.get(name)
         if have is None:
+            if name not in needed:
+                optional_missing += 1
+                continue
             state = "not installed"
         elif have.removeprefix("sha256:") == entry.get("manifest_sha256"):
             state = "installed, matches pin"
         else:
             state, bad = "INSTALLED BUT DIFFERENT FROM PIN", bad + 1
         out(f"  {name:<28} {state}")
+    if optional_missing:
+        out(f"  ({optional_missing} optional comparison models not installed - see docs/MODELS.md)")
     if configured_chat not in manifest["models"]:
         out(
             f"  NOTE: LLM_MODEL is '{configured_chat}', which is not a pinned official model "
@@ -362,8 +373,8 @@ def status(manifest: dict[str, Any], ollama: Ollama, configured_chat: str, out: 
         )
     elif configured_chat not in installed:
         out(
-            f"  NOTE: the configured model '{configured_chat}' is not installed yet — "
-            "run: python -m toast.modelsetup install"
+            f"  NOTE: the configured model '{configured_chat}' is not installed yet - run "
+            "Install Models.cmd (or: python -m toast.modelsetup install)"
         )
     return 3 if bad else 0
 

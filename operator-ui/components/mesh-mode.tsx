@@ -13,6 +13,7 @@ import {
   fetchMeshNodes,
   hasActiveEvac,
 } from "@/lib/api";
+import { DARK_BASEMAP } from "@/lib/basemap";
 import { escHtml } from "@/lib/html";
 import { C, Z, font } from "@/lib/theme";
 import { age, fmtStamp } from "@/lib/time";
@@ -174,8 +175,10 @@ export default function MeshMode({ toast }: { toast: (m: string) => void }) {
       attributionControl: true,
       preferCanvas: true,
     });
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-      attribution: '© <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> · © CARTO',
+    L.tileLayer(DARK_BASEMAP.url, {
+      attribution: DARK_BASEMAP.attribution,
+      maxNativeZoom: DARK_BASEMAP.maxNativeZoom,
+      maxZoom: 19,
     }).addTo(m);
     fireLayer.current = L.layerGroup().addTo(m); // fires under nodes
     layer.current = L.layerGroup().addTo(m);

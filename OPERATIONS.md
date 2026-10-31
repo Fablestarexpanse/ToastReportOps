@@ -2,6 +2,21 @@
 
 Sections below are seeded now and filled in as each capability lands (phase noted).
 
+## First install
+
+Double-click **`Install.cmd`** (or `scripts\install.ps1`). In order: checks Docker (and
+starts Docker Desktop if it isn't running), the GPU on the host *and* inside a container,
+Node 20+, git, free disk space and ports 3005/8400; creates `.env` from `.env.example`
+with freshly generated passwords for the local-only services (LDR, SearXNG, Icecast) and
+every API key left blank; installs the UI packages; downloads and builds the images
+quietly (about 5 GB the first time); starts the stack and waits for the API; seeds the
+source list only if the database is new; runs the model installer (plan first, then
+asks); verifies containers, `/system/status` and model pins; then launches. Everything
+it prints is saved to `install.log`. It never changes an existing `.env`.
+
+`Install.cmd -CheckOnly` only checks the computer. Other switches: `-NoLaunch`,
+`-SkipGpuTest`, `-SkipModels`, `-Yes` (accept the model plan).
+
 ## Launch as a standalone app (recommended)
 
 Double-click **`ToastReport.cmd`** in the repo root. It starts the Docker

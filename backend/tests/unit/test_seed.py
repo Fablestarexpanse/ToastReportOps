@@ -28,3 +28,23 @@ def test_seed_is_idempotent(db):
     assert seed(db) == []  # second run creates nothing
     n2 = db.execute("SELECT COUNT(*) c FROM sources").fetchone()["c"]
     assert n1 == n2
+
+
+def test_if_empty_seeds_a_new_database_once_and_never_re_adds(tmp_path, monkeypatch, capsys):
+    """The installer's re-runs must not resurrect a source the operator removed."""
+    from toast.core.db import connect
+    from toast.seed import main
+
+    monkeypatch.setenv("TOAST_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("TOAST_DB_PATH", str(tmp_path / "toast.db"))
+    main(["--if-empty"])
+    conn = connect(tmp_path / "toast.db")
+    total = conn.execute("SELECT COUNT(*) AS n FROM sources").fetchone()["n"]
+    assert total > 0
+    victim = conn.execute("SELECT id FROM sources LIMIT 1").fetchone()["id"]
+    conn.execute("DELETE FROM sources WHERE id = ?", (victim,))
+    conn.commit()
+    capsys.readouterr()
+    main(["--if-empty"])
+    assert "already has" in capsys.readouterr().out
+    assert conn.execute("SELECT 1 FROM sources WHERE id = ?", (victim,)).fetchone() is None
