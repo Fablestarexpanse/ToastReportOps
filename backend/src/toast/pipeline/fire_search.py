@@ -29,6 +29,15 @@ def _year_of(payload: dict[str, Any]) -> str | None:
     return started[:4] if started else None
 
 
+def _closed_list(adapter: CalFireAdapter, year: int | None) -> list[dict[str, Any]]:
+    """CAL FIRE's closed fires, filtered here: its `year=` parameter returned only the
+    active fire for the current year and nothing for the last one, when tried."""
+    items = fetch_incidents(adapter, inactive=True)
+    if year is None:
+        return items
+    return [i for i in items if str(i.get("Started") or "").startswith(str(year))]
+
+
 def search_fires(
     conn: sqlite3.Connection,
     query: str = "",
@@ -41,7 +50,7 @@ def search_fires(
     filters by name/county substring. Each result is flagged already_in_ledger.
     """
     adapter = CalFireAdapter()
-    items = fetch_incidents(adapter, inactive=True, year=year)
+    items = _closed_list(adapter, year)
     q = query.strip().lower()
     known = {
         r["calfire_id"]
@@ -110,7 +119,7 @@ def import_year(conn: sqlite3.Connection, year: int) -> dict[str, Any]:
     flood the board. Idempotent: a re-run adds nothing (dedup)."""
     settings = Settings()
     adapter = CalFireAdapter()
-    items = fetch_incidents(adapter, inactive=True, year=year)
+    items = [i for i in _closed_list(adapter, year) if "fire" in str(i.get("Type") or "").lower()]
     raw_ref = None
     if adapter.fetches:
         body, ctype, url = adapter.fetches[-1]
