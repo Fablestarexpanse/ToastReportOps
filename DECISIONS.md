@@ -27,6 +27,9 @@ Architectural decision log. Newest first. Each entry: context → decision → w
   of the backfill got 2 of 31 wrong. A claimed name must really match (0.85), the fact
   must overlap the fire in time or place, and a county it states outright must agree.
   Anything else goes to the operator.
+- **A repeated name doesn't hide a new start.** The board hid any candidate named like a
+  tracked fire, so loading the year's closed fires would have made a new fire vanish
+  when another county had one by that name. A stated county now keeps it on the board.
 
 ## 2026-10-31 — Live-stack audit: threads, missing models, refused feeds
 

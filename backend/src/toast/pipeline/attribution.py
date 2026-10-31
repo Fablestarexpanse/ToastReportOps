@@ -127,11 +127,16 @@ def score_candidates(
     return out[:limit]
 
 
-def _stated_counties(*texts: str | None) -> set[str]:
+def stated_counties(*texts: str | None) -> set[str]:
     """Counties a fact names outright, as "<name> County". A bare word won't do: Shasta
     Lake and Orange Road are not statements about a county."""
     joined = " ".join(t for t in texts if t).lower()
     return {c for c in CA_COUNTY_CENTROIDS if re.search(rf"\b{re.escape(c)} county\b", joined)}
+
+
+def county_conflicts(stated: set[str], county: str | None) -> bool:
+    """True when a fact says where it is and the incident is somewhere else."""
+    return bool(stated and county) and not any(c in str(county).lower() for c in stated)
 
 
 def _safe_to_auto_attach(
@@ -146,13 +151,10 @@ def _safe_to_auto_attach(
     if best.time_score == 0.0 and best.geo_score == 0.0:
         return False
     # the fact says where it is, and it isn't there
-    stated = _stated_counties(*texts)
     county = conn.execute(
         "SELECT county FROM incidents WHERE id = ?", (best.incident_id,)
     ).fetchone()["county"]
-    if stated and county and not any(c in county.lower() for c in stated):
-        return False
-    return True
+    return not county_conflicts(stated_counties(*texts), county)
 
 
 def attribute_fact(conn: sqlite3.Connection, fact_id: str) -> tuple[str, list[Candidate]]:

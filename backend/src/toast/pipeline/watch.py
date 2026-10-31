@@ -21,7 +21,12 @@ from typing import Any
 
 from toast.core.db import utcnow
 from toast.core.ids import ulid
-from toast.pipeline.attribution import _norm_name, name_similarity
+from toast.pipeline.attribution import (
+    _norm_name,
+    county_conflicts,
+    name_similarity,
+    stated_counties,
+)
 
 CORROBORATING_SOURCES = 2  # distinct sources at/above which a candidate corroborates
 RECENT_WINDOW_S = 48 * 3600  # signals older than this don't sustain a new-start
@@ -87,10 +92,10 @@ def _group(official: dict[str, Any], facts: list[sqlite3.Row], name: str) -> str
     return "new" if any(f["kind"] == "start" for f in facts) else "mentions"
 
 
-def _active_incident_names(conn: sqlite3.Connection) -> list[tuple[str, list[str]]]:
+def _active_incident_names(conn: sqlite3.Connection) -> list[tuple[str, list[str], str | None]]:
     names = []
     for inc in conn.execute(
-        "SELECT id, canonical_name FROM incidents "
+        "SELECT id, canonical_name, county FROM incidents "
         "WHERE status IN ('candidate','active','contained')"
     ):
         aliases = [
@@ -99,12 +104,19 @@ def _active_incident_names(conn: sqlite3.Connection) -> list[tuple[str, list[str
                 "SELECT alias FROM incident_aliases WHERE incident_id = ?", (inc["id"],)
             )
         ]
-        names.append((inc["canonical_name"], aliases))
+        names.append((inc["canonical_name"], aliases, inc["county"]))
     return names
 
 
-def _matches_active_incident(name: str, active: list[tuple[str, list[str]]]) -> bool:
-    return any(name_similarity(name, canon, aliases) >= 0.85 for canon, aliases in active)
+def _matches_active_incident(
+    name: str, active: list[tuple[str, list[str], str | None]], stated: set[str]
+) -> bool:
+    """The name is already tracked. Names repeat, so a tracked fire in a county other
+    than the one the reports state is a different fire, and must not hide this one."""
+    return any(
+        name_similarity(name, canon, aliases) >= 0.85 and not county_conflicts(stated, county)
+        for canon, aliases, county in active
+    )
 
 
 def build_watchlist(
@@ -148,7 +160,8 @@ def build_watchlist(
         display = facts[0]["inc_name"]
         # skip clusters that actually name an existing incident (those are
         # attribution/adjudication cases, not new starts)
-        if _matches_active_incident(display, active):
+        stated = stated_counties(*(f["content"] for f in facts), *(f["loc"] for f in facts))
+        if _matches_active_incident(display, active, stated):
             continue
         sources = {f["source_id"] for f in facts}
         geo = next((f for f in facts if f["lat"] is not None and f["lon"] is not None), None)

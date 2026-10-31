@@ -204,6 +204,39 @@ def test_more_sources_still_outrank_recency_within_a_group(seeded, monkeypatch):
     assert build_watchlist(seeded)[0].name == "Two Source Fire"
 
 
+def _tracked(conn, iid, name, county, status="contained"):
+    conn.execute(
+        "INSERT INTO incidents (id, canonical_name, status, county, created_at, updated_at)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        (iid, name, status, county, utcnow(), utcnow()),
+    )
+
+
+def test_a_tracked_fire_with_the_same_name_in_another_county_does_not_hide_a_new_start(
+    seeded, monkeypatch
+):
+    """Fire names repeat. Once the year's closed fires are loaded, a new Railroad Fire in
+    Contra Costa must not vanish because Butte had one in September."""
+    _says(monkeypatch)
+    _tracked(seeded, "butte", "Railroad Fire", "Butte")
+    _fact(seeded, "f1", "Railroad Fire", content="Railroad Fire reported in Contra Costa County.")
+    assert _groups(seeded) == {"Railroad Fire": "new"}
+
+
+def test_a_tracked_fire_in_the_stated_county_stays_off_the_board(seeded, monkeypatch):
+    _says(monkeypatch)
+    _tracked(seeded, "butte", "Railroad Fire", "Butte")
+    _fact(seeded, "f1", "Railroad Fire", content="Railroad Fire reported in Butte County.")
+    assert _groups(seeded) == {}
+
+
+def test_a_tracked_fire_stays_off_the_board_when_no_county_is_stated(seeded, monkeypatch):
+    _says(monkeypatch)
+    _tracked(seeded, "butte", "Railroad Fire", "Butte")
+    _fact(seeded, "f1", "Railroad Fire", content="Railroad Fire is 100% contained.")
+    assert _groups(seeded) == {}
+
+
 def test_promote_creates_incident_and_attributes(seeded):
     _source(seeded, "s2", "KTLA")
     _named_fact(seeded, "f1", "s1", "Ridge Fire", lat=39.5, lon=-121.5, loc="near Oroville")
