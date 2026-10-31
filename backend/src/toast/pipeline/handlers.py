@@ -405,6 +405,14 @@ def telegram_notify_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -
     notify_sweep(conn)
 
 
+@register("watchdog")
+def watchdog_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Tell the operator when a feed, the queue or the model has gone quiet."""
+    from toast.pipeline.watchdog import run_watchdog
+
+    run_watchdog(conn)
+
+
 @register("telegram_poll")
 def telegram_poll_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     """Handle APPROVE / SEND BACK buttons pressed in the ops chat."""
