@@ -1616,6 +1616,7 @@ export type AirFocus = {
   fire_ops: number;
   polled_upstream: boolean;
   fetched_at: string;
+  feed_error?: string | null;
   note: string;
 };
 
@@ -1639,6 +1640,7 @@ export type AirBases = {
   bases: AirBase[];
   sightings: BaseSighting[];
   last_scan: { base: string; at: string } | null;
+  feed_error?: string | null;
   note: string;
 };
 
@@ -1646,6 +1648,7 @@ export type AirMil = {
   aircraft: (Omit<AirAircraft, "trail" | "first_seen" | "seen_at" | "military" | "fire_ops">)[];
   count: number;
   fetched_at: string;
+  feed_error?: string | null;
   note: string;
 };
 

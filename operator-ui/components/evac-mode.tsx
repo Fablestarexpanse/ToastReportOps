@@ -48,6 +48,14 @@ function colorOf(status: string): string {
           : C.dim;
 }
 
+// Status text is relayed verbatim and never hidden, but a two-month-old order still
+// counts as active upstream, so its age has to be impossible to miss.
+const OLD_ORDER_DAYS = 30;
+function isOldOrder(issuedAt: string | null | undefined): boolean {
+  if (!issuedAt) return false;
+  return Date.now() - new Date(issuedAt).getTime() > OLD_ORDER_DAYS * 86_400_000;
+}
+
 function word(status: string): string {
   return (
     {
@@ -369,6 +377,11 @@ export default function EvacMode({
                           </span>
                         )}
                       </div>
+                      {isOldOrder(z.issued_at) && (
+                        <div style={{ fontFamily: font.mono, fontSize: 8.5, color: C.warn, marginTop: 1 }}>
+                          ⚠ over {OLD_ORDER_DAYS} days old: official status shown as published, confirm locally it still stands
+                        </div>
+                      )}
                       {z.CRITICAL_INFO && (
                         <div style={{ fontSize: 10.5, color: C.dim, whiteSpace: "pre-wrap", marginTop: 1 }}>
                           {z.CRITICAL_INFO}

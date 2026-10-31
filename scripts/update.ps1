@@ -135,6 +135,7 @@ $changed = @()
 if ($after -ne $before) { $changed = @(& git diff --name-only $before $after) }
 $backendChanged = [bool]($changed | Where-Object { $_ -like "backend/*" -or $_ -eq "docker-compose.yml" })
 $uiDepsChanged = [bool]($changed | Where-Object { $_ -like "operator-ui/package*.json" })
+$uiChanged = [bool]($changed | Where-Object { $_ -like "operator-ui/*" })
 
 # ---- 4. rebuild what changed ----------------------------------------------------
 Step 4 $total "rebuilding what changed..."
@@ -154,7 +155,9 @@ if ($backendChanged -or $Rebuild) {
 if ($uiDepsChanged) {
     Write-Host "    UI dependencies changed - installing..." -ForegroundColor DarkGray
     if ((Invoke-Native npm @("--prefix", (Join-Path $root "operator-ui"), "ci")) -ne 0) { Stop-Update "npm install failed. To go back: git checkout $before" }
-    # the running dev server holds the old modules; the launcher starts a fresh one
+}
+if ($uiChanged) {
+    # the running UI holds the old build; the launcher rebuilds and starts a fresh one
     Get-NetTCPConnection -LocalPort $UiPort -State Listen -ErrorAction SilentlyContinue |
         ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
 }
@@ -194,10 +197,12 @@ if ($after -ne $before) {
 }
 # models: never downloaded here (that's a big, deliberate step) - just point at the installer
 $modelCode = Invoke-Native docker @("compose", "--profile", "desktop", "exec", "-T", "api", "python", "-m", "toast.modelsetup", "status") -Quiet
-if ($modelCode -ne 0 -or $script:LastOutput -match "not installed|NOTE") {
+# status also lists optional comparison models, which are never required
+$modelLines = @($script:LastOutput.Split("`n") | Where-Object { $_ -notmatch "optional" })
+if ($modelCode -ne 0 -or ($modelLines -join "`n") -match "not installed|NOTE") {
     Write-Host ""
     Write-Host "Models need attention:" -ForegroundColor Yellow
-    $script:LastOutput.Split("`n") | Where-Object { $_ -match "not installed|NOTE|DIFFERENT" } | ForEach-Object { Write-Host $_ -ForegroundColor Yellow }
+    $modelLines | Where-Object { $_ -match "not installed|NOTE|DIFFERENT" } | ForEach-Object { Write-Host $_ -ForegroundColor Yellow }
     Write-Host "  Double-click 'Install Models.cmd' to download and verify them." -ForegroundColor Yellow
 }
 if (-not $NoLaunch) {

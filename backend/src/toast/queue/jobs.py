@@ -22,10 +22,23 @@ from toast.core.ids import ulid
 #
 # After AGING_AFTER_S a waiting job's EFFECTIVE priority is capped at
 # AGED_PRIORITY, so it overtakes the batch tiers and runs. The cap is deliberate:
-# an aged job still never cuts ahead of the evacuation sync (2) or the realtime
-# feeds (3), because those are time-critical by nature and cheap to run.
+# an aged job never cuts ahead of the evacuation sync (2), the realtime feeds (3)
+# or a source poll (5), which is what the tie-break in claim() is for. A poll is
+# seconds of work, while a requeued backlog is hours of it, all of it "old": when
+# it could outrank polls, requeuing 172 extract jobs stopped every feed.
 AGING_AFTER_S = 900
-AGED_PRIORITY = 4
+AGED_PRIORITY = 5
+
+# A job parked because the model it needs is not installed. It keeps its attempts
+# and is looked at again every MODEL_WAIT_S, so installing a model is all it takes
+# to drain the backlog. The prefix marks these rows for the top bar and watchdog.
+WAITING_FOR_MODEL = "no model installed"
+MODEL_WAIT_S = 60.0
+
+
+def _later(delay_s: float) -> str:
+    when = datetime.now(UTC) + timedelta(seconds=delay_s)
+    return when.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
 def enqueue(
@@ -69,6 +82,7 @@ def claim(
                                  CASE WHEN unixepoch('now') - unixepoch(created_at)
                                            >= {AGING_AFTER_S}
                                       THEN {AGED_PRIORITY} ELSE 99 END),
+                             priority > {AGED_PRIORITY},
                              created_at
                     LIMIT 1)
                 RETURNING *""",
@@ -91,14 +105,19 @@ def fail(
         conn.execute("UPDATE jobs SET state='dead', last_error=? WHERE id=?", (error, job["id"]))
         return "dead"
     delay = backoff_base_s * (2 ** (job["attempts"] - 1))
-    run_after = (datetime.now(UTC) + timedelta(seconds=delay)).strftime("%Y-%m-%dT%H:%M:%S.%f")[
-        :-3
-    ] + "Z"
     conn.execute(
         "UPDATE jobs SET state='queued', run_after=?, last_error=? WHERE id=?",
-        (run_after, error, job["id"]),
+        (_later(delay), error, job["id"]),
     )
     return "queued"
+
+
+def wait_for_model(conn: sqlite3.Connection, job: sqlite3.Row, error: str) -> None:
+    """Park a job until its model exists. This attempt does not count."""
+    conn.execute(
+        "UPDATE jobs SET state='queued', attempts=attempts-1, run_after=?, last_error=? WHERE id=?",
+        (_later(MODEL_WAIT_S), f"{WAITING_FOR_MODEL}: {error}", job["id"]),
+    )
 
 
 def counts_by_state(conn: sqlite3.Connection) -> dict[str, int]:
@@ -114,6 +133,12 @@ def counts_by_state(conn: sqlite3.Connection) -> dict[str, int]:
         " AND unixepoch('now') - unixepoch(created_at) < ?",
         (DEAD_RECENT_S,),
     ).fetchone()["n"]
+    waiting = conn.execute(
+        "SELECT COUNT(*) AS n FROM jobs WHERE state = 'queued' AND last_error LIKE ?",
+        (f"{WAITING_FOR_MODEL}%",),
+    ).fetchone()["n"]
+    if waiting:
+        counts["waiting_model"] = waiting
     return counts
 
 

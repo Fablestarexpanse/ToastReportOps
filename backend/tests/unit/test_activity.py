@@ -82,6 +82,14 @@ def test_sweep_stores_proposals_without_touching_incidents(seeded, monkeypatch):
     )  # nothing closed by the sweep itself
 
 
+def test_sweep_uses_the_model_the_operator_chose(seeded, monkeypatch):
+    monkeypatch.setattr(activity, "_calfire_live", lambda conn: {})
+    asked = []
+    monkeypatch.setattr(activity, "client_for", lambda conn: asked.append(conn))
+    activity.check_active(seeded)
+    assert asked == [seeded]
+
+
 def test_operator_close_clears_the_proposal_and_logs_the_event(seeded, monkeypatch):
     monkeypatch.setattr(activity, "_calfire_live", lambda conn: {})
     monkeypatch.setattr(activity, "load_prompt", lambda *a, **k: (_ for _ in ()).throw(Exception()))

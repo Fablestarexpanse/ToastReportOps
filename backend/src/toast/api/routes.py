@@ -19,7 +19,9 @@ router = APIRouter()
 
 
 def _conn(request: Request) -> sqlite3.Connection:
-    return request.app.state.conn
+    state = request.app.state
+    connections = getattr(state, "connections", None)
+    return connections.get() if connections else state.conn
 
 
 def _fact_dict(row: sqlite3.Row) -> dict[str, Any]:

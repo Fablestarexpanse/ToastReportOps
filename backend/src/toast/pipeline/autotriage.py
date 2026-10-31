@@ -22,7 +22,7 @@ from typing import Any
 
 from toast.core.db import utcnow
 from toast.core.logging import get_logger
-from toast.llm.client import LLMClient, LLMError
+from toast.llm.client import LLMClient, LLMError, client_for
 from toast.llm.prompts import load_prompt
 
 BATCH = 12  # local models are slow; keep a batch inside one job heartbeat
@@ -53,7 +53,7 @@ def propose_batch(
     rows = _queue_rows(conn, limit)
     if not rows:
         return {"proposed": 0, "note": "queue has no unproposed items"}
-    llm = client or LLMClient()
+    llm = client or client_for(conn)
     prompt = load_prompt("autotriage", conn=conn)
     log = get_logger("autotriage")
     proposed = failed = 0

@@ -22,7 +22,7 @@ from typing import Any
 from toast.core.db import utc_ago, utcnow
 from toast.core.fetch import FetchError, fetch
 from toast.core.logging import get_logger
-from toast.llm.client import LLMClient, LLMError
+from toast.llm.client import LLMClient, LLMError, client_for
 from toast.llm.prompts import load_prompt
 from toast.pipeline.incidents import haversine_km
 
@@ -215,7 +215,7 @@ def check_active(conn: sqlite3.Connection, *, client: LLMClient | None = None) -
     prompt = None
     try:
         prompt = load_prompt("activity_check", conn=conn)
-        llm = llm or LLMClient()
+        llm = llm or client_for(conn)
     except Exception:
         llm = None
 

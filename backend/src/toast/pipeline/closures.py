@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from typing import Any
 
 from toast.core.db import utcnow
@@ -29,6 +30,8 @@ CACHE_KEY = "closures:ca"
 CACHE_TTL_S = 10 * 60
 NEAR_KM = 15.0  # 50 km caught rest-area work half a county away; 15 km is fire-relevant
 FIRE_WORDS = ("fire", "evacuation", "evac")
+
+_refresh_lock = threading.Lock()
 
 
 def _records(district: int) -> list[dict[str, Any]]:
@@ -65,20 +68,34 @@ def _flat(rec: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def get_closures(conn: sqlite3.Connection, *, refresh: bool = False) -> dict[str, Any]:
-    """Full closures near active fires (or fire-worded), statewide."""
-    if not refresh:
-        row = conn.execute(
-            """SELECT payload, fetched_at FROM map_cache
-               WHERE key = ? AND unixepoch('now') - unixepoch(fetched_at) < ?""",
-            (CACHE_KEY, CACHE_TTL_S),
-        ).fetchone()
-        if row:
-            cached = json.loads(row["payload"])
-            cached["cached"] = True
-            cached["fetched_at"] = row["fetched_at"]
-            return cached
+def _cached(conn: sqlite3.Connection) -> dict[str, Any] | None:
+    row = conn.execute(
+        """SELECT payload, fetched_at FROM map_cache
+           WHERE key = ? AND unixepoch('now') - unixepoch(fetched_at) < ?""",
+        (CACHE_KEY, CACHE_TTL_S),
+    ).fetchone()
+    if not row:
+        return None
+    cached = json.loads(row["payload"])
+    cached["cached"] = True
+    cached["fetched_at"] = row["fetched_at"]
+    return cached
 
+
+def get_closures(conn: sqlite3.Connection, *, refresh: bool = False) -> dict[str, Any]:
+    """Full closures near active fires (or fire-worded), statewide. A page load
+    asks several times at once, and a refresh is 12 downloads taking ~5 s: the
+    first asker refreshes, the rest wait and read its result."""
+    if not refresh:
+        cached = _cached(conn)
+        if cached:
+            return cached
+    with _refresh_lock:
+        cached = None if refresh else _cached(conn)
+        return cached or _refresh(conn)
+
+
+def _refresh(conn: sqlite3.Connection) -> dict[str, Any]:
     incidents = [
         dict(r)
         for r in conn.execute(

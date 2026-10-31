@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -32,10 +33,31 @@ def utc_ago(seconds: float) -> str:
     return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
+class ThreadConnections:
+    """One connection per thread, for the API's threadpool.
+
+    FastAPI runs sync endpoints on worker threads, so requests overlap. A single
+    shared connection cannot take that: cursors interleave, which surfaced as
+    random 500s, false 404s and None where a COUNT belonged. check_same_thread is
+    left on, so a connection that strays across threads fails loudly. A thread's
+    connection is closed when the thread exits and its local storage is released."""
+
+    def __init__(self, db_path: str | Path) -> None:
+        self._path = db_path
+        self._local = threading.local()
+
+    def get(self) -> sqlite3.Connection:
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            conn = connect(self._path)
+            self._local.conn = conn
+        return conn
+
+
 def connect(db_path: str | Path, *, check_same_thread: bool = True) -> sqlite3.Connection:
-    """check_same_thread=False is for the API service only: FastAPI runs sync
-    endpoints in a threadpool, so the startup connection is used cross-thread.
-    Workers keep the default (one thread, one connection)."""
+    """Services keep the default: one thread, one connection (the API uses
+    ThreadConnections). check_same_thread=False is only for the API's startup
+    connection, which runs migrations and is never handed to a request."""
     path = Path(db_path)
     if str(path) != ":memory:":
         path.parent.mkdir(parents=True, exist_ok=True)

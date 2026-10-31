@@ -39,6 +39,23 @@ def _claim(db, content="Fire near Paradise grows.", name=None):
     return fid
 
 
+def test_uses_the_model_the_operator_chose(seeded, monkeypatch):
+    from toast.core.appsettings import set_setting
+    from toast.llm.client import LLMClient
+
+    set_setting(seeded, "llm_model", "chosen-model")
+    _claim(seeded)
+    used = []
+
+    def fake_judge(self, messages, **kw):
+        used.append(self.model)
+        return {"action": "unsure", "confidence": 0.1, "reasoning": "x"}
+
+    monkeypatch.setattr(LLMClient, "judge_json", fake_judge)
+    autotriage.propose_batch(seeded)
+    assert used == ["chosen-model"]
+
+
 def test_attach_proposal_stores_with_candidate_validation(seeded):
     seeded.execute(
         "UPDATE incidents SET lat = 39.76, lon = -121.62, canonical_name = 'Sawmill Fire'"

@@ -462,6 +462,7 @@ export default function WaterMode({ toast }: { toast: (m: string) => void }) {
       if (w.status === "fulfilled") setWater(w.value);
       else toast("flood feeds unreachable — showing last data");
       if (r.status === "fulfilled") setRes(r.value);
+      else toast("reservoir feed unreachable — showing last data");
       setBusy(false);
     },
     [toast],
@@ -598,7 +599,9 @@ export default function WaterMode({ toast }: { toast: (m: string) => void }) {
               ⚠ could not refresh ({res.error}) — showing the last stored values
             </div>
           )}
-          {res && reservoirs.length === 0 ? (
+          {!res ? (
+            <div style={{ fontFamily: font.mono, fontSize: 10, color: C.dim, marginTop: 10 }}>Loading reservoirs…</div>
+          ) : reservoirs.length === 0 ? (
             <div style={{ fontFamily: font.mono, fontSize: 10, color: C.dim, marginTop: 10 }}>Nothing matches this filter.</div>
           ) : (
             <ReservoirTable items={reservoirs} />

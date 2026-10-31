@@ -14,10 +14,14 @@ $dotenv = Join-Path $root ".env"
 $secrets = @()
 if (Test-Path $dotenv) {
     if (Select-String -Path $dotenv -Pattern '^\s*TOAST_MESH\s*=\s*1\s*$' -Quiet) { $profiles += @("--profile", "mesh") }
+    # Everything is treated as a secret except the few settings a report needs to be
+    # readable, like which model is configured. An unknown name is always blanked.
+    $public = '^(LLM_MODEL|EMBEDDING_MODEL|EMBEDDING_DIM|API_BIND|API_PORT|HEALTH_PORT|LOG_LEVEL|TOAST_DATA_DIR|TOAST_DB_PATH)$'
     foreach ($line in Get-Content $dotenv) {
-        if ($line -match '^\s*[A-Za-z_][A-Za-z0-9_]*\s*=\s*(.+?)\s*$') {
-            $v = $Matches[1].Trim('"', "'")
-            if ($v.Length -ge 6) { $secrets += $v }
+        if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+?)\s*$') {
+            $name = $Matches[1]
+            $v = $Matches[2].Trim('"', "'")
+            if ($v.Length -ge 6 -and $name -notmatch $public) { $secrets += $v }
         }
     }
 }

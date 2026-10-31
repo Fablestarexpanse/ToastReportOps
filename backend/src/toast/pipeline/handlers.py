@@ -105,12 +105,15 @@ def extract_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     import json as _json
 
     from toast.core.fetch import FetchError, robots_allows
+    from toast.llm.client import client_for
     from toast.pipeline.analyze import extract_article, fetch_article_text, html_to_text
 
     env_id = payload["envelope_id"]
     env = conn.execute("SELECT * FROM envelopes WHERE id = ?", (env_id,)).fetchone()
     if env is None:
         return
+    # before the fetch: without a model every retry would re-download the article
+    client_for(conn).ensure_chat_model()
     src = conn.execute(
         "SELECT tier, robots_override FROM sources WHERE id = ?", (env["source_id"],)
     ).fetchone()

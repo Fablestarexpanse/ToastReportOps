@@ -68,6 +68,16 @@ def test_timeline_finish_when_contained(seeded):
     assert tl["finish"] == "2026-07-05T00:00:00Z"
 
 
+def test_lifecycle_marks_read_as_words_not_stored_json(seeded):
+    seeded.execute(
+        "INSERT INTO incident_events (id, incident_id, event, detail, actor, at)"
+        " VALUES ('ev1', 'i1', 'created', '{\"via\": \"calfire\"}', 'system', ?)",
+        (utcnow(),),
+    )
+    created = [e for e in fire_timeline(seeded, "i1")["events"] if e["title"] == "Created"]
+    assert created[0]["detail"] == "via: calfire"
+
+
 def test_timeline_missing_incident():
     import sqlite3
 

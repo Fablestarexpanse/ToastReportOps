@@ -2,6 +2,21 @@
 
 Architectural decision log. Newest first. Each entry: context → decision → why.
 
+## 2026-10-31 — Live-stack audit: threads, missing models, refused feeds
+
+- **One SQLite connection per API thread.** Sharing one across the threadpool caused
+  random 500s, false 404s and wrong values. A connection that strays across threads
+  now fails loudly instead of corrupting a read.
+- **A missing model is a wait, not a failure.** Jobs park without spending attempts
+  and drain once a model is installed. Other LLM errors still retry and dead-letter.
+- **A refused aircraft feed is reported, never shown as an empty sky.** airplanes.live
+  returns 403 and asks projects to contact them. We do not disguise our client to get
+  past that: access comes from asking them, or from another licensed feed.
+- **The launcher runs the production UI build.** The dev server doubled every request
+  and showed its overlay. Developers still use `npm run dev`.
+- **Old evacuation orders stay verbatim and visible.** Over 30 days old they get a
+  warning to confirm locally, because hiding an official order is the worse mistake.
+
 ## 2026-10-31 — Archive search, capped agent reads, no automatic model downloads
 
 - Toast needed to search its own text (facts, drafts, radio transcripts, archived

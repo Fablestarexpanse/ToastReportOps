@@ -1,10 +1,59 @@
 from toast.core.config import Settings
 from toast.queue import jobs
-from toast.queue.worker import requeue_stale, run_once
+from toast.queue.worker import STALE_SWEEP_S, requeue_own, requeue_stale, run_once, sweep_if_due
 
 # Long backoff so a just-failed job is deterministically not-yet-runnable;
 # tests that need re-runs clear run_after explicitly.
 SETTINGS = Settings(job_backoff_base_s=60.0, worker_poll_interval_s=0.01)
+
+
+def test_restart_frees_this_workers_own_job_however_young(db):
+    """A restarted container keeps its hostname and pid, so a claim under our own
+    id cannot be running: this process has only just started."""
+    job_id = jobs.enqueue(db, "demo_noop", {})
+    jobs.claim(db, "host:1")
+    other = jobs.enqueue(db, "demo_noop", {})
+    jobs.claim(db, "other:1")
+
+    assert requeue_own(db, "host:1") == 1
+    state = {r["id"]: r["state"] for r in db.execute("SELECT id, state FROM jobs")}
+    assert state == {job_id: "queued", other: "running"}
+
+
+def test_sweep_runs_only_when_due_and_frees_abandoned_jobs(db):
+    job_id = jobs.enqueue(db, "demo_noop", {})
+    jobs.claim(db, "gone:1")
+    db.execute("UPDATE jobs SET claimed_at = '2020-01-01T00:00:00.000Z' WHERE id = ?", (job_id,))
+
+    assert sweep_if_due(db, last_sweep=100.0, now=100.0 + STALE_SWEEP_S - 1) == 100.0
+    assert db.execute("SELECT state FROM jobs").fetchone()["state"] == "running"
+
+    assert sweep_if_due(db, last_sweep=100.0, now=100.0 + STALE_SWEEP_S) == 100.0 + STALE_SWEEP_S
+    assert db.execute("SELECT state FROM jobs").fetchone()["state"] == "queued"
+
+
+def _age(db, job_id):
+    db.execute("UPDATE jobs SET created_at = '2020-01-01T00:00:00.000Z' WHERE id = ?", (job_id,))
+
+
+def test_an_old_llm_backlog_never_holds_up_a_fresh_feed_poll(db):
+    """Requeuing 172 extract jobs stopped every feed, CAL FIRE included: aged, they
+    outranked new polls, and would have for the 100 minutes the backlog took."""
+    _age(db, jobs.enqueue(db, "extract", {}, priority=6))
+    poll = jobs.enqueue(db, "poll", {}, priority=5)
+    assert jobs.claim(db, "w1")["id"] == poll
+
+
+def test_aged_low_priority_work_still_takes_its_turn_behind_feeds(db):
+    extract = jobs.enqueue(db, "extract", {}, priority=6)
+    maintenance = jobs.enqueue(db, "archive_index", {}, priority=8)
+    fresher_extract = jobs.enqueue(db, "extract", {}, priority=6)
+    _age(db, maintenance)
+    db.execute("UPDATE jobs SET created_at = '2019-01-01T00:00:00.000Z' WHERE id = ?", (extract,))
+    # both aged jobs run in age order, ahead of the fresh batch job they would starve behind
+    assert jobs.claim(db, "w1")["id"] == extract
+    assert jobs.claim(db, "w1")["id"] == maintenance
+    assert jobs.claim(db, "w1")["id"] == fresher_extract
 
 
 def test_enqueue_claim_complete(db):

@@ -31,6 +31,8 @@ RADIUS_NM = 20  # tight around the fire — this is air ops, not regional traffi
 LOW_CEILING_FT = 10000  # above this it is transit; not stored
 ROTOR_CEILING_FT = 8000  # a helicopter this low near a fire is plausibly working it
 RETAIN_HOURS = 12
+FEED_STATUS_KEY = "air:feed:status"
+FEED_STATUS_TTL_S = 10 * 60  # past this, nothing has polled, so it says nothing about now
 
 # Classification is an ALLOWLIST of fire, not a blocklist of everything else.
 # The reason is FedEx: it flies DC-10s and MD-11s (same airframe as the VLAT
@@ -170,6 +172,25 @@ def _is_fire_ops(alt_ft: int | None, type_code: str | None, category: str | None
     return classify_role(type_code, category, alt_ft) != "other"
 
 
+def record_feed(conn: sqlite3.Connection, error: str | None) -> None:
+    """Remember whether the feed last answered, for every reader of the store."""
+    conn.execute(
+        "INSERT OR REPLACE INTO map_cache (key, payload, fetched_at) VALUES (?, ?, ?)",
+        (FEED_STATUS_KEY, json.dumps({"error": error}), utcnow()),
+    )
+
+
+def feed_error(conn: sqlite3.Connection) -> str | None:
+    """Why the feed is failing right now, or None. Empty results read as "no
+    aircraft", so anything showing them has to be able to say the feed is down."""
+    row = conn.execute(
+        """SELECT payload FROM map_cache
+           WHERE key = ? AND unixepoch('now') - unixepoch(fetched_at) < ?""",
+        (FEED_STATUS_KEY, FEED_STATUS_TTL_S),
+    ).fetchone()
+    return json.loads(row["payload"])["error"] if row else None
+
+
 def _fetch_near(lat: float, lon: float) -> list[dict[str, Any]]:
     body, _ctype = fetch(
         f"{SERVICE}/{lat}/{lon}/{RADIUS_NM}",
@@ -183,7 +204,12 @@ def _fetch_near(lat: float, lon: float) -> list[dict[str, Any]]:
 
 def poll_incident(conn: sqlite3.Connection, incident: sqlite3.Row) -> int:
     """Record low aircraft near one incident. Returns how many were stored."""
-    ac = _fetch_near(incident["lat"], incident["lon"])
+    try:
+        ac = _fetch_near(incident["lat"], incident["lon"])
+    except Exception as exc:
+        record_feed(conn, str(exc)[:200])
+        raise
+    record_feed(conn, None)
     now = utcnow()
     stored = 0
     for a in ac:
@@ -292,6 +318,7 @@ def current_aircraft(conn: sqlite3.Connection, *, minutes: int = 10) -> dict[str
         "aircraft": craft,
         "count": len(craft),
         "fire_ops": sum(1 for c in craft if c["fire_ops"]),
+        "feed_error": feed_error(conn),
         "note": (
             "airplanes.live ADS-B — positions near active fires; 'air ops' is a "
             "heuristic from altitude, speed and type, not a confirmed role."
