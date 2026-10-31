@@ -132,9 +132,10 @@ services:
   # (reuse an existing Ollama cache by pointing that at it); every later boot
   # is instant. The backend talks to http://llm:11434/v1 — the same
   # OpenAI-compatible contract, so a cloud key in LLM_BASE_URL still overrides.
-  # The defaults are the official, digest-pinned models in
-  # backend/src/toast/model_manifest.json. For a verified install (pin check,
-  # GPU-fit check, smoke test) use "Install Models.cmd" — see docs/MODELS.md.
+  # Models are NOT downloaded automatically: "Install Models.cmd" (or
+  # python -m toast.modelsetup install) downloads official, digest-pinned models with
+  # a pin check, a GPU-fit check and a smoke test — see docs/MODELS.md. Set
+  # LLM_AUTO_PULL=1 to restore the old unverified first-boot pull.
   llm:
     profiles: [desktop]
     image: ollama/ollama:latest
@@ -144,8 +145,10 @@ services:
       - |
         ollama serve &
         sleep 4
-        ollama pull "${LLM_PULL_MODEL:-qwen3.5:9b}" || true
-        ollama pull "${LLM_EMBED_PULL_MODEL:-nomic-embed-text}" || true
+        if [ "${LLM_AUTO_PULL:-0}" = "1" ]; then
+          ollama pull "${LLM_PULL_MODEL:-qwen3.5:9b}" || true
+          ollama pull "${LLM_EMBED_PULL_MODEL:-nomic-embed-text}" || true
+        fi
         wait
     environment:
       OLLAMA_KEEP_ALIVE: 30m

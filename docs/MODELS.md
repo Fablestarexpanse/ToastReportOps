@@ -1,5 +1,8 @@
 # Models: what the tool uses and how they're installed safely
 
+Nothing downloads a model on its own: the `llm` container only serves what you've
+installed (`LLM_AUTO_PULL=1` restores the old, unverified first-boot pull).
+
 ## One click
 
 Double-click **`Install Models.cmd`**. It starts the model server if needed, shows what

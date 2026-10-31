@@ -68,10 +68,12 @@ approve (a draft the verifier flagged can't be approved from the phone).
   stalls or the model goes away — so "no alerts" never quietly means "broken".
 - **Localhost only, guarded.** Everything binds to `127.0.0.1`; the API also refuses
   cross-site requests and foreign `Host` headers (CSRF / DNS rebinding).
-- **Agents can read, not publish.** The MCP server and CLI are read-only by default and
-  have no tool that can approve, publish, delete or change settings.
-- **Safe models.** Official, digest-pinned models; community uploads are refused by
-  the installer.
+- **Agents can read, not publish — and only a little at a time.** The MCP server and
+  CLI are read-only by default, have no tool that can approve, publish, delete or
+  change settings, and cap what any one call returns, since most of it is scraped text.
+- **Safe models, no surprise downloads.** Official, digest-pinned models; community
+  uploads are refused; nothing downloads a model unless you run the installer (or
+  explicitly set `LLM_AUTO_PULL=1`).
 
 Details: [docs/SECURITY.md](docs/SECURITY.md), [docs/AGENT-INTERFACE.md](docs/AGENT-INTERFACE.md),
 [docs/MODELS.md](docs/MODELS.md).
@@ -115,7 +117,7 @@ The `degraded` profile runs only `api` + `worker` + `scheduler` for power outage
 git clone https://github.com/Fablestarexpanse/ToastReportOps.git
 cd ToastReportOps
 cp .env.example .env                       # works as-is; optional keys: docs/API-KEYS.md. Never commit .env
-docker compose --profile desktop up -d     # first boot also pulls the two default models
+docker compose --profile desktop up -d     # models are not auto-downloaded; next two lines
 docker compose --profile desktop exec -T api python -m toast.seed             # seed the source list
 docker compose --profile desktop exec -T api python -m toast.modelsetup install --vram-gb 12
 ```
@@ -142,7 +144,8 @@ OpenAI-compatible endpoint and remove the GPU reservation from the `llm` service
 ## Agents and scripts
 
 An MCP server and a `toast` CLI let Claude, Hermes or any MCP client read the ledger,
-the WATER board and drafts. `.mcp.json` is preconfigured for Claude Code. Read-only by
+the WATER board and drafts, and **search the archive** (facts, drafts, radio
+transcripts, archived news pages) in capped snippets. `.mcp.json` is preconfigured for Claude Code. Read-only by
 default; `TOAST_AGENT_WRITE=1` adds two tools (leave a note, request a draft for you to
 review). → [docs/AGENT-INTERFACE.md](docs/AGENT-INTERFACE.md)
 
@@ -156,7 +159,8 @@ Facts:
 - Repo (private): https://github.com/Fablestarexpanse/ToastReportOps
 - Docker Compose stack (profile "desktop", 9 services) plus a Next.js operator UI on
   port 3005. API on 8400. Localhost-only, single operator, no login.
-- Models are installed and verified by: python -m toast.modelsetup (see docs/MODELS.md).
+- Models are NOT auto-downloaded; they are installed and verified by:
+  python -m toast.modelsetup (see docs/MODELS.md).
 
 Do this:
 1. Check prerequisites; ask me before installing any system software: Docker running

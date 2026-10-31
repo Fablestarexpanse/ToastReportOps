@@ -92,6 +92,8 @@ DAILY_STAGES = {
     "water_refresh": 600,
     # CDEC publishes daily reservoir values; a snapshot every 2h is plenty
     "reservoir_refresh": 2 * 3600,
+    # full-text archive index: cheap bounded batches, maintenance priority
+    "archive_index": 120,
     # silence is the failure mode that looks like good news — check every 5 min
     "watchdog": 300,
     # weather changes slowly and NWS asks for restraint — every 20 min keeps the

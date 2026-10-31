@@ -427,6 +427,17 @@ def reservoir_refresh_handler(conn: sqlite3.Connection, payload: dict[str, Any])
         notify_reservoirs(conn)
 
 
+@register("archive_index")
+def archive_index_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Keep the full-text archive index current (bounded batches; a cache, rebuildable)."""
+    from toast.pipeline.archive_search import SearchUnavailable, index_pending
+
+    try:
+        index_pending(conn)
+    except SearchUnavailable as exc:
+        get_logger("archive_search").warning("archive_search_unavailable", error=str(exc))
+
+
 @register("watchdog")
 def watchdog_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     """Tell the operator when a feed, the queue or the model has gone quiet."""

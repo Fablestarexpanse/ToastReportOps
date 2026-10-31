@@ -253,10 +253,10 @@ self-contained incident bundle (ledger JSONL, media manifest, GeoJSON perimeters
 
 No separate program to remember: `docker compose --profile desktop up` starts
 an `llm` service (Ollama in a container, GPU passthrough) alongside everything
-else. First boot pulls the models named in `LLM_PULL_MODEL` /
-`LLM_EMBED_PULL_MODEL` into `OLLAMA_MODELS_DIR` (a named volume by default; on
-this machine it is pointed at the existing F:\Pi Coder\models cache so
-nothing re-downloads). Every later boot is instant.
+else. Models live in `OLLAMA_MODELS_DIR` (a named volume by default; on this
+machine it is pointed at the existing F:\Pi Coder\models cache so nothing
+re-downloads). Since 2026-10-31 the container downloads nothing by itself — see
+below.
 
 Why: twice now a separately-started host Ollama was down without anyone
 noticing, and extraction/watch/triage jobs dead-lettered silently. The stack
@@ -268,7 +268,8 @@ with a key still overrides for anyone who prefers cloud.
 `docker compose --profile desktop exec -T api python -m toast.modelsetup install`).
 It installs only official, digest-pinned models, refuses a tag that changed upstream,
 skips models too big for the GPU and smoke-tests each one; `modelsetup status` shows
-whether what's installed still matches its pin. The first-boot auto-pull still exists
-for convenience but does no verification. Profiles, the bake-off and the default-model
+whether what's installed still matches its pin. The old first-boot auto-pull is off;
+`LLM_AUTO_PULL=1` in `.env` restores it, unverified. `ToastReport.cmd` tells you when
+models are missing. Profiles, the bake-off and the default-model
 change are in docs/MODELS.md. The watchdog reports "the language model endpoint is
 unreachable" to the ops chat if the `llm` service goes away.

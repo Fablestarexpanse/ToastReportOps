@@ -34,6 +34,14 @@ while (-not (Test-Port $UiPort)) {
     Start-Sleep -Milliseconds 700
 }
 
+# Models are never downloaded here; just say so if they're missing (never blocks launch).
+try {
+    $models = (& docker compose --profile desktop exec -T api python -m toast.modelsetup status) -join "`n"
+    if ($models -match "not installed") {
+        Write-Host "    AI models are not installed yet - double-click 'Install Models.cmd'." -ForegroundColor Yellow
+    }
+} catch { }
+
 Write-Host "[3/3] opening workstation window..." -ForegroundColor DarkYellow
 # Edge app mode: standalone window, own taskbar icon, no browser chrome.
 Start-Process msedge.exe -ArgumentList "--app=$UiUrl"

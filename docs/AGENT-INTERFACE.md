@@ -14,7 +14,7 @@ sees and inherit its validation.
 
 | | |
 |---|---|
-| **Can read** | system status, incidents, an incident's fact ledger, the live intake stream, drafts (with the verifier's findings), flood alerts + river gauges, reservoirs, the watch board, close/recheck proposals, dead jobs |
+| **Can read** | system status, incidents, an incident's fact ledger, the live intake stream, drafts (with the verifier's findings), flood alerts + river gauges, reservoirs, the watch board, close/recheck proposals, dead jobs, and **archive search** — full-text search over facts, drafts, radio transcripts and archived news pages (`search_archive`, then `read_archive` for a window) |
 | **Can write — only if you turn it on** | leave a note; ask the local model to draft an update (it lands as a **draft** for you to review) |
 | **Cannot, ever** | approve, release or publish anything; change status; delete; edit settings; read or set credentials; add sources. Those tools do not exist, and publishing is also blocked by the database unless a human approved. |
 
@@ -29,7 +29,11 @@ instructions and ..."). Rules this design follows, and you should keep:
 
 1. Every tool result carries a notice that text fields are untrusted data.
 2. The server's instructions tell the agent the same.
-3. An agent with write access can at worst create a note or a draft; a draft still
+3. **Results are capped**, so no single call can hand an agent a wall of scraped text:
+   any text field ≤ 600 characters (a draft body ≤ 6,000 — it's your own report), any
+   list ≤ 50 items, a whole result ≤ 16,000 characters, archive snippets ≤ 160
+   characters and an archive read ≤ 2,000. The result says when something was cut.
+4. An agent with write access can at worst create a note or a draft; a draft still
    needs your approval, and the draft verifier flags invented numbers and
    paraphrased evacuation text. Do not give an agent other tools on the same
    machine (shell, email, posting) at the same time as this one without thinking
@@ -75,6 +79,8 @@ toast list-incidents --status active
 toast incident-facts --incident-id <id> --limit 20
 toast reservoirs --filter attention
 toast water-board
+toast search-archive --query '"evacuation order" Paradise'
+toast read-archive --doc-id fact:01J... --around Paradise
 toast --pretty list-drafts --status needs_review
 toast --write create-draft --incident-id <id>
 toast tools                      # everything available
@@ -83,6 +89,24 @@ toast tools                      # everything available
 From inside the stack: `docker compose --profile desktop exec -T api toast status`.
 Output is JSON on stdout; errors go to stderr with exit status 1. Set `--api` or
 `TOAST_API_URL` for a non-default address.
+
+## Archive search
+
+The index covers ledger facts, drafts and published reports, scanner transcripts once
+transcribed, and archived HTML/text/RSS pages. Structured JSON feeds are skipped,
+since their content already became facts. It is SQLite's built-in FTS5 (no extra
+software), kept current every two minutes by the `archive_index` stage, and is a
+rebuildable cache:
+
+```bash
+docker compose --profile desktop exec -T api python -m toast.pipeline.archive_search status
+docker compose --profile desktop exec -T api python -m toast.pipeline.archive_search rebuild
+```
+
+Typed queries can't act as search commands: every word is quoted, so FTS operators and
+column filters are inert. `"quoted phrases"` and a trailing `*` for a prefix still work.
+Not built: text inside images (OCR). That needs a separately installed OCR engine and
+its language data, and would follow the same pinned, never-auto-downloaded rule as models.
 
 ## Notes
 

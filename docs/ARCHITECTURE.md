@@ -201,4 +201,9 @@ load/unload orchestration; nothing has needed one.
 - **Agent interface** — `agent_tools.py` (single tool registry), `mcp_server.py`
   (stdio MCP), `cli.py` (`toast` command). See docs/AGENT-INTERFACE.md.
 - **Models** — `modelsetup.py` + `model_manifest.json` (pinned official models) and
-  `eval/model_bakeoff.py`. See docs/MODELS.md.
+  `eval/model_bakeoff.py`. See docs/MODELS.md. The `llm` container downloads nothing by
+  itself (`LLM_AUTO_PULL` opt-in).
+- **Archive search** — `pipeline/archive_search.py`: SQLite FTS5 index (created on first
+  use, rebuildable) over facts, drafts, radio transcripts and archived pages, kept
+  current by the `archive_index` stage; `/archive/search`, `/archive/doc`; capped agent
+  tools `search_archive` / `read_archive`.

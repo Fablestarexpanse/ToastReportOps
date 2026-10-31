@@ -29,7 +29,9 @@ Docker stack (9 services) on the operator's machine.
   the **watchdog** (silent feeds / stalled queue / model down → phone);
   the **agent interface** (MCP server + `toast` CLI, read-only by default); the safe
   **model installer** (`modelsetup.py`, digest-pinned `model_manifest.json`); the
-  **bake-off harness** (`eval/model_bakeoff.py`); one-click update and model install.
+  **bake-off harness** (`eval/model_bakeoff.py`); one-click update and model install;
+  **archive search** (`pipeline/archive_search.py`, FTS5 over facts, drafts, radio and
+  archived pages; capped agent tools).
 - **Experimental / optional:** RADIO transcription (needs a Whisper endpoint +
   SDR hardware); FIRMS satellite hotspots (adapter present, disabled pending a
   key); deep research (LDR + SearXNG containers); `LLM_THINK_MODE=native` (Ollama's
@@ -347,6 +349,9 @@ Open as of the 2026-10-31 audit:
    toolchain; the fix needs a breaking ESLint upgrade. Nothing shipped is affected.
 9. **Large files** — `api/routes.py` and `components/workstation.tsx` would benefit
    from splitting by area.
+10. **Archive search has no UI yet** — it's reachable from agents, the CLI and the API;
+    a NEWSROOM/OPS search box is the natural next step. Text inside images (OCR) is
+    not indexed.
 
 Product backlog lives in [docs/ROADMAP.md](docs/ROADMAP.md); the open UI-polish
 item is char-count/queue-search/Spanish-version in the newsroom.

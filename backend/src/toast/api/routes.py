@@ -899,6 +899,47 @@ def system_status(request: Request) -> dict:
     }
 
 
+@router.get("/archive/search")
+def archive_search_route(
+    request: Request, q: str, kind: str | None = None, limit: int = Query(20, ge=1, le=50)
+) -> dict:
+    """Full-text search over facts, drafts, radio transcripts and archived pages.
+    Results are short highlighted snippets; read a window with /archive/doc."""
+    from toast.pipeline.archive_search import SearchUnavailable, search
+
+    try:
+        return {"results": search(_conn(request), q, kind=kind, limit=limit)}
+    except SearchUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.get("/archive/doc")
+def archive_doc_route(
+    request: Request,
+    doc_id: str,
+    around: str | None = None,
+    max_chars: int = Query(1500, ge=200, le=2000),
+) -> dict:
+    """A capped window of one indexed document, centred on `around` if given."""
+    from toast.pipeline.archive_search import SearchUnavailable, read
+
+    try:
+        return read(_conn(request), doc_id, around=around, max_chars=max_chars)
+    except SearchUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(404, "document not in the archive index") from exc
+
+
+@router.get("/archive/status")
+def archive_status_route(request: Request) -> dict:
+    from toast.pipeline.archive_search import status
+
+    return status(_conn(request))
+
+
 @router.get("/hazard")
 def hazard(request: Request) -> dict:
     """The active hazard profile and what the calendar suggests."""

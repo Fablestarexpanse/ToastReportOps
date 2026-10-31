@@ -12,6 +12,7 @@ import pytest
 
 from toast import cli
 from toast.agent_tools import (
+    MAX_ITEMS,
     MAX_RESULT_CHARS,
     TOOLS,
     UNTRUSTED_NOTICE,
@@ -76,7 +77,7 @@ def test_tools_only_reach_allowlisted_api_routes(monkeypatch):
             run_tool(api, t.name, args, allow_write=True)
     allowed_prefixes = (
         "/system/status", "/incidents", "/intake", "/drafts", "/water", "/reservoirs",
-        "/watch", "/activity/proposals", "/jobs/dead", "/notes",
+        "/watch", "/activity/proposals", "/jobs/dead", "/notes", "/archive/",
     )  # fmt: skip
     for method, path, _ in CALLS:
         assert path.startswith(allowed_prefixes), path
@@ -129,10 +130,36 @@ def test_reservoir_filters():
     assert [r["station"] for r in attention["data"]["reservoirs"]] == ["SHA"]
 
 
-def test_huge_results_are_truncated_with_a_note():
-    big = {("GET", "/drafts"): {"x": "a" * (MAX_RESULT_CHARS + 10)}}
+def test_a_long_text_field_is_clipped_and_flagged():
+    big = {("GET", "/drafts"): {"x": "a" * 50_000}}
     out = run_tool(fake_api(big), "list_drafts", {}, allow_write=False)
+    assert len(out["data"]["x"]) < 700 and out["data"]["x"].endswith("[clipped]")
+    assert "clipped" in out
+
+
+def test_long_lists_are_cut_to_the_item_cap():
+    many = {("GET", "/drafts"): {"drafts": [{"id": f"D{i}"} for i in range(500)]}}
+    out = run_tool(fake_api(many), "list_drafts", {}, allow_write=False)
+    assert len(out["data"]["drafts"]) == MAX_ITEMS and "clipped" in out
+
+
+def test_a_result_still_too_big_after_clipping_is_truncated_with_a_note():
+    wide = {("GET", "/drafts"): {"drafts": [{"body": "b" * 590} for _ in range(50)]}}
+    out = run_tool(fake_api(wide), "list_drafts", {}, allow_write=False)
     assert out["data"]["truncated"] is True and len(out["data"]["preview"]) == MAX_RESULT_CHARS
+
+
+def test_get_draft_may_return_a_longer_body_than_scraped_fields():
+    body = {("GET", "/drafts/D1"): {"draft": {"body_md": "w" * 5_000}}}
+    out = run_tool(fake_api(body), "get_draft", {"draft_id": "D1"}, allow_write=False)
+    assert len(out["data"]["draft"]["body_md"]) == 5_000 and "clipped" not in out
+
+
+def test_read_archive_rejects_malformed_doc_ids():
+    for bad in ("../etc", "fact:../../x", "secret:ABC", "fact:"):
+        with pytest.raises(ToolError, match="expected form"):
+            run_tool(fake_api(), "read_archive", {"doc_id": bad}, allow_write=False)
+    assert not CALLS
 
 
 def test_api_errors_and_unreachable_api_become_tool_errors():
