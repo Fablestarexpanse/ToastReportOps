@@ -74,7 +74,7 @@ def test_ca_article_writes_facts(seeded):
         tier=4,
         envelope_id=env_id,
         raw_ref=None,
-        text="...",
+        text="The Flume Fire in Butte County has burned 1,200 acres.",
         client=fake,
     )
     assert len(summary["facts"]) == 1

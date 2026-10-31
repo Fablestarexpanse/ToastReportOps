@@ -41,9 +41,10 @@ def test_valid_claims_parse():
             ]
         }
     )
-    result = extract_claims("...", reference_time=REF, client=fake)
+    source = "The Flume Fire has burned 1240 acres, officials said Sunday."
+    result = extract_claims(source, reference_time=REF, client=fake)
     assert len(result.claims) == 1 and result.dropped == 0
-    assert result.claims[0].acreage == 1240
+    assert result.claims[0].acreage == 1240 and result.claims[0].issues == []
     assert result.prompt_version == "extract_claims.v2"
 
 
@@ -150,7 +151,8 @@ def test_california_article_relevant_with_claims():
             ],
         }
     )
-    result = extract_claims("...", reference_time=REF, client=fake)
+    source = "The Flume Fire in Butte County is now at 1,200 acres."
+    result = extract_claims(source, reference_time=REF, client=fake)
     assert result.california_relevant is True
     assert len(result.claims) == 1
 
