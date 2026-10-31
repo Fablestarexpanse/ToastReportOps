@@ -65,7 +65,11 @@ def find_problems(
              AND COALESCE(last_error, '') NOT LIKE ?""",
         (now, f"{WAITING_FOR_MODEL}%"),
     ).fetchone()["oldest"]
-    if stalled is not None and now - stalled > STALL_S:
+    # old is not enough: a requeued job keeps its created_at, so also ask whether
+    # anything has been claimed lately
+    claimed = conn.execute("SELECT MAX(unixepoch(claimed_at)) AS t FROM jobs").fetchone()["t"]
+    draining = claimed is not None and now - claimed <= STALL_S
+    if stalled is not None and now - stalled > STALL_S and not draining:
         problems["queue_stalled"] = (
             f"oldest runnable job has waited {(now - stalled) // 60} min — is the worker running?"
         )
