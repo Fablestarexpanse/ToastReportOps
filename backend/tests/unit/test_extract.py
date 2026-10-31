@@ -162,3 +162,58 @@ def test_missing_relevance_field_defaults_true():
     fake = FakeLLM({"claims": [{"content": "a claim", "kind": "other", "confidence": 0.5}]})
     result = extract_claims("...", reference_time=REF, client=fake)
     assert result.california_relevant is True and len(result.claims) == 1
+
+
+class TestNativeThinkMode:
+    """think_mode=native must send Ollama's real think:false, to the native route."""
+
+    def _client(self, monkeypatch, mode="native"):
+        import httpx
+
+        from toast.core.config import Settings
+        from toast.llm.client import LLMClient
+
+        sent = {}
+
+        def fake_post(url, **kw):
+            sent["url"], sent["json"] = url, kw["json"]
+            return httpx.Response(200, json={"message": {"content": '{"claims": []}'}})
+
+        monkeypatch.setattr(httpx, "post", fake_post)
+        client = LLMClient(
+            Settings(llm_base_url="http://llm:11434/v1", llm_think_mode=mode), model="m"
+        )
+        return client, sent
+
+    def test_native_sends_think_false_to_api_chat_without_the_soft_token(self, monkeypatch):
+        client, sent = self._client(monkeypatch)
+        assert client.chat_json([{"role": "system", "content": "SYS"}]) == {"claims": []}
+        assert sent["url"] == "http://llm:11434/api/chat"
+        assert sent["json"]["think"] is False and sent["json"]["format"] == "json"
+        assert "/no_think" not in sent["json"]["messages"][0]["content"]
+
+    def test_judgment_calls_leave_thinking_on_in_native_mode(self, monkeypatch):
+        client, sent = self._client(monkeypatch)
+        client.judge_json([{"role": "system", "content": "SYS"}])
+        assert "think" not in sent["json"]
+
+    def test_soft_mode_is_unchanged(self, monkeypatch):
+        import httpx
+
+        from toast.core.config import Settings
+        from toast.llm.client import LLMClient
+
+        sent = {}
+
+        def fake_post(url, **kw):
+            sent["url"], sent["json"] = url, kw["json"]
+            return httpx.Response(
+                200, json={"choices": [{"message": {"content": '{"claims": []}'}}]}
+            )
+
+        monkeypatch.setattr(httpx, "post", fake_post)
+        LLMClient(Settings(llm_base_url="http://llm:11434/v1"), model="m").chat_json(
+            [{"role": "system", "content": "SYS"}]
+        )
+        assert sent["url"].endswith("/v1/chat/completions")
+        assert sent["json"]["messages"][0]["content"].startswith("/no_think")

@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     # qwen3 and similar reasoning models default to slow "thinking"; the soft
     # switch below is appended to the system prompt to skip it for extraction.
     llm_no_think_token: str = "/no_think"
+    # How "no thinking" is asked for. "soft" prepends llm_no_think_token to the prompt
+    # over the OpenAI-compatible route (what qwen3 honours; Qwen3.5 does NOT).
+    # "native" calls Ollama's own /api/chat with think:false, which Qwen3.5 and Gemma 4
+    # do honour. Run `python -m toast.eval.model_bakeoff probe` to see which works on
+    # your Ollama and model before switching.
+    llm_think_mode: str = "soft"  # soft | native
     # ...but that blanket suppression was chosen for EXTRACTION and then
     # inherited by every call. Extraction is transcription — "pull the acreage
     # out of this sentence" — and reasoning there is pure latency on the hottest

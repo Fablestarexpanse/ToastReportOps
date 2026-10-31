@@ -54,6 +54,45 @@ the diff in git, and commit:
 python -m toast.modelsetup pin --write     # run from backend/
 ```
 
+## Choosing between models (the bake-off)
+
+Public benchmarks don't measure what this tool needs, so compare candidates on cases
+that do. Install a comparison profile first (`Install Models.cmd -Profile bakeoff-12gb`),
+then run these inside the stack:
+
+```bash
+# 1. Which way of turning thinking off works for this model? (run once per model)
+docker compose --profile desktop exec -T api python -m toast.eval.model_bakeoff probe --model qwen3.5:9b
+
+# 2. Extraction: invented figures, obeyed injections, rounding, mixed-up fires. Safest model first.
+docker compose --profile desktop exec -T api python -m toast.eval.model_bakeoff extraction \
+    --models qwen3.5:9b,gemma4:12b-it-qat,granite4.2:8b --repeat 3
+
+# 3. Embeddings: how well does each separate "same event" from "different event"?
+docker compose --profile desktop exec -T api python -m toast.eval.model_bakeoff embeddings \
+    --models nomic-embed-text,embeddinggemma-2:270m
+```
+
+How to read it: for extraction, **fewer safety failures wins**, then recall, then speed.
+A model that invents or obeys even once is a worse fit than a slower, plainer one.
+`--repeat 3` shows run-to-run variance; a model that is only sometimes safe is not safe.
+
+The probe tells you whether to set `LLM_THINK_MODE=native` in `.env`. Qwen3.5 ignores
+the `/no_think` prompt hint, so with the default `soft` mode it may be thinking on every
+extraction and running slower than it needs to.
+
+**Limits you should know about.** The shipped cases are synthetic, written for this
+repo, each with one deliberate trap. They catch bad models; they can't rank good ones
+or predict how a model copes with your real feeds. Add real articles and labelled pairs
+with `--fixture your.json` (same shape as `backend/src/toast/eval/data/*.json`) and keep
+the ones that ever fooled a model. Don't switch models on a difference of one case.
+
+**Embeddings:** switching the embedding model means re-embedding the whole ledger and
+re-tuning the thresholds. Production measures distance as **L2**, not cosine (sqlite-vec's
+default; verified), so `DUP_THRESHOLD 0.10` and `CORROBORATION_THRESHOLD 0.45` mean
+cosine similarity of about 0.995 and 0.90 for unit-length vectors. The embeddings
+command reports what the current thresholds do with each model.
+
 ## About the default
 
 The default changed from a community fine-tune (`hf.co/DavidAU/...Heretic...`) to the
