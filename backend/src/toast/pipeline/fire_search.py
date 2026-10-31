@@ -8,12 +8,14 @@ fire and runs it through the normal ingest pipeline so it lands as a
 
 from __future__ import annotations
 
+import argparse
+import json
 import sqlite3
 from typing import Any
 
 from toast.core.config import Settings
-from toast.core.db import utcnow
-from toast.core.envelope import insert_envelope
+from toast.core.db import connect, utcnow
+from toast.core.envelope import Envelope, insert_envelope
 from toast.core.ids import ulid
 from toast.core.rawstore import store_raw
 from toast.queue import jobs
@@ -89,11 +91,48 @@ def _ensure_search_source(conn: sqlite3.Connection) -> str:
     return source_id
 
 
+def _ingest(conn: sqlite3.Connection, env: Envelope) -> list[str] | None:
+    """Run one envelope through the normal pipeline. None when it was already ingested."""
+    from toast.pipeline.normalize import normalize_envelope
+
+    env_id = insert_envelope(conn, env)
+    if env_id is None:
+        return None
+    facts = normalize_envelope(conn, env_id)
+    for fact_id in facts:
+        jobs.enqueue(conn, "embed", {"fact_id": fact_id}, priority=7)
+    return facts
+
+
+def import_year(conn: sqlite3.Connection, year: int) -> dict[str, Any]:
+    """Ingest CAL FIRE's whole list for a year from one fetch. Run by the operator,
+    never on a schedule: the default poller stays active-only so a backlog can't
+    flood the board. Idempotent: a re-run adds nothing (dedup)."""
+    settings = Settings()
+    adapter = CalFireAdapter()
+    items = fetch_incidents(adapter, inactive=True, year=year)
+    raw_ref = None
+    if adapter.fetches:
+        body, ctype, url = adapter.fetches[-1]
+        raw_ref = store_raw(conn, settings.toast_data_dir, body, ctype, url)
+    source_id = _ensure_search_source(conn)
+    imported = 0
+    for item in items:
+        env = incident_to_payload(item, source_id)
+        env.raw_ref = raw_ref
+        if _ingest(conn, env) is not None:
+            imported += 1
+    return {
+        "year": year,
+        "seen": len(items),
+        "imported": imported,
+        "already": len(items) - imported,
+    }
+
+
 def import_fire(conn: sqlite3.Connection, ref_id: str) -> dict[str, Any]:
     """Fetch one historical CAL FIRE incident and ingest it via the normal
     pipeline. Returns a summary. Idempotent: re-import is a no-op (dedup)."""
-    from toast.pipeline.normalize import normalize_envelope
-
     settings = Settings()
     adapter = CalFireAdapter()
     # search the closed set for the requested id (may span years — try current)
@@ -114,12 +153,9 @@ def import_fire(conn: sqlite3.Connection, ref_id: str) -> dict[str, Any]:
         raw_ref = store_raw(conn, settings.toast_data_dir, body, ctype, url)
     env.raw_ref = raw_ref
 
-    env_id = insert_envelope(conn, env)
-    if env_id is None:
+    facts = _ingest(conn, env)
+    if facts is None:
         return {"imported": False, "reason": "already in ledger", "ref_id": ref_id}
-    facts = normalize_envelope(conn, env_id)
-    for fact_id in facts:
-        jobs.enqueue(conn, "embed", {"fact_id": fact_id}, priority=7)
     incident = conn.execute(
         "SELECT id, canonical_name, status FROM incidents WHERE calfire_id = ?", (ref_id,)
     ).fetchone()
@@ -131,3 +167,18 @@ def import_fire(conn: sqlite3.Connection, ref_id: str) -> dict[str, Any]:
         "status": incident["status"] if incident else None,
         "facts": len(facts),
     }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Import CAL FIRE's list for one year.")
+    sub = parser.add_subparsers(dest="command", required=True)
+    backfill = sub.add_parser("backfill", help="ingest every fire CAL FIRE lists for a year")
+    backfill.add_argument("year", type=int)
+    args = parser.parse_args()
+
+    conn = connect(Settings().toast_db_path)
+    print(json.dumps(import_year(conn, args.year)))
+
+
+if __name__ == "__main__":
+    main()
