@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   WatchCandidate,
+  WatchGroup,
   WatchState,
   classifyWatch,
   fetchWatch,
@@ -29,10 +30,40 @@ const VERDICT_COLOR: Record<string, string> = {
   uncertain: C.warn,
 };
 
+/* Sections, in order. Only the first two ask for attention: the rest stay reachable
+   because a wrong sort has to be something the operator can see and overrule. */
+const SECTIONS: { group: WatchGroup; title: string; note: string; startsOpen: boolean }[] = [
+  { group: "new", title: "NEW, UNCONFIRMED", note: "reported as a start, with no official record yet", startsOpen: true },
+  { group: "official", title: "OFFICIALLY LISTED", note: "a CAL FIRE or NIFC record exists, but it is not tracked here", startsOpen: true },
+  { group: "over", title: "ALREADY OVER", note: "CAL FIRE lists these as closed", startsOpen: false },
+  { group: "prescribed", title: "PRESCRIBED", note: "planned burns, not wildfires", startsOpen: false },
+  { group: "mentions", title: "MENTIONS, NOT STARTS", note: "a named fire in a story, with no report of it starting", startsOpen: false },
+];
+
+/** What the official lists say, in words. An unread list must never read as "no record". */
+function officialLine(c: WatchCandidate): { text: string; color: string } {
+  const o = c.official;
+  const acres = o.acres != null ? `${o.acres.toLocaleString()} ac` : "size not listed";
+  const contained = o.containment != null ? `, ${o.containment}% contained` : "";
+  switch (o.status) {
+    case "closed":
+      return { text: `${o.source}: ${acres}${contained}${o.final ? ", final" : ""}`, color: C.dim };
+    case "active":
+      return { text: `${o.source}: listed active, ${acres}${contained}`, color: C.ok };
+    case "reported":
+      return { text: `${o.source}: ${acres}${contained}`, color: C.ok };
+    case "none":
+      return { text: "No official record", color: C.dim };
+    default:
+      return { text: "Official lists could not be checked", color: C.warn };
+  }
+}
+
 export default function WatchMode({ toast }: { toast: (m: string) => void }) {
   const [candidates, setCandidates] = useState<WatchCandidate[] | null>(null);
   const [promoting, setPromoting] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<Record<string, string>>({});
+  const [openOverride, setOpenOverride] = useState<Partial<Record<WatchGroup, boolean>>>({});
 
   const refresh = useCallback(async () => {
     try {
@@ -87,7 +118,7 @@ export default function WatchMode({ toast }: { toast: (m: string) => void }) {
   };
 
   const list = candidates ?? [];
-  const corroborating = list.filter((c) => c.state === "corroborating").length;
+  const inGroup = (g: WatchGroup) => list.filter((c) => c.group === g);
 
   return (
     <div
@@ -105,14 +136,35 @@ export default function WatchMode({ toast }: { toast: (m: string) => void }) {
         <span style={{ fontFamily: font.disp, fontSize: 22, fontWeight: 700, letterSpacing: 1 }}>
           NEW STARTS BOARD
         </span>
-        <span style={{ fontFamily: font.mono, fontSize: 10, color: C.dim }}>
-          fires named by independent sources but not yet on CAL FIRE&apos;s active list ·{" "}
-          {list.length} watching · {corroborating} corroborating
+        <span style={{ fontFamily: font.mono, fontSize: 12, color: C.dim }}>
+          fires named by sources, checked against CAL FIRE and NIFC · {inGroup("new").length} new ·{" "}
+          {inGroup("official").length} officially listed
         </span>
       </div>
 
-      {list.map((c) => {
+      {SECTIONS.flatMap(({ group, title, note, startsOpen }) => {
+        const members = inGroup(group);
+        if (!members.length) return [];
+        const open = openOverride[group] ?? startsOpen;
+        const header = (
+          <button
+            key={`section-${group}`}
+            onClick={() => setOpenOverride((s) => ({ ...s, [group]: !open }))}
+            aria-expanded={open}
+            style={{ gridColumn: "1 / -1", display: "flex", alignItems: "baseline", gap: 10, background: "transparent", border: "none", borderTop: `1px solid ${C.line}`, padding: "10px 0 0", color: C.txt, cursor: "pointer", textAlign: "left" }}
+          >
+            <span style={{ fontFamily: font.mono, fontSize: 12, color: C.dim, width: 12 }}>{open ? "▾" : "▸"}</span>
+            <span style={{ fontFamily: font.disp, fontSize: 14, fontWeight: 700, letterSpacing: 1.5 }}>
+              {title} · {members.length}
+            </span>
+            <span style={{ fontFamily: font.mono, fontSize: 11, color: C.dim }}>{note}</span>
+          </button>
+        );
+        if (!open) return [header];
+        return [header, ...members.map((c) => {
         const color = c.state === "corroborating" ? C.warn : C.violet;
+        const official = officialLine(c);
+        const canPromote = c.group === "new" || c.group === "official";
         return (
           <div
             key={c.key}
@@ -123,13 +175,11 @@ export default function WatchMode({ toast }: { toast: (m: string) => void }) {
               padding: 14,
             }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-              <span style={{ fontFamily: font.disp, fontSize: 15, fontWeight: 700 }}>{c.name}</span>
-              <span style={{ fontFamily: font.mono, fontSize: 11, color }}>
-                {Math.round(c.score * 100)}%
-              </span>
+            <div style={{ fontFamily: font.disp, fontSize: 15, fontWeight: 700 }}>{c.name}</div>
+            <div style={{ fontFamily: font.mono, fontSize: 11, color: official.color, marginTop: 4 }}>
+              {official.text}
             </div>
-            <div style={{ fontFamily: font.mono, fontSize: 9, color: C.dim, marginTop: 3 }}>
+            <div style={{ fontFamily: font.mono, fontSize: 11, color: C.dim, marginTop: 3 }}>
               {c.county ? `${c.county} · ` : ""}
               {c.source_count} source{c.source_count === 1 ? "" : "s"} · {c.fact_count} signals · last{" "}
               {fmtTime(c.latest_observed)}
@@ -137,21 +187,11 @@ export default function WatchMode({ toast }: { toast: (m: string) => void }) {
             {c.geo_source === "named_feature" && (
               <div
                 title="no source gave coordinates — this position is inferred from the fire's name and is approximate"
-                style={{ fontFamily: font.mono, fontSize: 8.5, color: C.warn, marginTop: 2 }}
+                style={{ fontFamily: font.mono, fontSize: 11, color: C.warn, marginTop: 2 }}
               >
                 ≈ location inferred from “{c.geo_place}” — approximate
               </div>
             )}
-
-            {/* corroboration bar */}
-            <div style={{ marginTop: 10, height: 5, borderRadius: 3, background: C.line, overflow: "hidden" }}>
-              <div style={{ width: `${c.score * 100}%`, height: "100%", background: color }} />
-            </div>
-            <div style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint, marginTop: 4 }}>
-              {c.state === "corroborating"
-                ? "multiple independent sources — worth a look"
-                : "single source so far — watching for corroboration"}
-            </div>
 
             {/* sample signals */}
             <div style={{ marginTop: 9 }}>
@@ -159,8 +199,8 @@ export default function WatchMode({ toast }: { toast: (m: string) => void }) {
                 <div key={i} style={{ display: "flex", gap: 7, padding: "3px 0", alignItems: "flex-start" }}>
                   <div style={{ width: 3, borderRadius: 2, background: TIER[s.tier], flexShrink: 0, alignSelf: "stretch" }} />
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 10.5, lineHeight: 1.35 }}>{s.content}</div>
-                    <div style={{ fontFamily: font.mono, fontSize: 8, color: C.faint }}>
+                    <div style={{ fontSize: 12, lineHeight: 1.35 }}>{s.content}</div>
+                    <div style={{ fontFamily: font.mono, fontSize: 11, color: C.dim }}>
                       T{s.tier} · {fmtTime(s.observed_at)}
                     </div>
                   </div>
@@ -179,22 +219,22 @@ export default function WatchMode({ toast }: { toast: (m: string) => void }) {
                   padding: "6px 8px",
                 }}
               >
-                <div style={{ fontFamily: font.mono, fontSize: 9, color: VERDICT_COLOR[c.verdict.verdict], letterSpacing: 1 }}>
+                <div style={{ fontFamily: font.mono, fontSize: 11, color: VERDICT_COLOR[c.verdict.verdict], letterSpacing: 1 }}>
                   {VERDICT_LABEL[c.verdict.verdict]} · {Math.round(c.verdict.confidence * 100)}% confident
                   {c.verdict.in_california === false && " · OUTSIDE CA"}
                 </div>
-                <div style={{ fontSize: 10, color: C.dim, marginTop: 3, lineHeight: 1.35 }}>
+                <div style={{ fontSize: 12, color: C.dim, marginTop: 3, lineHeight: 1.35 }}>
                   {c.verdict.reasoning}
                 </div>
                 {c.verdict.evidence_quote && (
-                  <div style={{ fontFamily: font.mono, fontSize: 8.5, color: C.faint, marginTop: 3, fontStyle: "italic" }}>
+                  <div style={{ fontFamily: font.mono, fontSize: 11, color: C.dim, marginTop: 3, fontStyle: "italic" }}>
                     “{c.verdict.evidence_quote}”
                   </div>
                 )}
                 {c.verdict.suggested_action !== "keep" && (
                   <div
                     onClick={() => triage(c, c.verdict!.suggested_action as WatchState)}
-                    style={{ marginTop: 5, fontFamily: font.mono, fontSize: 9, cursor: "pointer", color: C.ok, border: `1px solid ${C.ok}66`, borderRadius: 3, padding: "3px 7px", display: "inline-block" }}
+                    style={{ marginTop: 5, fontFamily: font.mono, fontSize: 11, cursor: "pointer", color: C.ok, border: `1px solid ${C.ok}66`, borderRadius: 3, padding: "3px 7px", display: "inline-block" }}
                   >
                     ✓ ACCEPT — {c.verdict.suggested_action === "archived" ? "file to archive" : "ignore this"}
                   </div>
@@ -286,32 +326,35 @@ export default function WatchMode({ toast }: { toast: (m: string) => void }) {
               >
                 ⌕ DEEP RESEARCH
               </button>
-              <button
-                onClick={() => promote(c)}
-                disabled={promoting[c.key]}
-                style={{
-                  flex: 1,
-                  background: color,
-                  color: C.bg,
-                  border: "none",
-                  borderRadius: 5,
-                  fontFamily: font.disp,
-                  fontWeight: 700,
-                  fontSize: 11,
-                  letterSpacing: 1,
-                  padding: "7px 0",
-                  cursor: "pointer",
-                }}
-              >
-                {promoting[c.key] ? "…" : "▲ PROMOTE"}
-              </button>
+              {canPromote && (
+                <button
+                  onClick={() => promote(c)}
+                  disabled={promoting[c.key]}
+                  style={{
+                    flex: 1,
+                    background: color,
+                    color: C.bg,
+                    border: "none",
+                    borderRadius: 5,
+                    fontFamily: font.disp,
+                    fontWeight: 700,
+                    fontSize: 11,
+                    letterSpacing: 1,
+                    padding: "7px 0",
+                    cursor: "pointer",
+                  }}
+                >
+                  {promoting[c.key] ? "…" : "▲ PROMOTE"}
+                </button>
+              )}
             </div>
           </div>
         );
+        })];
       })}
 
       {candidates && !list.length && (
-        <div style={{ gridColumn: "1 / -1", padding: 16, fontFamily: font.mono, fontSize: 10, color: C.faint }}>
+        <div style={{ gridColumn: "1 / -1", padding: 16, fontFamily: font.mono, fontSize: 12, color: C.dim }}>
           no new-start candidates right now — the board fills when sources name a fire that isn&apos;t
           yet on the active list. As scanner/ADS-B/hotspot sources come online, their signals cluster
           here too.
