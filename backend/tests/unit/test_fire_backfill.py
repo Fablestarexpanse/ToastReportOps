@@ -85,6 +85,22 @@ def test_historical_search_finds_closed_fires_for_a_year(db, monkeypatch):
     assert [r["name"] for r in fire_search.search_fires(db, year=2025)] == ["Old Fire"]
 
 
+def test_preview_says_what_a_backfill_would_do_and_writes_nothing(db, monkeypatch):
+    _stub_catalog(monkeypatch, [])
+    out = fire_search.preview_year(db, 2026)
+    assert out == {"year": 2026, "listed": 2, "new": 2, "already": 0, "acres": 672}
+    assert db.execute("SELECT COUNT(*) FROM incidents").fetchone()[0] == 0
+    assert db.execute("SELECT COUNT(*) FROM envelopes").fetchone()[0] == 0
+
+
+def test_preview_counts_what_is_already_in_the_ledger(db, tmp_path, monkeypatch):
+    monkeypatch.setenv("TOAST_DATA_DIR", str(tmp_path))
+    _stub_catalog(monkeypatch, [])
+    fire_search.import_year(db, 2026)
+    out = fire_search.preview_year(db, 2026)
+    assert (out["new"], out["already"]) == (0, 2)
+
+
 def test_backfill_run_twice_adds_nothing(db, tmp_path, monkeypatch):
     monkeypatch.setenv("TOAST_DATA_DIR", str(tmp_path))
     _stub_catalog(monkeypatch, [])

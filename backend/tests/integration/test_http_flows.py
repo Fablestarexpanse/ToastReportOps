@@ -67,6 +67,72 @@ def test_adjudication_reports_real_total_and_hides_only_old_articles_with_a_coun
     assert body["older_hidden"] == 1
 
 
+CATALOG = [
+    {
+        "UniqueId": "aaaa-norte",
+        "Name": "Norte Fire",
+        "County": "Orange",
+        "Type": "Wildfire",
+        "AcresBurned": 570.0,
+        "PercentContained": 100.0,
+        "Latitude": 33.8,
+        "Longitude": -117.8,
+        "IsActive": False,
+        "Started": "2026-10-16T12:00:00Z",
+        "Updated": "2026-10-20T12:00:00Z",
+    }
+]
+
+
+def _stub_catalog(monkeypatch):
+    monkeypatch.setattr(
+        "toast.pipeline.fire_search.fetch_incidents",
+        lambda adapter, *, inactive=False, year=None: CATALOG,
+    )
+
+
+def test_backfill_preview_writes_nothing(http, monkeypatch):
+    client, conn = http
+    _stub_catalog(monkeypatch)
+    body = client.get("/fires/backfill", params={"year": 2026}).json()
+    assert body == {"year": 2026, "listed": 1, "new": 1, "already": 0, "acres": 570}
+    assert conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0] == 0
+
+
+def test_backfill_refuses_without_explicit_confirmation(http, monkeypatch):
+    client, conn = http
+    _stub_catalog(monkeypatch)
+    assert client.post("/fires/backfill", json={"year": 2026}).status_code == 400
+    assert (
+        client.post("/fires/backfill", json={"year": 2026, "confirm_year": 2025}).status_code == 400
+    )
+    assert conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0] == 0
+
+
+def test_backfill_refuses_a_cross_site_request(http, monkeypatch):
+    client, conn = http
+    _stub_catalog(monkeypatch)
+    resp = client.post(
+        "/fires/backfill",
+        json={"year": 2026, "confirm_year": 2026},
+        headers={"Origin": "https://evil.example"},
+    )
+    assert resp.status_code == 403
+    assert conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0] == 0
+
+
+def test_backfill_imports_and_queues_a_reattribution_pass(http, monkeypatch):
+    client, conn = http
+    _stub_catalog(monkeypatch)
+    body = client.post("/fires/backfill", json={"year": 2026, "confirm_year": 2026}).json()
+    assert body == {"year": 2026, "seen": 1, "imported": 1, "already": 0}
+    assert conn.execute("SELECT status FROM incidents").fetchone()[0] == "contained"
+    queued = conn.execute(
+        "SELECT COUNT(*) FROM jobs WHERE stage = 'reattribute' AND state = 'queued'"
+    ).fetchone()[0]
+    assert queued == 1
+
+
 def _seed_incident(conn, inc_id="i-http", **cols):
     base = {
         "id": inc_id,

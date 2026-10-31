@@ -46,7 +46,7 @@ Four buttons in the install folder:
 | **TIMELINE** | Per-incident event timeline |
 | **NEWSROOM** | AI drafts for review, the draft verifier's findings, approval, release to channels, the local static-site build |
 | **WATCH** | Fires named by sources but not yet tracked, checked against the official lists and sorted into new, officially listed, already over, prescribed and mentions |
-| **ARCHIVE** | Every incident ever tracked, filed by year and month; frozen fires are immutable |
+| **ARCHIVE** | Every incident ever tracked, filed by year and month; frozen fires are immutable. Optionally load the year's closed fires from CAL FIRE, with a preview first |
 | **SOURCES** | Feeds, trust tiers (T1 official → T5 community) and their performance |
 | **ANALYTICS** | Facts per day, source performance, attribution and corroboration rates |
 

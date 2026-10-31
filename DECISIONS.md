@@ -19,8 +19,10 @@ Architectural decision log. Newest first. Each entry: context → decision → w
 - **Undated claims take their article's date.** Using ingest time made old stories look
   new. Articles over 14 days old cost no fetch and no model call, and their envelopes
   stay archived.
-- **The year backfill is operator-run, never scheduled.** The default poller stays
-  active-only, following the 76-junk-incident lesson.
+- **The year backfill is the operator's choice, never scheduled or automatic.** ARCHIVE
+  shows what it would add and asks for confirmation, because the writes can't be undone.
+  It isn't an agent tool. The default poller stays active-only, following the
+  76-junk-incident lesson.
 - **The CAL FIRE adapter stopped posing as a browser.** Its requests succeed under our
   own identity, and we don't disguise the client.
 - **Auto-attachment needs more than a score.** Attachment can't be undone, and a dry run

@@ -113,13 +113,34 @@ def _ingest(conn: sqlite3.Connection, env: Envelope) -> list[str] | None:
     return facts
 
 
+def _year_fires(adapter: CalFireAdapter, year: int) -> list[dict[str, Any]]:
+    return [i for i in _closed_list(adapter, year) if "fire" in str(i.get("Type") or "").lower()]
+
+
+def preview_year(conn: sqlite3.Connection, year: int) -> dict[str, Any]:
+    """What import_year would do, for the operator to weigh first. Writes nothing."""
+    items = _year_fires(CalFireAdapter(), year)
+    known = {
+        r["calfire_id"]
+        for r in conn.execute("SELECT calfire_id FROM incidents WHERE calfire_id IS NOT NULL")
+    }
+    already = sum(1 for i in items if i.get("UniqueId") in known)
+    return {
+        "year": year,
+        "listed": len(items),
+        "new": len(items) - already,
+        "already": already,
+        "acres": round(sum(i.get("AcresBurned") or 0 for i in items)),
+    }
+
+
 def import_year(conn: sqlite3.Connection, year: int) -> dict[str, Any]:
     """Ingest CAL FIRE's whole list for a year from one fetch. Run by the operator,
     never on a schedule: the default poller stays active-only so a backlog can't
     flood the board. Idempotent: a re-run adds nothing (dedup)."""
     settings = Settings()
     adapter = CalFireAdapter()
-    items = [i for i in _closed_list(adapter, year) if "fire" in str(i.get("Type") or "").lower()]
+    items = _year_fires(adapter, year)
     raw_ref = None
     if adapter.fetches:
         body, ctype, url = adapter.fetches[-1]

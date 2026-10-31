@@ -4,6 +4,7 @@ import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "re
 import dynamic from "next/dynamic";
 import {
   AdjudicationItem,
+  BackfillPreview,
   Fact,
   FireSearchResult,
   Incident,
@@ -49,6 +50,8 @@ import {
   followIncident,
   hasActiveEvac,
   importFire,
+  previewBackfill,
+  runBackfill,
   dismissTierSuggestion,
   probeSource,
   recomputeSourceStats,
@@ -3028,6 +3031,104 @@ function SourcesMode({ toast }: { toast: (m: string) => void }) {
   );
 }
 
+/* ---------------- this year's closed fires ---------------- */
+
+/* Optional, and always the operator's call: ledger writes can't be undone. Nothing is
+   written until they have seen the numbers and pressed the second button. */
+function YearBackfill({ toast }: { toast: (m: string) => void }) {
+  const year = new Date().getUTCFullYear();
+  const [preview, setPreview] = useState<BackfillPreview | null>(null);
+  const [busy, setBusy] = useState<"check" | "import" | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+
+  const check = async () => {
+    setBusy("check");
+    setDone(null);
+    try {
+      setPreview(await previewBackfill(year));
+    } catch (e) {
+      toast(`could not read CAL FIRE's list: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const confirm = async () => {
+    setBusy("import");
+    try {
+      const r = await runBackfill(year);
+      setPreview(null);
+      setDone(`Added ${r.imported.toLocaleString()} of ${r.seen.toLocaleString()} fires. Waiting reports are being matched to them.`);
+    } catch (e) {
+      toast(`import failed: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const button = (primary: boolean): React.CSSProperties => ({
+    background: primary ? C.ember : "transparent",
+    color: primary ? C.bg : C.dim,
+    border: primary ? "none" : `1px solid ${C.line}`,
+    borderRadius: 5,
+    fontFamily: font.disp,
+    fontWeight: 700,
+    fontSize: 12,
+    letterSpacing: 1,
+    padding: "7px 14px",
+    cursor: busy ? "default" : "pointer",
+  });
+
+  return (
+    <div style={{ border: `1px solid ${C.line}`, borderRadius: 8, background: C.panel, marginBottom: 14, padding: 10 }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <span style={{ fontFamily: font.disp, fontSize: 13, letterSpacing: 1.5, fontWeight: 700, color: C.ember }}>
+          LOAD {year}&apos;S CLOSED FIRES
+        </span>
+        <span style={{ fontFamily: font.mono, fontSize: 11, color: C.dim, flex: 1, minWidth: 220 }}>
+          Optional. Lets reports match fires that have already closed, and makes the year&apos;s totals real.
+        </span>
+        {!preview && (
+          <button onClick={check} disabled={!!busy} style={button(false)}>
+            {busy === "check" ? "CHECKING…" : "CHECK WHAT THIS WOULD ADD"}
+          </button>
+        )}
+      </div>
+      {done && (
+        <div role="status" style={{ fontFamily: font.mono, fontSize: 12, color: C.ok, marginTop: 8 }}>
+          {done}
+        </div>
+      )}
+      {preview && preview.new === 0 && (
+        <div style={{ fontFamily: font.mono, fontSize: 12, color: C.dim, marginTop: 8 }}>
+          Nothing to add: all {preview.listed.toLocaleString()} fires CAL FIRE lists for {year} are already in your ledger.
+        </div>
+      )}
+      {preview && preview.new > 0 && (
+        <div style={{ marginTop: 10, fontSize: 12, lineHeight: 1.5 }}>
+          <div>
+            CAL FIRE lists <b>{preview.listed.toLocaleString()} fires</b> and{" "}
+            <b>{preview.acres.toLocaleString()} acres</b> for {year}. <b>{preview.new.toLocaleString()}</b> are not in your
+            ledger yet.
+          </div>
+          <div role="alert" style={{ color: C.warn, marginTop: 4 }}>
+            This can&apos;t be undone. The fires stay in your ledger permanently, and waiting reports that clearly name
+            one will attach to it automatically.
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <button onClick={confirm} disabled={!!busy} style={button(true)}>
+              {busy === "import" ? "ADDING…" : `ADD ${preview.new.toLocaleString()} FIRES`}
+            </button>
+            <button onClick={() => setPreview(null)} disabled={!!busy} style={button(false)}>
+              CANCEL
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---------------- historical fire search ---------------- */
 
 function FireSearch({ toast }: { toast: (m: string) => void }) {
@@ -3291,6 +3392,7 @@ function ArchiveMode({ toast }: { toast: (m: string) => void }) {
         </select>
       </div>
 
+      <YearBackfill toast={toast} />
       <FireSearch toast={toast} />
 
       {tree.map(({ year, count, months }) => (

@@ -2343,6 +2343,39 @@ def import_fire_route(request: Request, body: dict) -> dict:
     return result
 
 
+@router.get("/fires/backfill")
+def backfill_preview(request: Request, year: int) -> dict:
+    """What importing a year's CAL FIRE list would add. Writes nothing."""
+    from toast.core.fetch import FetchError
+    from toast.pipeline.fire_search import preview_year
+
+    try:
+        return preview_year(_conn(request), year)
+    except FetchError as exc:
+        raise HTTPException(502, f"CAL FIRE catalog unavailable: {exc}") from exc
+
+
+@router.post("/fires/backfill")
+def backfill_year(request: Request, body: dict) -> dict:
+    """Import a year's CAL FIRE list. Ledger writes can't be undone, so the caller must
+    repeat the year as confirmation. Not on the agent tool allowlist: operator only."""
+    from toast.core.fetch import FetchError
+    from toast.pipeline.fire_search import import_year
+    from toast.queue import jobs
+
+    year = body.get("year")
+    if not isinstance(year, int) or body.get("confirm_year") != year:
+        raise HTTPException(400, "confirm_year must repeat year")
+    conn = _conn(request)
+    try:
+        result = import_year(conn, year)
+    except FetchError as exc:
+        raise HTTPException(502, f"CAL FIRE catalog unavailable: {exc}") from exc
+    # reports waiting on these fires can attach now rather than on the next sweep
+    jobs.enqueue(conn, "reattribute", {}, priority=8)
+    return result
+
+
 @router.post("/sources/probe")
 def probe_source(request: Request, body: dict) -> dict:
     """Detect what a URL is and propose an adapter + config (add-source flow)."""

@@ -631,6 +631,29 @@ export async function importFire(refId: string): Promise<{ name: string; status:
   return res.json();
 }
 
+export type BackfillPreview = {
+  year: number;
+  listed: number;
+  new: number;
+  already: number;
+  acres: number;
+};
+
+export const previewBackfill = (year: number) => get<BackfillPreview>(`/fires/backfill?year=${year}`);
+
+export async function runBackfill(year: number): Promise<{ imported: number; seen: number }> {
+  const res = await fetch("/api/fires/backfill", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ year, confirm_year: year }),
+  });
+  if (!res.ok) {
+    const detail = await res.json().then((d) => d.detail).catch(() => res.status);
+    throw new Error(String(detail));
+  }
+  return res.json();
+}
+
 export type ProbeResult = {
   url: string;
   detected: string;
