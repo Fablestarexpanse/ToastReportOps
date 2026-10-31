@@ -94,6 +94,7 @@ const MeshMode = dynamic(() => import("@/components/mesh-mode"), {
     </div>
   ),
 });
+import WaterMode from "@/components/water-mode";
 const AirMode = dynamic(() => import("@/components/air-mode"), {
   ssr: false,
   loading: () => (
@@ -3371,6 +3372,7 @@ const MODES: [string, string][] = [
   ["ops", "OPS"],
   ["evac", "EVAC"],
   ["air", "AIR"],
+  ["water", "WATER"],
   ["radio", "RADIO"],
   ["mesh", "MESH"],
   ["timeline", "TIMELINE"],
@@ -3716,6 +3718,7 @@ export default function Workstation() {
       )}
       {mode === "evac" && <EvacMode toast={toast} onShowOnMap={showEvacOnMap} />}
       {mode === "air" && <AirMode toast={toast} />}
+      {mode === "water" && <WaterMode toast={toast} />}
       {mode === "radio" && <RadioMode toast={toast} />}
       {mode === "mesh" && <MeshMode toast={toast} />}
       {mode === "timeline" && <TimelineMode toast={toast} focusIncident={focusIncident} />}

@@ -88,6 +88,10 @@ DAILY_STAGES = {
     # the phone hub: alerts out every 30 s, button presses picked up every 15 s
     "telegram_notify": 30,
     "telegram_poll": 15,
+    # river gauges + flood alerts; the handler is a no-op outside flood season
+    "water_refresh": 600,
+    # CDEC publishes daily reservoir values; a snapshot every 2h is plenty
+    "reservoir_refresh": 2 * 3600,
     # silence is the failure mode that looks like good news — check every 5 min
     "watchdog": 300,
     # weather changes slowly and NWS asks for restraint — every 20 min keeps the

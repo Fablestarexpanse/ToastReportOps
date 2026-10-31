@@ -28,6 +28,10 @@ ALLOWED: dict[str, tuple[str | None, str, str]] = {
     "ui_poll_interval_s": (None, "UI refresh interval (s)", "number"),
     # branding: stamped on generated graphics and appended to articles/posts —
     # where a shared card travels, the byline travels with it
+    # which hazard season to track — gates the flood pipeline (core/hazard.py)
+    "hazard_profile": (None, "Hazard season", "choice"),  # 'fire' | 'flood' | 'both'
+    # gauges always shown on the WATER board, even when calm (NWS gauge ids)
+    "water_watch_lids": (None, "Pinned river gauges (NWS ids, comma-separated)", "text"),
     "brand_web": (None, "Website link (on graphics + posts)", "text"),
     "brand_social": (None, "Social handles (on graphics + posts)", "text"),
 }
@@ -38,6 +42,8 @@ UI_DEFAULTS = {
     "map_basemap": "dark",
     "timeline_order": "newest",
     "ui_poll_interval_s": "10",
+    "hazard_profile": "fire",
+    "water_watch_lids": "",
     "brand_web": "",
     "brand_social": "",
 }
@@ -81,6 +87,8 @@ def set_setting(conn: sqlite3.Connection, key: str, value: str) -> None:
         return
     if len(value) > 200:
         raise ValueError("value too long")
+    if key == "hazard_profile" and value.lower() not in ("fire", "flood", "both"):
+        raise ValueError("hazard_profile must be fire, flood or both")
     conn.execute(
         """INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
            ON CONFLICT(key) DO UPDATE SET value = excluded.value,

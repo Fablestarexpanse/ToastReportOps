@@ -1809,3 +1809,81 @@ export async function fetchHealth(): Promise<Health> {
     return { api: false, queue: {} };
   }
 }
+
+/* ---------------- WATER: flood gauges, flood alerts, reservoirs ---------------- */
+
+export type GaugeReading = {
+  stage: number | null;
+  flow: number | null;
+  flow_unit: string | null;
+  category: string | null;
+  valid_time: string | null;
+};
+
+export type Gauge = {
+  lid: string;
+  name: string | null;
+  lat: number | null;
+  lon: number | null;
+  observed: GaugeReading | null;
+  forecast: GaugeReading | null;
+  severity: number;
+  pinned: boolean;
+  stale: boolean;
+};
+
+export type FloodAlert = {
+  id: string | null;
+  event: string;
+  severity: string | null;
+  urgency: string | null;
+  headline: string;
+  area: string;
+  onset: string | null;
+  ends: string | null;
+  description: string;
+  instruction: string;
+  sender: string | null;
+};
+
+export type WaterBoard = {
+  gauges: Gauge[];
+  alerts: FloodAlert[];
+  errors: string[];
+  fetched_at: string;
+  profile: "fire" | "flood" | "both";
+  note: string;
+};
+
+export type Reservoir = {
+  station: string;
+  name: string;
+  basin: string | null;
+  capacity_af: number | null;
+  elevation_ft: number | null;
+  storage_af: number | null;
+  storage_change_af: number | null;
+  pct_capacity: number | null;
+  avg_storage_af: number | null;
+  pct_average: number | null;
+  outflow_cfs: number | null;
+  inflow_cfs: number | null;
+  day: string;
+  change_7d_pts: number | null;
+  near_full: boolean;
+  below_average: boolean;
+  pinned: boolean;
+};
+
+export type ReservoirBoard = {
+  reservoirs: Reservoir[];
+  fetched_at: string | null;
+  error: string | null;
+  statewide_pct_capacity: number | null;
+  note: string;
+};
+
+export const fetchWater = (refresh = false) =>
+  get<WaterBoard>(`/water${refresh ? "?refresh=true" : ""}`);
+export const fetchReservoirs = (refresh = false) =>
+  get<ReservoirBoard>(`/reservoirs${refresh ? "?refresh=true" : ""}`);

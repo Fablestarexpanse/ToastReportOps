@@ -876,6 +876,39 @@ def firis_perimeters(request: Request, refresh: bool = False) -> dict:
     return get_firis(_conn(request), refresh=refresh)
 
 
+@router.get("/hazard")
+def hazard(request: Request) -> dict:
+    """The active hazard profile and what the calendar suggests."""
+    from toast.core.hazard import hazard_profile, season_suggestion
+
+    return {"profile": hazard_profile(_conn(request)), "suggested": season_suggestion()}
+
+
+@router.get("/water")
+def water(request: Request, refresh: bool = False) -> dict:
+    """River gauges at/above action stage (plus pinned) and NWS flood alerts —
+    official categories relayed as issued, each with its valid time."""
+    from toast.core.hazard import hazard_profile
+    from toast.pipeline.water import get_water
+
+    conn = _conn(request)
+    try:
+        data = get_water(conn, refresh=refresh)
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    data["profile"] = hazard_profile(conn)
+    return data
+
+
+@router.get("/reservoirs")
+def reservoirs(request: Request, refresh: bool = False) -> dict:
+    """Every major California reservoir: storage, % of capacity, % of average,
+    inflow/outflow and 7-day trend — DWR/CDEC figures relayed as published."""
+    from toast.pipeline.reservoirs import get_reservoirs
+
+    return get_reservoirs(_conn(request), refresh=refresh)
+
+
 @router.get("/fire-weather")
 def fire_weather(request: Request, refresh: bool = False) -> dict:
     """Red flag / fire-weather alert polygons — a FORECAST layer, always

@@ -405,6 +405,28 @@ def telegram_notify_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -
     notify_sweep(conn)
 
 
+@register("water_refresh")
+def water_refresh_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Flood season only: refresh gauges + flood alerts and push urgent ones."""
+    from toast.core.hazard import includes_flood
+    from toast.pipeline.water import get_water, notify_water
+
+    if not includes_flood(conn):
+        return  # fire season: no polling, no noise
+    notify_water(conn, get_water(conn, refresh=True))
+
+
+@register("reservoir_refresh")
+def reservoir_refresh_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Keep the daily reservoir history (all seasons); phone alerts in flood season."""
+    from toast.core.hazard import includes_flood
+    from toast.pipeline.reservoirs import notify_reservoirs, refresh_reservoirs
+
+    refresh_reservoirs(conn)
+    if includes_flood(conn):
+        notify_reservoirs(conn)
+
+
 @register("watchdog")
 def watchdog_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     """Tell the operator when a feed, the queue or the model has gone quiet."""

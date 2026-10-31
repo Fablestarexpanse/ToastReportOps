@@ -29,6 +29,8 @@ REMIND_S = 6 * 3600
 DEAD_WINDOW_S = 6 * 3600
 DEAD_THRESHOLD = 3  # one dead job is noise; a cluster of them is a broken stage
 STALL_S = 20 * 60  # a runnable job waiting this long means no worker is draining
+WATER_STALE_S = 30 * 60
+RESERVOIR_STALE_S = 12 * 3600
 SILENT_FACTOR = 3  # a source is silent after this many missed intervals...
 SILENT_FLOOR_S = 15 * 60  # ...and never sooner than this
 
@@ -82,6 +84,21 @@ def find_problems(
             problems[f"silent:{s['id']}"] = (
                 f"{s['name']} (T{s['tier']}) has not completed a poll in {(now - last) // 60} min"
             )
+
+    # flood season only: the WATER board is useless if its feed went quiet
+    from toast.core.hazard import includes_flood
+
+    if includes_flood(conn):
+        row = conn.execute(
+            "SELECT unixepoch(fetched_at) AS t FROM map_cache WHERE key = 'water:ca'"
+        ).fetchone()
+        if row is None or now - row["t"] > WATER_STALE_S:
+            problems["water_stale"] = "flood gauges/alerts have not refreshed in over 30 min"
+
+    # reservoir history is gathered in every season; if it was flowing, it should still be
+    res = conn.execute("SELECT unixepoch(MAX(captured_at)) AS t FROM reservoir_readings").fetchone()
+    if res["t"] is not None and now - res["t"] > RESERVOIR_STALE_S:
+        problems["reservoirs_stale"] = "reservoir levels have not refreshed in over 12 h"
 
     if llm_models is not None and not llm_models:
         problems["llm"] = "the language model endpoint is unreachable or has no models"
