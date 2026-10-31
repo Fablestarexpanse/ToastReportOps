@@ -64,12 +64,15 @@ export default function WatchMode({ toast }: { toast: (m: string) => void }) {
   const [promoting, setPromoting] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<Record<string, string>>({});
   const [openOverride, setOpenOverride] = useState<Partial<Record<WatchGroup, boolean>>>({});
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
       setCandidates(await fetchWatch());
+      setLoadFailed(false);
     } catch {
-      setCandidates([]);
+      // keep the last board: an empty one would read as "nothing is happening"
+      setLoadFailed(true);
     }
   }, []);
 
@@ -137,9 +140,16 @@ export default function WatchMode({ toast }: { toast: (m: string) => void }) {
           NEW STARTS BOARD
         </span>
         <span style={{ fontFamily: font.mono, fontSize: 12, color: C.dim }}>
-          fires named by sources, checked against CAL FIRE and NIFC · {inGroup("new").length} new ·{" "}
-          {inGroup("official").length} officially listed
+          fires named by sources, checked against CAL FIRE and NIFC ·{" "}
+          {candidates
+            ? `${inGroup("new").length} new · ${inGroup("official").length} officially listed`
+            : "loading…"}
         </span>
+        {loadFailed && (
+          <span role="alert" style={{ fontFamily: font.mono, fontSize: 12, color: C.warn }}>
+            ⚠ could not refresh{candidates ? " — showing the last board" : ""}
+          </span>
+        )}
       </div>
 
       {SECTIONS.flatMap(({ group, title, note, startsOpen }) => {
