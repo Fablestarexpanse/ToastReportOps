@@ -21,6 +21,7 @@ Four buttons in the install folder:
 | **`Install.cmd`** | **First time.** Checks this computer (starts Docker Desktop if needed, tests the GPU, Node, disk and ports), creates `.env` with fresh local passwords, installs the UI packages, starts the stack, seeds the sources, installs the AI models (shows the plan first), verifies everything and opens the app. Safe to re-run; `Install.cmd -CheckOnly` changes nothing. Writes `install.log`. |
 | **`ToastReport.cmd`** | Starts the Docker stack and the operator UI (port 3005) in its own app window. Safe to run repeatedly. |
 | **`Install Models.cmd`** | Downloads the AI models **safely**: official sources only, checked against pinned fingerprints before and after, skipped if too big for your graphics card, test-run afterwards. Resumable. → [docs/MODELS.md](docs/MODELS.md) |
+| **`Diagnose.cmd`** | Read-only health report (status, failed jobs, models, recent logs) saved to `diagnostics.txt` with secrets blanked. Attach it to bug reports. |
 | **`Update and Launch.cmd`** | Takes a verified database snapshot, pulls the latest code (fast-forward only — never overwrites your edits), rebuilds only what changed, restarts, checks health, opens the app. Stops with the exact undo command if anything fails. |
 
 **First time:** install Docker Desktop, Node 20+ and git (see below), clone the repo
@@ -237,7 +238,7 @@ are not licensed for use by other instances: run your own under your own name
 
 ## Layout
 
-- `ToastReport.cmd`, `Install Models.cmd`, `Update and Launch.cmd` — the buttons; `scripts/` holds their PowerShell
+- `ToastReport.cmd`, `Install Models.cmd`, `Update and Launch.cmd`, `Diagnose.cmd` — the buttons; `scripts/` holds their PowerShell
 - `backend/` — Python 3.12: FastAPI, workers, pipeline, migrations, MCP server and CLI (uv-managed)
 - `operator-ui/` — Next.js operator workstation (localhost only)
 - `prompts/` — versioned LLM prompt files (every fact records the prompt version that produced it)
