@@ -182,6 +182,14 @@ if ($after -ne $before) {
     $newMigrations = @($changed | Where-Object { $_ -like "*/migrations/*.sql" })
     if ($newMigrations.Count) { Write-Host "  ($($newMigrations.Count) database migration(s) applied)" -ForegroundColor DarkGray }
 }
+# models: never downloaded here (that's a big, deliberate step) - just point at the installer
+$modelCode = Invoke-Native docker @("compose", "--profile", "desktop", "exec", "-T", "api", "python", "-m", "toast.modelsetup", "status") -Quiet
+if ($modelCode -ne 0 -or $script:LastOutput -match "not installed|NOTE") {
+    Write-Host ""
+    Write-Host "Models need attention:" -ForegroundColor Yellow
+    $script:LastOutput.Split("`n") | Where-Object { $_ -match "not installed|NOTE|DIFFERENT" } | ForEach-Object { Write-Host $_ -ForegroundColor Yellow }
+    Write-Host "  Double-click 'Install Models.cmd' to download and verify them." -ForegroundColor Yellow
+}
 if (-not $NoLaunch) {
     & (Join-Path $PSScriptRoot "launch.ps1")
 }

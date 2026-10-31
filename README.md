@@ -17,6 +17,10 @@ operator UI (port 3005) in its own app window. Alternative:
 or any MCP client can read the ledger, flood/reservoir boards and drafts — read-only
 by default, and never able to approve or publish. See [docs/AGENT-INTERFACE.md](docs/AGENT-INTERFACE.md).
 
+**Models:** double-click `Install Models.cmd` to download the AI models safely — official
+sources only, checked against pinned fingerprints before and after, skipped if too big
+for your graphics card, and test-run afterwards. Details: [docs/MODELS.md](docs/MODELS.md).
+
 **Updating:** double-click `Update and Launch.cmd`. It takes a verified database
 snapshot, pulls the latest code (fast-forward only — it never overwrites local
 edits), rebuilds only what changed, restarts the stack and opens the workstation.
@@ -35,7 +39,7 @@ container, GPU passthrough). Two models, auto-pulled on first boot:
 
 | Role | Model | Size | Notes |
 |---|---|---|---|
-| Extraction / drafting / sift | **Qwen3.5-9B Defiant-Fable** (Q6_K, via `hf.co/…` tag) | ~8 GB | Default; swappable — see `.env` `LLM_MODEL` |
+| Extraction / drafting / sift | **Qwen3.5 9B** (official `qwen3.5:9b`) | ~6.6 GB | Default; swappable — see `.env` `LLM_MODEL` and [docs/MODELS.md](docs/MODELS.md) |
 | Embeddings (dedup / corroboration) | **`nomic-embed-text`** (768-dim) | ~0.3 GB | Runs on the same GPU |
 
 The endpoint is OpenAI-compatible, so `LLM_BASE_URL` can point at a **cloud API**
