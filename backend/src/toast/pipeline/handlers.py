@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import struct
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
 from toast.core.config import Settings
@@ -94,6 +95,20 @@ def normalize_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None
 
 
 MIN_ARTICLE_CHARS = 200  # below this, prefer the feed headline+summary
+# Feeds hand over their whole backlog on a first poll: 71 of 210 items in one fresh
+# install were over this old and produced half the ledger. Old news is not worth a
+# fetch or a model call, and the envelope stays archived if that ever changes.
+MAX_ARTICLE_AGE_DAYS = 14
+
+
+def _article_date(published_at: Any) -> tuple[str | None, float | None]:
+    """(the date if usable, its age in days). A bad or future date counts as no date."""
+    try:
+        when = datetime.fromisoformat(str(published_at).replace("Z", "+00:00"))
+        age_days = (datetime.now(UTC) - when).total_seconds() / 86400
+    except (TypeError, ValueError):
+        return None, None
+    return (str(published_at), age_days) if age_days >= 0 else (None, None)
 
 
 @register("extract")
@@ -112,12 +127,18 @@ def extract_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     env = conn.execute("SELECT * FROM envelopes WHERE id = ?", (env_id,)).fetchone()
     if env is None:
         return
+    env_payload = _json.loads(env["payload"])
+    published_at, age_days = _article_date(env_payload.get("published_at"))
+    if age_days is not None and age_days > MAX_ARTICLE_AGE_DAYS:
+        get_logger("pipeline.extract").info(
+            "extract_skipped_old", envelope_id=env_id, age_days=round(age_days, 1)
+        )
+        return
     # before the fetch: without a model every retry would re-download the article
     client_for(conn).ensure_chat_model()
     src = conn.execute(
         "SELECT tier, robots_override FROM sources WHERE id = ?", (env["source_id"],)
     ).fetchone()
-    env_payload = _json.loads(env["payload"])
     url = env_payload.get("url")
     title = env_payload.get("title") or ""
     summary_text = env_payload.get("summary") or ""
@@ -154,6 +175,7 @@ def extract_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
         envelope_id=env_id,
         raw_ref=raw_ref,
         text=text,
+        published_at=published_at,
     )
     for fact in result["facts"]:
         jobs.enqueue(conn, "embed", {"fact_id": fact["fact_id"]}, priority=7)
