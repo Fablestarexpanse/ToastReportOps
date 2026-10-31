@@ -69,7 +69,7 @@ Creek"s) return no answer rather than a wrong one.
 
 ### 2a. NASA FIRMS — do this the moment the key exists
 
-Already built ([`sources/firms.py`](backend/src/toast/sources/firms.py)),
+Already built ([`sources/firms.py`](../../backend/src/toast/sources/firms.py)),
 CA-bboxed, seeded but disabled pending `FIRMS_MAP_KEY`. Hotspots are frequently
 the **earliest** signal of a new start — before any newsroom writes anything.
 

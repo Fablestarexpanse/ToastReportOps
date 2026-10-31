@@ -6,7 +6,8 @@ experienced developer inheriting the project cold.
 
 For the *why* behind decisions, read [DECISIONS.md](DECISIONS.md) (a dated,
 newest-first log). For the last full audit, see
-[docs/AUDIT-2026-07-22.md](docs/AUDIT-2026-07-22.md).
+[docs/history/AUDIT-2026-07-22.md](docs/history/AUDIT-2026-07-22.md); the current state is
+this file plus the open items in §12.
 
 ---
 
