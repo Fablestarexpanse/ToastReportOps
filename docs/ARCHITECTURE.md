@@ -59,7 +59,7 @@ frontend framework total.
 | ~~`site-builder`~~ | **not built.** Site generation runs in `worker` via the `build_site` job, triggered on demand from ARCHIVE — never by publishing |
 | `litestream` | replication — **local disk only today**; the B2 replica is commented out pending keys | desktop profile only; nightly snapshot is a `backup` job in `worker` |
 | `llm` | Ollama in a container, GPU passthrough; auto-pulls `LLM_PULL_MODEL` / `LLM_EMBED_PULL_MODEL` on first boot | the stack's own model server — extraction AND embeddings; `LLM_BASE_URL=http://llm:11434/v1` (a cloud key still overrides) |
-| `mesh` | Meshtastic listener: public MQTT firehose filtered to a NorCal picture | persistent subscription, so a service rather than a job; feeds the MESH tab |
+| `mesh` | Meshtastic listener: public MQTT firehose filtered to a NorCal picture | **optional** (profile `mesh`, `TOAST_MESH=1`) because the Meshtastic library is GPL-3.0; its image alone is built with the `mesh` extra; feeds the MESH tab |
 | `icecast` | stream server for the operator's own SDR audio | desktop profile only; loopback-bound (`127.0.0.1:8100`); feeds RADIO stream channels |
 | `searxng` | self-hosted metasearch backing LDR | desktop profile only |
 | `ldr` | Local Deep Research: on-demand agentic web research | reports land as `kind='analysis'` NEWSROOM drafts, never ledger facts |

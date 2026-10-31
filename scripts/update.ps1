@@ -30,6 +30,13 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
+# MESH is optional (its library is GPL-licensed): add its profile when .env asks for it.
+$profiles = @("--profile", "desktop")
+$dotenv = Join-Path $root ".env"
+if ((Test-Path $dotenv) -and (Select-String -Path $dotenv -Pattern '^\s*TOAST_MESH\s*=\s*1\s*$' -Quiet)) {
+    $profiles += @("--profile", "mesh")
+}
+
 $UiPort = 3005
 $ApiHealth = "http://127.0.0.1:8400/healthz"
 
@@ -131,12 +138,12 @@ $uiDepsChanged = [bool]($changed | Where-Object { $_ -like "operator-ui/package*
 Step 4 $total "rebuilding what changed..."
 if ($PullImages) {
     Write-Host "    pulling third-party images (-PullImages)..." -ForegroundColor DarkGray
-    if ((Invoke-Native docker @("compose", "--profile", "desktop", "pull", "--ignore-buildable")) -ne 0) {
+    if ((Invoke-Native docker (@("compose") + $profiles + @("pull", "--ignore-buildable"))) -ne 0) {
         Write-Host "    image pull failed - continuing with the images you already have" -ForegroundColor Yellow
     }
 }
 if ($backendChanged -or $Rebuild) {
-    if ((Invoke-Native docker @("compose", "--profile", "desktop", "build")) -ne 0) {
+    if ((Invoke-Native docker (@("compose") + $profiles + @("build"))) -ne 0) {
         Stop-Update "the backend build failed. The code is updated but the old containers are still running. To go back: git checkout $before"
     }
 } else {
@@ -152,8 +159,8 @@ if ($uiDepsChanged) {
 
 # ---- 5. restart and check health ---------------------------------------------------
 Step 5 $total "restarting the stack..."
-if ((Invoke-Native docker @("compose", "--profile", "desktop", "up", "-d")) -ne 0) {
-    Stop-Update "docker couldn't start the stack. To go back: git checkout $before ; docker compose --profile desktop up -d --build"
+if ((Invoke-Native docker (@("compose") + $profiles + @("up", "-d"))) -ne 0) {
+    Stop-Update "docker couldn't start the stack. To go back: git checkout $before ; docker compose $($profiles -join ' ') up -d --build"
 }
 $healthy = $false
 $deadline = (Get-Date).AddSeconds(150)
@@ -168,7 +175,7 @@ if (-not $healthy) {
     Write-Host ""
     Write-Host "The update installed, but the API did not come back healthy." -ForegroundColor Red
     Write-Host "  Look at the logs:  docker compose logs api --tail 80" -ForegroundColor Red
-    Write-Host "  To go back:        git checkout $before ; docker compose --profile desktop up -d --build" -ForegroundColor Red
+    Write-Host "  To go back:        git checkout $before ; docker compose $($profiles -join ' ') up -d --build" -ForegroundColor Red
     Write-Host "  If the database misbehaves after going back, restore the snapshot from data\backups" -ForegroundColor Red
     Write-Host "  (see docs\BACKUP-RESTORE.md) - migrations only move forward." -ForegroundColor Red
     exit 1

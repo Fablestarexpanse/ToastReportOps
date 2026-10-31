@@ -11,7 +11,7 @@ a statewide California picture:
   possible on a firehose topic;
 - everything else is dropped on the floor, uncounted and unstored.
 
-When Brian's own nodes arrive they appear like any other node the moment they
+When the operator's own nodes arrive they appear like any other node the moment they
 join the mesh — and a later direct serial/TCP hookup only ADDS packets this
 listener cannot hear from here.
 

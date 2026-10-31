@@ -137,7 +137,7 @@ that attempts the violation and asserts the refusal.
 ## 2026-07-20 — No automatic publishing to any website (supersedes the entry below)
 
 - **Operator decision**: reports are published by hand until Toast Report is
-  wired into Brian's own site. Nothing auto-deploys.
+  wired into the operator's own site. Nothing auto-deploys.
 - **Cloudflare removed entirely** — config, docs, and the deploy step. There is
   no production host and no CF token to acquire.
 - `approved → published` fans out to *social* channels only (credential-gated).
@@ -385,7 +385,7 @@ that attempts the violation and asserts the refusal.
 ## 2026-07-21 — Two decisions waiting on the operator (researched, not built)
 
 The assessment ranked these the two biggest remaining gaps against Watch Duty.
-Neither is a code task until Brian decides; the research is recorded here so
+Neither is a code task until the operator decides; the research is recorded here so
 the decision needs no re-work.
 
 ### 1. Evacuation zones as map polygons — RESOLVED 2026-07-21

@@ -36,7 +36,7 @@ def approved_draft(seeded):
     seeded.execute(
         "INSERT INTO drafts (id, kind, body_md, status, approved_by, approved_at,"
         " created_at, updated_at)"
-        " VALUES (?, 'social', 'Fire update.', 'draft', 'brian', ?, ?, ?)",
+        " VALUES (?, 'social', 'Fire update.', 'draft', 'operator', ?, ?, ?)",
         (draft_id, NOW, NOW, NOW),
     )
     for state in ("needs_review", "approved"):

@@ -23,7 +23,7 @@ def published_draft(seeded):
     draft_id, pub_id = ulid(), ulid()
     seeded.execute(
         "INSERT INTO drafts (id, body_md, status, approved_by, approved_at, created_at, updated_at)"
-        " VALUES (?, 'Evacuation order issued.', 'draft', 'brian', ?, ?, ?)",
+        " VALUES (?, 'Evacuation order issued.', 'draft', 'operator', ?, ?, ?)",
         (draft_id, NOW, NOW, NOW),
     )
     for state in ("needs_review", "approved", "published"):

@@ -26,7 +26,6 @@ def release_draft(
     channels: list[str],
     *,
     at: str | None = None,
-    operator: str = "brian",
 ) -> dict[str, Any]:
     """Clear an approved social draft for release to the SELECTED channels.
 

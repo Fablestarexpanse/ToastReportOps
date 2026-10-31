@@ -22,7 +22,7 @@ Docker stack (9 services) on the operator's machine.
   ledger; AI extraction/triage/activity-check; statewide + per-fire drafts and
   graphics; site generation; Bluesky/X/Facebook/Telegram publishing
   (credential-gated); ADS-B aircraft, ALERTCalifornia cameras, Cal OES evac
-  zones, NWS weather/red-flag, AirNow AQI, Meshtastic mesh, scanner-radio
+  zones, NWS weather/red-flag, AirNow AQI, Meshtastic mesh (optional, GPL extra), scanner-radio
   inbox; **flood season** (hazard switch, NWS flood alerts, NOAA river gauges,
   DWR reservoirs with daily history — the WATER mode); deterministic **verifiers**
   on extraction (`llm/verify_extraction.py`) and on drafts (`pipeline/verify_draft.py`);

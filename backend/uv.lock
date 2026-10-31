@@ -1166,9 +1166,7 @@ dependencies = [
     { name = "feedparser" },
     { name = "httpx" },
     { name = "markdown" },
-    { name = "meshtastic" },
     { name = "nh3" },
-    { name = "paho-mqtt" },
     { name = "pillow" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -1176,6 +1174,12 @@ dependencies = [
     { name = "structlog" },
     { name = "tzdata" },
     { name = "uvicorn" },
+]
+
+[package.optional-dependencies]
+mesh = [
+    { name = "meshtastic" },
+    { name = "paho-mqtt" },
 ]
 
 [package.dev-dependencies]
@@ -1193,9 +1197,9 @@ requires-dist = [
     { name = "feedparser", specifier = ">=6.0.12" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "markdown", specifier = ">=3.10.2" },
-    { name = "meshtastic", specifier = ">=2.5" },
+    { name = "meshtastic", marker = "extra == 'mesh'", specifier = ">=2.5" },
     { name = "nh3", specifier = ">=0.2" },
-    { name = "paho-mqtt", specifier = ">=2.1" },
+    { name = "paho-mqtt", marker = "extra == 'mesh'", specifier = ">=2.1" },
     { name = "pillow", specifier = ">=10.4" },
     { name = "pydantic", specifier = ">=2.8" },
     { name = "pydantic-settings", specifier = ">=2.4" },
@@ -1204,6 +1208,7 @@ requires-dist = [
     { name = "tzdata", specifier = ">=2024.1" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
+provides-extras = ["mesh"]
 
 [package.metadata.requires-dev]
 dev = [

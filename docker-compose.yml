@@ -85,6 +85,9 @@ services:
     image: searxng/searxng:2026.10.30-ffa88e3ba@sha256:f4aa660c54d062dedb268be84e821ea24e39f48c7a496af8dd02cc9eedb93847
     volumes:
       - ./infra/searxng/settings.yml:/etc/searxng/settings.yml:ro
+    environment:
+      # SearXNG reads this in place of settings.yml's secret_key; set it in .env
+      SEARXNG_SECRET: "${SEARXNG_SECRET:-toast-report-searxng-local-only-not-secret}"
     restart: unless-stopped
 
   ldr:
@@ -126,9 +129,17 @@ services:
 
   # Mesh listener: the public Meshtastic MQTT firehose filtered to a NorCal
   # picture. Persistent subscription, so a service rather than a job.
+  # Optional (2026-10-31): the listener uses the GPL-3.0 Meshtastic library, so it is
+  # not part of the default stack. Its image alone is built with the `mesh` extra.
+  # Turn it on with TOAST_MESH=1 in .env (the .cmd buttons honour it) or
+  # `docker compose --profile desktop --profile mesh up -d`.
   mesh:
     <<: *backend
-    profiles: [desktop]
+    profiles: [mesh]
+    build:
+      context: ./backend
+      args:
+        TOAST_EXTRAS: mesh
     command: python -m toast.mesh.listener
 
   # The language model is part of the stack, not a separate program to

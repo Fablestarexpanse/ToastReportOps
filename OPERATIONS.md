@@ -42,7 +42,8 @@ the workstation.
 ## Start / stop (Phase 0)
 
 ```sh
-docker compose --profile desktop up -d     # everything
+docker compose --profile desktop up -d     # everything except the optional MESH listener
+docker compose --profile desktop --profile mesh up -d   # ...and MESH too
 docker compose --profile desktop down
 docker compose restart <service>           # any service is individually restartable
 docker compose logs -f <service>
@@ -54,6 +55,13 @@ right now: `dead_recent`, a 6-hour window, not the lifetime total) — plus a
 queue chip. **Click the queue chip** to open the dead-letter panel: what died,
 why, how long ago, and a RETRY button per stage. Publishing is deliberately
 excluded from bulk retry, because a dead publish job may already have posted.
+
+**MESH is optional (2026-10-31).** Its listener uses the Meshtastic library, which is
+GPL-3.0, so the default stack leaves it out. To keep using the MESH tab, add
+`TOAST_MESH=1` to `.env`; the three buttons then build and start the `mesh` service
+(its image alone gets the `mesh` extra). If you were running MESH before this change,
+add that line or the tab stops receiving new traffic after your next update. To turn it
+off again, remove the line and run `docker compose stop mesh`.
 
 ## Configuration (Phase 0)
 
@@ -256,7 +264,7 @@ self-contained incident bundle (ledger JSONL, media manifest, GeoJSON perimeters
 No separate program to remember: `docker compose --profile desktop up` starts
 an `llm` service (Ollama in a container, GPU passthrough) alongside everything
 else. Models live in `OLLAMA_MODELS_DIR` (a named volume by default; on this
-machine it is pointed at the existing F:\Pi Coder\models cache so nothing
+machine it can point at an existing host model cache so nothing
 re-downloads). Since 2026-10-31 the container downloads nothing by itself — see
 below.
 

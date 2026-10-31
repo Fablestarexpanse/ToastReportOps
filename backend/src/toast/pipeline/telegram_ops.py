@@ -273,7 +273,7 @@ def _transition(conn: sqlite3.Connection, draft_id: str, target: str) -> bool:
     try:
         if target == "approved":
             conn.execute(
-                """UPDATE drafts SET status = 'approved', approved_by = 'brian (telegram)',
+                """UPDATE drafts SET status = 'approved', approved_by = 'operator (telegram)',
                    approved_at = ?, updated_at = ? WHERE id = ?""",
                 (now, now, draft_id),
             )
