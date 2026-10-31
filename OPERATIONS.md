@@ -13,6 +13,30 @@ for one-click relaunch. (Public site preview: http://localhost:8400/site/)
 To stop: close the window, then `docker compose --profile desktop down` if you
 want the backend down too (it's fine to leave it running).
 
+## Update to the latest version
+
+Double-click **`Update and Launch.cmd`** (same folder). In order, it: checks Docker
+and git; takes a verified database snapshot into `data\backups`; pulls the latest
+code with `git pull --ff-only`; rebuilds the backend only if backend files
+changed and reinstalls UI packages only if `package-lock.json` changed; restarts
+the stack; waits for the API to report healthy; prints what changed; and opens
+the workstation.
+
+- **It stops before changing anything** if Docker isn't running, GitHub can't be
+  reached, the snapshot fails, or the code can't fast-forward (e.g. your local
+  edits would conflict). It never merges and never discards local changes.
+- **If the API doesn't come back healthy** it tells you how to go back
+  (`git checkout <old commit>` and rebuild). Database migrations only move
+  forward, so if the old code can't read the migrated database, restore the
+  pre-update snapshot (see docs/BACKUP-RESTORE.md).
+- **Third-party images** (Ollama, SearXNG, ...) are left alone by default, since
+  `latest` can change model behaviour. Run `scripts\update.ps1 -PullImages` to
+  refresh them deliberately.
+- `ToastReport.cmd` still launches *without* updating. Extra options go after the
+  command name: `-NoLaunch`, `-SkipBackup`, `-Rebuild`.
+- This script has only been reviewed, not run on Windows — try it once while the
+  stack is idle and read the output before relying on it during a fire.
+
 ## Start / stop (Phase 0)
 
 ```sh

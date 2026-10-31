@@ -13,6 +13,14 @@ newsroom → publish), with a 9-mode operator UI, a Docker stack, and 520+ passi
 operator UI (port 3005) in its own app window. Alternative:
 `docker compose --profile desktop up`.
 
+**Updating:** double-click `Update and Launch.cmd`. It takes a verified database
+snapshot, pulls the latest code (fast-forward only — it never overwrites local
+edits), rebuilds only what changed, restarts the stack and opens the workstation.
+If anything fails it stops with the exact command to go back. Options (pass them
+on the command line): `-NoLaunch`, `-SkipBackup`, `-PullImages` (also refresh
+Ollama/SearXNG images — off by default because `latest` can change model
+behaviour), `-Rebuild`.
+
 ## System requirements
 
 Everything runs on one machine, bound to localhost — no cloud account required. The

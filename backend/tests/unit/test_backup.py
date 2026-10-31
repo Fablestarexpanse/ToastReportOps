@@ -141,3 +141,13 @@ def test_b2_upload_round_trip(tmp_path):
     assert receipt["file_id"] == "fid"
     assert seen["name"] == "toast/toast-20260720T000000.db.gz"
     assert seen["body"] == b"snapshot-bytes"
+
+
+def test_backup_cli_takes_a_verified_snapshot(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("TOAST_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("TOAST_DB_PATH", str(tmp_path / "toast.db"))
+    from toast import backup
+
+    backup.main()
+    out = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert (tmp_path / "backups" / out["file"]).exists()
