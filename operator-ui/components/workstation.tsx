@@ -509,12 +509,16 @@ const LS_ADJ_COLLAPSED = "toast-adjudication-collapsed";
 
 function AdjudicationStrip({
   items,
+  total,
+  olderHidden,
   onResolve,
   onTriage,
   onTriageAllUnmatched,
   onDeferAll,
 }: {
   items: AdjudicationItem[];
+  total: number;
+  olderHidden: number;
   onResolve: (factId: string, incidentId: string, name: string) => void;
   onTriage: (factId: string, state: TriageState) => void;
   onTriageAllUnmatched: (factIds: string[]) => void;
@@ -553,8 +557,16 @@ function AdjudicationStrip({
           onClick={toggle}
           style={{ fontFamily: font.disp, fontSize: 12, letterSpacing: 2, color: C.violet, cursor: "pointer" }}
         >
-          ADJUDICATION QUEUE · {items.length} awaiting attribution
+          ADJUDICATION QUEUE · {total} awaiting attribution
         </span>
+        {olderHidden > 0 && (
+          <span
+            title="from articles more than 14 days old; still in the ledger, just not asking for a decision"
+            style={{ fontFamily: font.mono, fontSize: 11, color: C.dim }}
+          >
+            {olderHidden} older hidden
+          </span>
+        )}
         {aiState && (
           <span style={{ fontFamily: font.mono, fontSize: 8, color: C.blue }}>AI: {aiState}</span>
         )}
@@ -2303,7 +2315,9 @@ function OpsMode({
       <div style={{ background: C.bg, display: "flex", flexDirection: "column", minHeight: 0 }}>
         <AnalyzeBox toast={toast} />
         <AdjudicationStrip
-          items={(adjudication ?? []).filter((it) => !resolved[it.fact.id])}
+          items={(adjudication?.items ?? []).filter((it) => !resolved[it.fact.id])}
+          total={adjudication?.total ?? 0}
+          olderHidden={adjudication?.olderHidden ?? 0}
           onResolve={onResolve}
           onTriage={onTriage}
           onTriageAllUnmatched={onTriageAllUnmatched}

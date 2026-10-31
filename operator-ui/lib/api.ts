@@ -118,6 +118,20 @@ export type WatchCandidate = {
   verdict: WatchVerdict | null;
   geo_source: "reported" | "named_feature" | null;
   geo_place: string | null;
+  official: OfficialCheck;
+  group: WatchGroup;
+};
+
+export type WatchGroup = "new" | "official" | "over" | "prescribed" | "mentions";
+
+export type OfficialCheck = {
+  status: "closed" | "active" | "reported" | "none" | "unknown";
+  source: string | null;
+  acres: number | null;
+  containment: number | null;
+  started: string | null;
+  final: boolean | null;
+  category: string | null;
 };
 
 export type WatchVerdict = {
@@ -547,10 +561,12 @@ export const fetchIntake = () =>
 export const fetchSources = () => get<{ sources: Source[] }>("/sources").then((r) => r.sources);
 
 export const fetchAdjudication = () =>
-  get<{ queue: AdjudicationItem[] }>("/adjudication").then((r) =>
+  get<{ queue: AdjudicationItem[]; total: number; older_hidden: number }>("/adjudication").then((r) => ({
+    total: r.total,
+    olderHidden: r.older_hidden,
     // one row per fact, and one chip per candidate incident — a repeat in
     // either is a bug worth naming rather than a silent React key collision
-    uniqueBy(
+    items: uniqueBy(
       r.queue.map((it) => ({
         ...it,
         candidates: uniqueBy(it.candidates, (c) => c.incident_id, "adjudication candidate"),
@@ -558,7 +574,7 @@ export const fetchAdjudication = () =>
       (it) => it.fact.id,
       "adjudication row",
     ),
-  );
+  }));
 
 export async function resolveAdjudication(factId: string, incidentId: string): Promise<void> {
   const res = await fetch(`/api/adjudication/${factId}`, {
