@@ -130,6 +130,16 @@ class TestApprovalFromChat:
         assert row["status"] == "approved"
         assert "telegram" in row["approved_by"]  # the audit trail says where
 
+    def test_a_flagged_draft_cannot_be_approved_from_chat(self, seeded):
+        draft_id = self._draft(seeded)
+        seeded.execute(
+            "UPDATE drafts SET verify_issues = ? WHERE id = ?",
+            ('[{"code": "number_not_in_facts", "detail": "9999"}]', draft_id),
+        )
+        telegram_ops.poll_updates(seeded, SET, self._updates(777, f"approve:{draft_id}"))
+        row = seeded.execute("SELECT status FROM drafts WHERE id = ?", (draft_id,)).fetchone()
+        assert row["status"] == "needs_review"
+
     def test_a_foreign_chat_is_ignored_the_auth_boundary(self, seeded):
         draft_id = self._draft(seeded)
         out = telegram_ops.poll_updates(seeded, SET, self._updates(666, f"approve:{draft_id}"))

@@ -215,7 +215,12 @@ export type Publication = {
 };
 
 export type DraftDetail = {
-  draft: Draft & { body_md: string; cited_fact_ids: string; graphic_sha?: string | null };
+  draft: Draft & {
+    body_md: string;
+    cited_fact_ids: string;
+    graphic_sha?: string | null;
+    verify_issues?: string | null;
+  };
   cited_facts: CitedFact[];
   publications: Publication[];
 };

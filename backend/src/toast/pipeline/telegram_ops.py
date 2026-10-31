@@ -28,6 +28,7 @@ import httpx
 from toast.core.config import Settings
 from toast.core.db import utcnow
 from toast.core.logging import get_logger
+from toast.pipeline.verify_draft import summarize
 
 API = "https://api.telegram.org"
 STATE_KEY = "telegram:notify:state"
@@ -137,27 +138,38 @@ def notify_sweep(
                 sent += 1
 
         # drafts arriving for review, with approval buttons
-        for r in conn.execute("SELECT id, title FROM drafts WHERE status = 'needs_review'"):
+        for r in conn.execute(
+            "SELECT id, title, verify_issues FROM drafts WHERE status = 'needs_review'"
+        ):
             if r["id"] in seen_drafts:
                 continue
             seen_drafts.add(r["id"])
             if first_run:
                 continue
-            buttons = [
-                [
-                    {"text": "✓ APPROVE", "callback_data": f"approve:{r['id']}"},
-                    {"text": "✗ SEND BACK", "callback_data": f"reject:{r['id']}"},
+            flagged = json.loads(r["verify_issues"] or "[]")
+            title = html.escape(r["title"] or r["id"][-6:])
+            if flagged:
+                # a draft the verifier flagged cannot be approved from a phone
+                # screen — open the workstation and read what it caught
+                text = (
+                    f"⚠️ DRAFT FLAGGED: <b>{title}</b>\n"
+                    f"{html.escape(summarize(flagged))}. "
+                    "Review it in the workstation; phone approval is off for this draft."
+                )
+                buttons = [[{"text": "✗ SEND BACK", "callback_data": f"reject:{r['id']}"}]]
+            else:
+                text = (
+                    f"📝 DRAFT FOR REVIEW: <b>{title}</b>\n"
+                    "Approving here is the same human approval as the newsroom click; "
+                    "releasing to channels stays a separate step."
+                )
+                buttons = [
+                    [
+                        {"text": "✓ APPROVE", "callback_data": f"approve:{r['id']}"},
+                        {"text": "✗ SEND BACK", "callback_data": f"reject:{r['id']}"},
+                    ]
                 ]
-            ]
-            if _send(
-                client,
-                token,
-                chat,
-                f"📝 DRAFT FOR REVIEW: <b>{html.escape(r['title'] or r['id'][-6:])}</b>\n"
-                "Approving here is the same human approval as the newsroom click; "
-                "releasing to channels stays a separate step.",
-                buttons,
-            ):
+            if _send(client, token, chat, text, buttons):
                 sent += 1
     finally:
         state["incidents"] = sorted(seen_inc)
@@ -221,9 +233,13 @@ def poll_updates(
 
 
 def _transition(conn: sqlite3.Connection, draft_id: str, target: str) -> bool:
-    row = conn.execute("SELECT status FROM drafts WHERE id = ?", (draft_id,)).fetchone()
+    row = conn.execute(
+        "SELECT status, verify_issues FROM drafts WHERE id = ?", (draft_id,)
+    ).fetchone()
     if row is None or row["status"] != "needs_review":
         return False  # already handled in the newsroom, or gone
+    if target == "approved" and json.loads(row["verify_issues"] or "[]"):
+        return False  # flagged drafts are approved in the workstation, never by button
     now = utcnow()
     try:
         if target == "approved":

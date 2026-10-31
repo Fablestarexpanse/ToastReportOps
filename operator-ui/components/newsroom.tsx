@@ -779,6 +779,25 @@ export default function NewsroomMode({
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "14px 18px" }}>
               {(() => {
+                /* mechanical check run when the AI wrote the draft: figures not
+                   in the ledger, paraphrased/omitted evacuation text, bad citations */
+                const raw = detail?.draft.verify_issues;
+                const issues: { code: string; detail: string }[] = raw ? JSON.parse(raw) : [];
+                if (!issues.length || d.status === "published") return null;
+                return (
+                  <div style={{ border: `1px solid ${C.evac}`, background: C.evac + "14", borderRadius: 7, padding: "9px 12px", marginBottom: 12 }}>
+                    <div style={{ fontFamily: font.disp, fontSize: 12, fontWeight: 700, letterSpacing: 1, color: C.evac }}>
+                      ⚠ VERIFIER FLAGGED {issues.length} {issues.length === 1 ? "PROBLEM" : "PROBLEMS"} — CHECK BEFORE APPROVING
+                    </div>
+                    {issues.slice(0, 6).map((i, n) => (
+                      <div key={n} style={{ fontFamily: font.mono, fontSize: 8.5, color: C.dim, marginTop: 4 }}>
+                        {i.code.replace(/_/g, " ").toUpperCase()}: <span style={{ color: C.txt }}>{i.detail}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+              {(() => {
                 const stale = detail?.cited_facts.filter((f) => f.superseded_by) ?? [];
                 if (!stale.length) return null;
                 const published = d.status === "published";

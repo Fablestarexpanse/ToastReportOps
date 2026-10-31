@@ -20,7 +20,10 @@ class Settings(BaseSettings):
 
     # LLM (OpenAI-compatible local endpoint)
     llm_base_url: str = "http://localhost:11434/v1"
-    llm_model: str = "hf.co/DavidAU/Qwen3.5-9B-The-Defiant-Fable-Uncensored-Heretic-NEO-IMATRIX-MAX-MTP-GGUF:Q6_K"
+    llm_model: str = (
+        "hf.co/DavidAU/Qwen3.5-9B-The-Defiant-Fable-Uncensored-Heretic-NEO-IMATRIX-MAX-MTP"
+        "-GGUF:Q6_K"
+    )
     llm_api_key: str = "unused-for-local"
     llm_timeout_s: float = 300.0
     # qwen3 and similar reasoning models default to slow "thinking"; the soft
