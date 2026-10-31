@@ -111,6 +111,13 @@ def find_problems(
     if res["t"] is not None and now - res["t"] > RESERVOIR_STALE_S:
         problems["reservoirs_stale"] = "reservoir levels have not refreshed in over 12 h"
 
+    # an empty sky and a refused feed look the same on the map
+    from toast.pipeline.aircraft import feed_error
+
+    air_error = feed_error(conn)
+    if air_error:
+        problems["aircraft_feed"] = f"aircraft feed is failing — {air_error}"
+
     if llm_models is not None and not llm_models:
         problems["llm"] = "the language model endpoint is unreachable or has no models"
 
