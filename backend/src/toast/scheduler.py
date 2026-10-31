@@ -94,6 +94,8 @@ DAILY_STAGES = {
     "reservoir_refresh": 2 * 3600,
     # full-text archive index: cheap bounded batches, maintenance priority
     "archive_index": 120,
+    # official lists that verify New Starts candidates; read from cache by the board
+    "official_lookup": 600,
     # silence is the failure mode that looks like good news — check every 5 min
     "watchdog": 300,
     # weather changes slowly and NWS asks for restraint — every 20 min keeps the
@@ -140,6 +142,7 @@ STAGE_PRIORITY = {
     "telegram_notify": 3,  # 30 s — alerts out
     "release_due": 3,  # 60 s — scheduled posts go out on time
     "weather_refresh": 4,  # 20 min, but cheap and feeds the wind layer
+    "official_lookup": 4,  # the board's verification goes stale behind an LLM backlog
 }
 
 

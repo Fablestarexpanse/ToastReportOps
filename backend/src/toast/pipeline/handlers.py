@@ -463,6 +463,14 @@ def archive_index_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> 
         get_logger("archive_search").warning("archive_search_unavailable", error=str(exc))
 
 
+@register("official_lookup")
+def official_lookup_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Keep the official lists that verify New Starts candidates current."""
+    from toast.pipeline.official_lookup import refresh
+
+    refresh(conn)
+
+
 @register("watchdog")
 def watchdog_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     """Tell the operator when a feed, the queue or the model has gone quiet."""
