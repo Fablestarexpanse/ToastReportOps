@@ -88,6 +88,14 @@ DAILY_STAGES = {
     # the phone hub: alerts out every 30 s, button presses picked up every 15 s
     "telegram_notify": 30,
     "telegram_poll": 15,
+    # river gauges + flood alerts; the handler is a no-op outside flood season
+    "water_refresh": 600,
+    # CDEC publishes daily reservoir values; a snapshot every 2h is plenty
+    "reservoir_refresh": 2 * 3600,
+    # full-text archive index: cheap bounded batches, maintenance priority
+    "archive_index": 120,
+    # silence is the failure mode that looks like good news — check every 5 min
+    "watchdog": 300,
     # weather changes slowly and NWS asks for restraint — every 20 min keeps the
     # wind layer fresh enough for fire behaviour without hammering the API
     "weather_refresh": 20 * 60,
@@ -128,6 +136,7 @@ STAGE_PRIORITY = {
     "aircraft": 3,  # 60 s cadence — a tanker orbit is only legible if sampled
     "radio_ingest": 3,  # 30 s — calls land seconds after capture
     "telegram_poll": 3,  # 15 s — operator button presses
+    "watchdog": 3,  # it exists to report a clogged queue, so it can't wait in it
     "telegram_notify": 3,  # 30 s — alerts out
     "release_due": 3,  # 60 s — scheduled posts go out on time
     "weather_refresh": 4,  # 20 min, but cheap and feeds the wind layer

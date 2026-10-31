@@ -26,9 +26,7 @@ class TelegramPublisher:
         self.chat = settings.telegram_channel_id
         self.http = httpx.Client(base_url=base_url, timeout=30)
 
-    def publish(
-        self, text: str, image: bytes | None = None, image_alt: str = ""
-    ) -> dict[str, Any]:
+    def publish(self, text: str, image: bytes | None = None, image_alt: str = "") -> dict[str, Any]:
         from toast.publishers import PublishError
 
         if len(text) > MAX_CHARS:

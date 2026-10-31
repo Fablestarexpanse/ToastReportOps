@@ -46,10 +46,10 @@ def _flat(rec: dict[str, Any]) -> dict[str, Any] | None:
     lcs = rec.get("lcs") or rec
     closure = lcs.get("closure") or {}
     loc = (lcs.get("location") or {}).get("begin") or {}
-    lat, lon = loc.get("beginLatitude"), loc.get("beginLongitude")
     try:
-        lat, lon = float(lat), float(lon)
-    except (TypeError, ValueError):
+        lat = float(loc["beginLatitude"])
+        lon = float(loc["beginLongitude"])
+    except (KeyError, TypeError, ValueError):
         return None
     return {
         "lat": lat,
@@ -115,9 +115,7 @@ def get_closures(conn: sqlite3.Connection, *, refresh: bool = False) -> dict[str
                     }
             if not (near or fire_worded):
                 continue
-            kept.append(
-                {**flat, "district": d, "fire_worded": fire_worded, "near": near}
-            )
+            kept.append({**flat, "district": d, "fire_worded": fire_worded, "near": near})
 
     # directional/duplicate records for the same closure point collapse to one
     deduped: dict[tuple, dict[str, Any]] = {}
@@ -141,7 +139,9 @@ def get_closures(conn: sqlite3.Connection, *, refresh: bool = False) -> dict[str
     )
     conn.commit()
     get_logger("closures").info(
-        "closures_refreshed", kept=len(kept), dropped=seen_total - len(kept),
+        "closures_refreshed",
+        kept=len(kept),
+        dropped=seen_total - len(kept),
         failed=len(failed_districts),
     )
     return payload

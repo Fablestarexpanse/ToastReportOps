@@ -37,8 +37,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Toast Report OPs API", version=__version__, lifespan=lifespan)
 
+from toast.api.guard import install_origin_guard  # noqa: E402
 from toast.api.routes import router  # noqa: E402
 
+install_origin_guard(
+    app, frozenset(h.strip().lower() for h in Settings().api_allowed_hosts.split(",") if h.strip())
+)
 app.include_router(router)
 
 # Serve the generated static site for local preview. There is no production

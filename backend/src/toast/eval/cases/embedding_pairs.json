@@ -1,0 +1,95 @@
+{
+ "note": "SYNTHETIC labelled pairs. same_event=true means two snippets report the same real-world event (a duplicate or corroboration); false means a different event, including hard negatives that share a county, a number or wording. Add real pairs from your ledger with --fixture.",
+ "pairs": [
+  {
+   "a": "The Flume Fire near Paradise has burned 1,240 acres and is 15 percent contained.",
+   "b": "Cal Fire reports the Flume Fire outside Paradise at 1,240 acres, 15% contained.",
+   "same_event": true
+  },
+  {
+   "a": "Evacuation order issued for Zone BUT-1043 as the Flume Fire advances.",
+   "b": "Residents of zone BUT-1043 told to leave immediately because of the Flume Fire.",
+   "same_event": true
+  },
+  {
+   "a": "Crews stopped forward progress of the Ridge Fire in Shasta County overnight.",
+   "b": "Firefighters have halted the Ridge Fire's advance in Shasta County, officials say.",
+   "same_event": true
+  },
+  {
+   "a": "Air tankers are dropping retardant on the Oak Fire near Mariposa.",
+   "b": "Tankers and helicopters are working the Oak Fire close to Mariposa.",
+   "same_event": true
+  },
+  {
+   "a": "The Cedar Fire east of Redding is at 1,187 acres.",
+   "b": "Cedar Fire (Redding) mapped at 1,187 acres Saturday evening.",
+   "same_event": true
+  },
+  {
+   "a": "Highway 70 is closed near Pulga because of the fire.",
+   "b": "Caltrans has shut Highway 70 at Pulga due to wildfire.",
+   "same_event": true
+  },
+  {
+   "a": "The Pine Fire near Chico has burned 300 acres.",
+   "b": "Cal Fire says the Pine Fire by Chico is 300 acres.",
+   "same_event": true
+  },
+  {
+   "a": "Evacuation warning lifted for Zone BUT-1044.",
+   "b": "The warning for zone BUT-1044 has been cancelled.",
+   "same_event": true
+  },
+  {
+   "a": "The Flume Fire near Paradise has burned 1,240 acres.",
+   "b": "The Pine Fire near Chico has burned 1,240 acres.",
+   "same_event": false
+  },
+  {
+   "a": "Evacuation order issued for Zone BUT-1043 as the Flume Fire advances.",
+   "b": "Evacuation order issued for Zone SHA-210 as the Ridge Fire advances.",
+   "same_event": false
+  },
+  {
+   "a": "A vegetation fire is burning off Highway 44 near Redding.",
+   "b": "A vegetation fire is burning off Highway 99 near Chico.",
+   "same_event": false
+  },
+  {
+   "a": "The Lake Fire in Lake County is 40 percent contained.",
+   "b": "The Creek Fire in Fresno County is 40 percent contained.",
+   "same_event": false
+  },
+  {
+   "a": "Air tankers are dropping retardant on the Oak Fire near Mariposa.",
+   "b": "Air tankers are dropping retardant on the Cedar Fire east of Redding.",
+   "same_event": false
+  },
+  {
+   "a": "Red Flag Warning in effect for the northern Sacramento Valley.",
+   "b": "The Flume Fire has burned 1,240 acres near Paradise.",
+   "same_event": false
+  },
+  {
+   "a": "Highway 70 is closed near Pulga because of the fire.",
+   "b": "Highway 70 reopened near Pulga after the fire.",
+   "same_event": false
+  },
+  {
+   "a": "Evacuation warning issued for Zone BUT-1044.",
+   "b": "Evacuation warning lifted for Zone BUT-1044.",
+   "same_event": false
+  },
+  {
+   "a": "A wildfire in Andalusia, Spain has burned 4,000 hectares.",
+   "b": "A wildfire in Greece has burned 4,000 hectares.",
+   "same_event": false
+  },
+  {
+   "a": "Smoke from the Ridge Fire is affecting air quality in Redding.",
+   "b": "Smoke from the Ridge Fire is affecting air quality in Redding.",
+   "same_event": true
+  }
+ ]
+}

@@ -28,6 +28,7 @@ import httpx
 from toast.core.config import Settings
 from toast.core.db import utcnow
 from toast.core.logging import get_logger
+from toast.pipeline.verify_draft import summarize
 
 API = "https://api.telegram.org"
 STATE_KEY = "telegram:notify:state"
@@ -42,11 +43,32 @@ EVAC_LABEL = {
 }
 
 
-def _cfg(settings: Settings | None = None) -> tuple[str, str] | None:
-    s = settings or Settings()
+def _settings(settings: Settings | None, conn: sqlite3.Connection | None) -> Settings:
+    """Explicit settings win; otherwise .env PLUS what the operator saved in OPTIONS.
+    (Reading .env alone silently ignored a bot configured in OPTIONS.)"""
+    if settings is not None:
+        return settings
+    if conn is not None:
+        from toast.core.credentials import settings_with_credentials
+
+        return settings_with_credentials(conn)
+    return Settings()
+
+
+def _cfg(
+    settings: Settings | None = None, conn: sqlite3.Connection | None = None
+) -> tuple[str, str] | None:
+    s = _settings(settings, conn)
     if s.telegram_bot_token and s.telegram_ops_chat_id:
         return s.telegram_bot_token, s.telegram_ops_chat_id
     return None
+
+
+def _approvers(settings: Settings | None, conn: sqlite3.Connection | None) -> set[str]:
+    """Telegram user ids allowed to press APPROVE / SEND BACK. Empty = anyone in the ops
+    chat (fine while the chat is just you; set it before adding anyone else)."""
+    raw = _settings(settings, conn).telegram_ops_user_ids
+    return {u.strip() for u in raw.replace(";", ",").split(",") if u.strip()}
 
 
 def _state(conn: sqlite3.Connection, key: str) -> dict[str, Any] | None:
@@ -63,7 +85,10 @@ def _save(conn: sqlite3.Connection, key: str, state: dict[str, Any]) -> None:
 
 
 def _send(
-    client: httpx.Client, token: str, chat: str, text: str,
+    client: httpx.Client,
+    token: str,
+    chat: str,
+    text: str,
     buttons: list[list[dict[str, str]]] | None = None,
 ) -> bool:
     payload: dict[str, Any] = {"chat_id": chat, "text": text, "parse_mode": "HTML"}
@@ -78,7 +103,7 @@ def notify_sweep(
     settings: Settings | None = None,
     client: httpx.Client | None = None,
 ) -> dict[str, Any]:
-    cfg = _cfg(settings)
+    cfg = _cfg(settings, conn)
     if cfg is None:
         return {"skipped": "telegram not configured"}
     token, chat = cfg
@@ -113,9 +138,7 @@ def notify_sweep(
         from toast.pipeline.evacstate import evac_state, zone_index
 
         zidx = zone_index(conn)
-        for r in conn.execute(
-            "SELECT id, canonical_name FROM incidents WHERE status = 'active'"
-        ):
+        for r in conn.execute("SELECT id, canonical_name FROM incidents WHERE status = 'active'"):
             st = evac_state(conn, r["id"], zone_index=zidx).status
             cur = st if st in ACTIVE_EVAC else "none"
             prev = state["evac"].get(r["id"], "none")
@@ -137,24 +160,37 @@ def notify_sweep(
 
         # drafts arriving for review, with approval buttons
         for r in conn.execute(
-            "SELECT id, title FROM drafts WHERE status = 'needs_review'"
+            "SELECT id, title, verify_issues FROM drafts WHERE status = 'needs_review'"
         ):
             if r["id"] in seen_drafts:
                 continue
             seen_drafts.add(r["id"])
             if first_run:
                 continue
-            buttons = [[
-                {"text": "✓ APPROVE", "callback_data": f"approve:{r['id']}"},
-                {"text": "✗ SEND BACK", "callback_data": f"reject:{r['id']}"},
-            ]]
-            if _send(
-                client, token, chat,
-                f"📝 DRAFT FOR REVIEW: <b>{html.escape(r['title'] or r['id'][-6:])}</b>\n"
-                "Approving here is the same human approval as the newsroom click; "
-                "releasing to channels stays a separate step.",
-                buttons,
-            ):
+            flagged = json.loads(r["verify_issues"] or "[]")
+            title = html.escape(r["title"] or r["id"][-6:])
+            if flagged:
+                # a draft the verifier flagged cannot be approved from a phone
+                # screen — open the workstation and read what it caught
+                text = (
+                    f"⚠️ DRAFT FLAGGED: <b>{title}</b>\n"
+                    f"{html.escape(summarize(flagged))}. "
+                    "Review it in the workstation; phone approval is off for this draft."
+                )
+                buttons = [[{"text": "✗ SEND BACK", "callback_data": f"reject:{r['id']}"}]]
+            else:
+                text = (
+                    f"📝 DRAFT FOR REVIEW: <b>{title}</b>\n"
+                    "Approving here is the same human approval as the newsroom click; "
+                    "releasing to channels stays a separate step."
+                )
+                buttons = [
+                    [
+                        {"text": "✓ APPROVE", "callback_data": f"approve:{r['id']}"},
+                        {"text": "✗ SEND BACK", "callback_data": f"reject:{r['id']}"},
+                    ]
+                ]
+            if _send(client, token, chat, text, buttons):
                 sent += 1
     finally:
         state["incidents"] = sorted(seen_inc)
@@ -172,7 +208,7 @@ def poll_updates(
     settings: Settings | None = None,
     client: httpx.Client | None = None,
 ) -> dict[str, Any]:
-    cfg = _cfg(settings)
+    cfg = _cfg(settings, conn)
     if cfg is None:
         return {"skipped": "telegram not configured"}
     token, ops_chat = cfg
@@ -181,6 +217,7 @@ def poll_updates(
     log = get_logger("telegram")
 
     offset = (_state(conn, OFFSET_KEY) or {}).get("offset", 0)
+    approvers = _approvers(settings, conn)
     handled = ignored = 0
     try:
         r = client.post(
@@ -201,6 +238,13 @@ def poll_updates(
                 ignored += 1
                 log.warning("telegram_command_ignored", chat=from_chat, data=data[:40])
                 continue
+            # ...and, when configured, only named people inside it
+            presser = str((cb.get("from") or {}).get("id", ""))
+            if approvers and presser not in approvers:
+                ignored += 1
+                log.warning("telegram_command_unauthorised", user=presser, data=data[:40])
+                _ack(client, token, cb["id"], "not authorised to approve")
+                continue
             action, _, draft_id = data.partition(":")
             if action in ("approve", "reject") and draft_id:
                 target = "approved" if action == "approve" else "draft"
@@ -218,14 +262,18 @@ def poll_updates(
 
 
 def _transition(conn: sqlite3.Connection, draft_id: str, target: str) -> bool:
-    row = conn.execute("SELECT status FROM drafts WHERE id = ?", (draft_id,)).fetchone()
+    row = conn.execute(
+        "SELECT status, verify_issues FROM drafts WHERE id = ?", (draft_id,)
+    ).fetchone()
     if row is None or row["status"] != "needs_review":
         return False  # already handled in the newsroom, or gone
+    if target == "approved" and json.loads(row["verify_issues"] or "[]"):
+        return False  # flagged drafts are approved in the workstation, never by button
     now = utcnow()
     try:
         if target == "approved":
             conn.execute(
-                """UPDATE drafts SET status = 'approved', approved_by = 'brian (telegram)',
+                """UPDATE drafts SET status = 'approved', approved_by = 'operator (telegram)',
                    approved_at = ?, updated_at = ? WHERE id = ?""",
                 (now, now, draft_id),
             )

@@ -95,9 +95,7 @@ class TestTranscription:
         assert fact["tier"] == 5  # quarantined by tier everywhere downstream
         assert fact["incident_id"] is None  # unattributed: exactly what WATCH reads
         assert "Clark Road" in fact["content"]
-        src = seeded.execute(
-            "SELECT * FROM sources WHERE id = ?", (fact["source_id"],)
-        ).fetchone()
+        src = seeded.execute("SELECT * FROM sources WHERE id = ?", (fact["source_id"],)).fetchone()
         assert src["adapter"] == "radio" and src["tier"] == 5
 
     def test_routine_traffic_transcribes_without_feeding_watch(self, seeded, tmp_path):
@@ -120,6 +118,4 @@ class TestTranscription:
             seeded, call_id, _settings(tmp_path, whisper="http://whisper:8000"), client
         )
         assert out["state"] == "failed"
-        assert (
-            seeded.execute("SELECT transcript_state FROM radio_calls").fetchone()[0] == "failed"
-        )
+        assert seeded.execute("SELECT transcript_state FROM radio_calls").fetchone()[0] == "failed"

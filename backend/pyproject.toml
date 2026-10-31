@@ -3,6 +3,7 @@ name = "toast"
 version = "0.1.0"
 description = "Toast Report Workstation — local-first CA wildfire intelligence backend"
 requires-python = ">=3.12"
+license = "Apache-2.0"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn>=0.30",
@@ -15,14 +16,25 @@ dependencies = [
     "feedparser>=6.0.12",
     "markdown>=3.10.2",
     "pillow>=10.4",
-    "paho-mqtt>=2.1",
-    "meshtastic>=2.5",
     "cryptography>=43.0",
     "nh3>=0.2",
     # civilian-facing evac graphics show local Pacific time; zoneinfo needs the
     # tz database, which Windows and slim Linux images don't ship on their own
     "tzdata>=2024.1",
 ]
+
+[project.optional-dependencies]
+# The MESH service (python -m toast.mesh.listener). Optional because the Meshtastic
+# library is GPL-3.0: the default install and images stay permissively licensed, and
+# enabling MESH brings that library and its terms into the mesh service only (NOTICE).
+mesh = [
+    "paho-mqtt>=2.1",
+    "meshtastic>=2.5",
+]
+
+[project.scripts]
+toast = "toast.cli:main"
+toast-mcp = "toast.mcp_server:main"
 
 [dependency-groups]
 dev = [
@@ -55,7 +67,7 @@ mypy_path = "src"
 packages = ["toast"]
 
 [[tool.mypy.overrides]]
-module = ["sqlite_vec", "bs4", "feedparser", "markdown"]
+module = ["sqlite_vec", "bs4", "feedparser", "markdown", "meshtastic.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

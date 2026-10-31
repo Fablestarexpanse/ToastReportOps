@@ -25,3 +25,47 @@ convention (0001, 0018–0020, 0035). A fact is never edited in place; a new fac
 `facts_limited_update` whitelist trigger — it rejects any UPDATE that changes a
 non-whitelisted column, so a forgotten column becomes *immutable*, which is the
 safe failure. Test on a copy of a real DB before shipping a `facts` change.
+
+## Index (0001–0039)
+
+Each file's header comment is the full story; this is the map. When you add a
+migration, add its line here and bump the count in `tests/unit/test_migrations.py`.
+
+| # | What it adds |
+|---|---|
+| 0001 | Schema v1: sources, envelopes, raw blobs, facts (append-only, bi-temporal), incidents, drafts + the publish-requires-approval trigger, publications, jobs, candidates |
+| 0002 | Per-source poll cursor |
+| 0003 | Incident type (WF wildfire, RX prescribed burn, …) |
+| 0004 | Recomputable per-fact assessments |
+| 0005 | CAL FIRE cross-reference id on incidents |
+| 0006 | Draft headline |
+| 0007 | Draft lineage (social rewrite → parent) |
+| 0008 | Source discovery suggestions |
+| 0009 | Operator notes/tasks and FOLLOW flag |
+| 0010 | Runtime app settings (key/value) |
+| 0011 | Adjudication triage |
+| 0012 | Watch-board dispositions |
+| 0013 | Operator-entered API credentials |
+| 0014 | USGS GNIS place names |
+| 0015 | Operator-edited prompt overrides |
+| 0016 | NWS weather cache per incident |
+| 0017 | External map-layer cache (`map_cache`, also used for alert baselines) |
+| 0018 | Append-only facts made real (whitelist update trigger) |
+| 0019 | Enum CHECKs that actually constrain (`x IS NULL OR x IN …`) |
+| 0020 | Timestamps must be parseable |
+| 0021 | Publication "unknown" outcome |
+| 0022 | Raw blobs' offsite-copy state |
+| 0023–0026 | Aircraft positions, role, photo cache and bytes, military flag |
+| 0027 | Perimeter progression history |
+| 0028 | Radio calls from the operator's SDR |
+| 0029 | Scheduled, channel-selected release |
+| 0030 | Rendered incident card on a draft |
+| 0031 | AI triage proposals |
+| 0032 | Meshtastic mesh state |
+| 0033 | Draft archival (orthogonal to status) |
+| 0034 | Activity-check proposals |
+| 0035 | 07-22 audit hardening |
+| 0036 | Scanner channel directory |
+| 0037 | Mesh chat as a watched source |
+| 0038 | Draft verifier result on drafts (`verify_issues`) |
+| 0039 | Daily reservoir snapshots (`reservoir_readings`) |

@@ -59,7 +59,8 @@ frontend framework total.
 | ~~`site-builder`~~ | **not built.** Site generation runs in `worker` via the `build_site` job, triggered on demand from ARCHIVE — never by publishing |
 | `litestream` | replication — **local disk only today**; the B2 replica is commented out pending keys | desktop profile only; nightly snapshot is a `backup` job in `worker` |
 | `llm` | Ollama in a container, GPU passthrough; auto-pulls `LLM_PULL_MODEL` / `LLM_EMBED_PULL_MODEL` on first boot | the stack's own model server — extraction AND embeddings; `LLM_BASE_URL=http://llm:11434/v1` (a cloud key still overrides) |
-| `mesh` | Meshtastic listener: public MQTT firehose filtered to a NorCal picture | persistent subscription, so a service rather than a job; feeds the MESH tab |
+| `mesh` | Meshtastic listener: public MQTT firehose filtered to a NorCal picture | **optional** (profile `mesh`, `TOAST_MESH=1`) because the Meshtastic library is GPL-3.0; its image alone is built with the `mesh` extra; feeds the MESH tab |
+| `icecast` | stream server for the operator's own SDR audio | desktop profile only; loopback-bound (`127.0.0.1:8100`); feeds RADIO stream channels |
 | `searxng` | self-hosted metasearch backing LDR | desktop profile only |
 | `ldr` | Local Deep Research: on-demand agentic web research | reports land as `kind='analysis'` NEWSROOM drafts, never ledger facts |
 
@@ -81,9 +82,11 @@ Same codebase, config via environment variables, no hardcoded paths.
   (`toast.sources`). A new source type is a new package — zero core edits. The
   "add source by URL, AI probes what it is" flow calls each registered adapter's
   `probe()` in turn.
-- **`Publisher`** (Protocol): `render(publication) -> ChannelPayload`,
-  `publish(payload) -> Receipt`. Entry points `toast.publishers`. Site, X, Facebook,
-  RSS, email, and webhook all implement it.
+- **`Publisher`** (Protocol, `toast/publishers/__init__.py`): `publish(text) -> receipt
+  dict`; image-capable channels (Bluesky, Telegram) implement `ImagePublisher`, which
+  also takes `image`/`image_alt`. Built: Bluesky, X, Telegram, Facebook — each exists
+  only when its credentials are set. The static site is not a publisher; it is built on
+  demand by `sitegen/`. (RSS/email/webhook publishers were planned, not built.)
 - **`Extractor`**: LLM claim extraction behind an OpenAI-compatible client
   (`LLM_BASE_URL`/`LLM_MODEL` env — Qwen3 local now, swappable later). All prompts
   are versioned files in `prompts/` with front-matter (id, version, model hints);
@@ -184,3 +187,23 @@ research/backfill), and all model calls go through the in-stack `llm` service
 (Ollama container with GPU passthrough), which handles model residency itself
 (`OLLAMA_KEEP_ALIVE`). There is no VRAM-tracking scheduler and no model
 load/unload orchestration; nothing has needed one.
+
+## Additions since the original design (2026-10)
+
+- **Verifiers** — `llm/verify_extraction.py` (claims must be supported by their source
+  text) and `pipeline/verify_draft.py` (drafts checked against the facts they cite).
+- **Hazard profile + WATER** — `core/hazard.py`, `pipeline/water.py` (NWS flood alerts,
+  NOAA gauges), `pipeline/reservoirs.py` (DWR/CDEC, daily history in `reservoir_readings`).
+- **Watchdog** — `pipeline/watchdog.py`, a scheduler stage that pushes silent-feed,
+  stalled-queue and model-down problems to the ops chat; `GET /system/status`.
+- **Origin guard** — `api/guard.py` (CSRF / DNS-rebinding protection for the
+  loginless API).
+- **Agent interface** — `agent_tools.py` (single tool registry), `mcp_server.py`
+  (stdio MCP), `cli.py` (`toast` command). See docs/AGENT-INTERFACE.md.
+- **Models** — `modelsetup.py` + `model_manifest.json` (pinned official models) and
+  `eval/model_bakeoff.py`. See docs/MODELS.md. The `llm` container downloads nothing by
+  itself (`LLM_AUTO_PULL` opt-in).
+- **Archive search** — `pipeline/archive_search.py`: SQLite FTS5 index (created on first
+  use, rebuildable) over facts, drafts, radio transcripts and archived pages, kept
+  current by the `archive_index` stage; `/archive/search`, `/archive/doc`; capped agent
+  tools `search_archive` / `read_archive`.

@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # weekly, so a newly published advisory against a dependency shows up even when
+  # nothing is being pushed
+  schedule:
+    - cron: "17 14 * * 1"
 
 jobs:
   backend:
@@ -17,7 +21,7 @@ jobs:
         with:
           enable-cache: true
       - name: Sync dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen --all-extras   # tests cover the optional mesh service
       - name: Lint (ruff)
         run: uv run ruff check .
       - name: Format check (ruff)
@@ -26,6 +30,10 @@ jobs:
         run: uv run mypy
       - name: Tests (pytest)
         run: uv run pytest
+      - name: Dependency audit (pip-audit)
+        run: |
+          uv export --frozen --no-dev --no-hashes --no-emit-project > "$RUNNER_TEMP/requirements.txt"
+          uvx pip-audit -r "$RUNNER_TEMP/requirements.txt" --progress-spinner off
 
   operator-ui:
     runs-on: ubuntu-latest
@@ -47,3 +55,5 @@ jobs:
         run: npx tsc --noEmit
       - name: Build
         run: npm run build
+      - name: Dependency audit (shipped packages)
+        run: npm audit --omit=dev --audit-level=high

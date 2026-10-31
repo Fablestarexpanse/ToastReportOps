@@ -62,7 +62,7 @@ devices: ({
       outputs: (
         {
           type = "file";
-          directory = "F:/Cursor Projects/ToastReportOPs/data/radio/inbox";
+          directory = "C:/path/to/ToastReportOps/data/radio/inbox";
           filename_template = "btu_local";
           split_on_transmission = true;   # one file per transmission — required
         },

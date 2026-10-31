@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from toast.core.timestamps import normalize_iso
 from toast.llm.client import LLMClient, LLMError
 from toast.llm.prompts import load_prompt
+from toast.llm.verify_extraction import verify_claim
 
 ClaimKind = Literal[
     "start",
@@ -44,6 +45,9 @@ class ExtractedClaim(BaseModel):
     evac_status: Literal["order", "warning", "shelter_in_place", "lifted"] | None = None
     observed_at: str | None = None
     confidence: float = Field(ge=0, le=1)
+    # set by toast.llm.verify_extraction, never by the model: what the source
+    # check found wrong with this claim (an empty list = nothing found)
+    issues: list[str] = Field(default_factory=list)
 
     @field_validator("observed_at")
     @classmethod
@@ -58,6 +62,7 @@ class ExtractionResult(BaseModel):
     claims: list[ExtractedClaim]
     prompt_version: str
     dropped: int = 0  # claims that failed validation
+    unsupported: int = 0  # claims dropped for stating a figure the source doesn't
     california_relevant: bool = True  # v2 gate; v1 has no field → treated as CA
     primary_location: str | None = None
 
@@ -69,6 +74,7 @@ def extract_claims(
     source_name: str = "unknown",
     version: str = "v2",
     client: LLMClient | None = None,
+    verify: bool = True,
 ) -> ExtractionResult:
     """Extract claims from untrusted text. reference_time anchors relative dates.
 
@@ -93,16 +99,26 @@ def extract_claims(
         primary_location = None
 
     claims: list[ExtractedClaim] = []
-    dropped = 0
+    dropped = unsupported = 0
     for item in raw["claims"]:
         try:
-            claims.append(ExtractedClaim.model_validate(item))
+            claim = ExtractedClaim.model_validate(item)
         except ValidationError:
             dropped += 1
+            continue
+        claim.issues = []  # never trust a model-supplied value for this field
+        if verify:
+            kept, _issues = verify_claim(claim, text)
+            if kept is None:
+                unsupported += 1
+                continue
+            claim = kept
+        claims.append(claim)
     return ExtractionResult(
         claims=claims,
         prompt_version=prompt.prompt_version,
         dropped=dropped,
+        unsupported=unsupported,
         california_relevant=california_relevant,
         primary_location=primary_location,
     )

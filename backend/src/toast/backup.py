@@ -249,3 +249,22 @@ def run_backup(conn: sqlite3.Connection, settings: Settings | None = None) -> di
 
         uploaded = upload_snapshot(snapshot_dir(s) / manifest["file"], s)
     return {"manifest": manifest, "pruned": pruned, "offsite": uploaded}
+
+
+def main() -> None:
+    """`python -m toast.backup` — take a verified snapshot now. Used by the
+    update script so every update starts from a restorable copy."""
+    from toast.core.db import apply_migrations, connect
+
+    s = Settings()
+    conn = connect(s.toast_db_path)
+    try:
+        apply_migrations(conn)
+        result = run_backup(conn, s)
+    finally:
+        conn.close()
+    print(json.dumps({"file": result["manifest"]["file"], "offsite": result["offsite"]}))
+
+
+if __name__ == "__main__":
+    main()

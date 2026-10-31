@@ -42,8 +42,15 @@ AUDIO_TYPES = {
     ".ogg": "audio/ogg",
 }
 FIRE_WORDS = (
-    "fire", "smoke", "vegetation", "structure threat", "spot over",
-    "evac", "ic established", "working fire", "fully involved",
+    "fire",
+    "smoke",
+    "vegetation",
+    "structure threat",
+    "spot over",
+    "evac",
+    "ic established",
+    "working fire",
+    "fully involved",
 )
 TRANSCRIPT_MAX = 4000
 
@@ -91,9 +98,7 @@ def ingest_inbox(conn: sqlite3.Connection, settings: Settings | None = None) -> 
             continue
         sha = store_raw(conn, Path(s.toast_data_dir), body, media_type, url=None)
         started = (
-            _epoch_iso(meta.get("start_time"))
-            or _epoch_iso(audio.stat().st_mtime)
-            or utcnow()
+            _epoch_iso(meta.get("start_time")) or _epoch_iso(audio.stat().st_mtime) or utcnow()
         )
         conn.execute(
             """INSERT INTO radio_calls
@@ -159,9 +164,7 @@ def transcribe_call(
             raise RuntimeError(f"whisper HTTP {resp.status_code}")
         text = (resp.json().get("text") or "").strip()[:TRANSCRIPT_MAX]
     except Exception as exc:
-        conn.execute(
-            "UPDATE radio_calls SET transcript_state = 'failed' WHERE id = ?", (call_id,)
-        )
+        conn.execute("UPDATE radio_calls SET transcript_state = 'failed' WHERE id = ?", (call_id,))
         conn.commit()
         get_logger("radio").warning("radio_transcribe_failed", call=call_id, error=str(exc)[:120])
         return {"state": "failed", "error": str(exc)[:120]}

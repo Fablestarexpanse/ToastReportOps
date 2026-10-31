@@ -45,7 +45,7 @@ def _latest(
     return conn.execute(
         f"""SELECT f.*, s.name AS source_name FROM facts f
             JOIN sources s ON s.id = f.source_id
-            WHERE f.incident_id = ? AND f.kind = ? AND {not_superseded('f')}{clause}
+            WHERE f.incident_id = ? AND f.kind = ? AND {not_superseded("f")}{clause}
             ORDER BY (f.observed_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')) ASC,
               (f.tier >= 3) ASC, f.observed_at DESC, f.ingested_at DESC LIMIT 1""",
         (incident_id, kind),
@@ -166,7 +166,7 @@ def incident_intel(conn: sqlite3.Connection, incident_id: str) -> dict[str, Any]
                                         json_extract(e.payload, '$.link'))
                           FROM envelopes e WHERE e.id = f.envelope_id) AS source_url
                 FROM facts f JOIN sources s ON s.id = f.source_id
-                WHERE f.incident_id = ? AND f.kind = ? AND {not_superseded('f')}
+                WHERE f.incident_id = ? AND f.kind = ? AND {not_superseded("f")}
                 ORDER BY f.observed_at DESC""",
             (incident_id, kind),
         ).fetchall()

@@ -52,7 +52,7 @@ OK = (74, 222, 128)
 LINE = (44, 52, 62)
 
 
-def _font(size: int) -> ImageFont.FreeTypeFont:
+def _font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     return ImageFont.load_default(size=size)
 
 
@@ -258,7 +258,7 @@ def generate_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
             "order": "EVACUATION ORDER IN EFFECT",
             "warning": "EVACUATION WARNING IN EFFECT",
             "shelter_in_place": "SHELTER IN PLACE IN EFFECT",
-        }[evac]
+        }[str(evac)]
         d.text((58, y + 11), f"! {label} - SEE OFFICIAL NOTICE", font=_font(25), fill=EVAC)
         y += 64
 
@@ -316,9 +316,9 @@ def generate_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
             min_lat, min_lon, max_lat, max_lon = bbox
             c_lat, c_lon = (min_lat + max_lat) / 2, (min_lon + max_lon) / 2
             zr = 12  # reference zoom for measuring the bbox in pixels
-            x0, y0 = _tile_frac(max_lat, min_lon, zr)
-            x1, y1 = _tile_frac(min_lat, max_lon, zr)
-            bw, bh = max((x1 - x0) * TILE, 1.0), max((y1 - y0) * TILE, 1.0)
+            tx0, ty0 = _tile_frac(max_lat, min_lon, zr)
+            tx1, ty1 = _tile_frac(min_lat, max_lon, zr)
+            bw, bh = max((tx1 - tx0) * TILE, 1.0), max((ty1 - ty0) * TILE, 1.0)
             fit = min(map_w * 0.90 / bw, map_h * 0.86 / bh)
             ze = zr + math.log2(max(fit, 1e-6))  # exact (fractional) zoom
             ze = max(7.0, min(14.0, ze))  # sanity: stay within useful imagery
@@ -331,14 +331,23 @@ def generate_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
         if scale < 0.999:
             big_w, big_h = math.ceil(map_w / scale), math.ceil(map_h / scale)
             big = _stitch_map(c_lat, c_lon, zoom=zoom, w=big_w, h=big_h, url=SAT_TILE_URL)
-            strip = big.resize((map_w, map_h), Image.LANCZOS)
+            strip = big.resize((map_w, map_h), Image.Resampling.LANCZOS)
         else:
             strip = _stitch_map(c_lat, c_lon, zoom=zoom, w=map_w, h=map_h, url=SAT_TILE_URL)
         img.paste(strip, (40, map_top))
         d2 = ImageDraw.Draw(img)
         _draw_perimeter(
-            conn, d2, incident_id, c_lat, c_lon,
-            zoom=zoom, w=map_w, h=map_h, off_y=map_top, off_x=40, scale=scale,
+            conn,
+            d2,
+            incident_id,
+            c_lat,
+            c_lon,
+            zoom=zoom,
+            w=map_w,
+            h=map_h,
+            off_y=map_top,
+            off_x=40,
+            scale=scale,
         )
         # origin ring at the fire's true position in this frame
         ocx, ocy = _tile_frac(c_lat, c_lon, zoom)
@@ -350,8 +359,11 @@ def generate_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
                 d2.ellipse([(cxp - r, cyp - r), (cxp + r, cyp + r)], outline=col, width=3)
         d2.rectangle([(40, map_top), (W - 40, map_top + map_h)], outline=LINE)
         d2.text(
-            (W - 46, map_top + map_h - 24), "Imagery: USGS The National Map (public domain)",
-            font=_font(14), fill=DIM, anchor="ra",
+            (W - 46, map_top + map_h - 24),
+            "Imagery: USGS The National Map (public domain)",
+            font=_font(14),
+            fill=DIM,
+            anchor="ra",
         )
     else:
         d.rectangle([(40, map_top), (W - 40, map_top + map_h)], fill=PANEL, outline=LINE)
@@ -374,7 +386,7 @@ def generate_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
         from PIL import Image as _Image
 
         badge = _Image.open(badge_path).convert("RGBA")
-        badge.thumbnail((46, 46), _Image.LANCZOS)
+        badge.thumbnail((46, 46), _Image.Resampling.LANCZOS)
         img.paste(badge, (40, fy - 4), badge)
         tx = 40 + badge.width + 12
     d.text((tx, fy + 8), "TOAST REPORT OPS", font=_font(22), fill=EMBER)
@@ -384,8 +396,11 @@ def generate_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
     if brand:
         d.text((tx, fy + 34), brand[:70], font=_font(14), fill=DIM)
     d.text(
-        (W - 40, fy + 11), f"{asof}generated {stamp}Z",
-        font=_font(15), fill=DIM, anchor="ra",
+        (W - 40, fy + 11),
+        f"{asof}generated {stamp}Z",
+        font=_font(15),
+        fill=DIM,
+        anchor="ra",
     )
 
     buf = io.BytesIO()
@@ -445,9 +460,9 @@ def generate_state_card(conn: sqlite3.Connection) -> bytes:
     zidx = zone_index(conn)
     fires = []
     for r in rows:
-        d = dict(r)
-        d["evac"] = evac_state(conn, d["id"], zone_index=zidx).status
-        fires.append(d)
+        fire = dict(r)
+        fire["evac"] = evac_state(conn, fire["id"], zone_index=zidx).status
+        fires.append(fire)
 
     # The published number is HARD FACT: only fires an official source lists
     # active RIGHT NOW — CAL FIRE's live list or NIFC's federal current layer,
@@ -507,13 +522,15 @@ def generate_state_card(conn: sqlite3.Connection) -> bytes:
         (int(f["acreage"]), c["containment_pct"])
         for f in fires
         if f["acreage"]
-        and (c := conn.execute(
-            """SELECT containment_pct FROM facts
+        and (
+            c := conn.execute(
+                """SELECT containment_pct FROM facts
                WHERE incident_id = ? AND kind='containment' AND containment_pct IS NOT NULL
                  AND id NOT IN (SELECT supersedes FROM facts WHERE supersedes IS NOT NULL)
                ORDER BY (tier >= 3) ASC, observed_at DESC LIMIT 1""",
-            (f["id"],),
-        ).fetchone())
+                (f["id"],),
+            ).fetchone()
+        )
     ]
     contained_pct = round(sum(a * p for a, p in cw) / sum(a for a, _ in cw)) if cw else None
     aircraft_up = conn.execute(
@@ -528,9 +545,7 @@ def generate_state_card(conn: sqlite3.Connection) -> bytes:
 
         with contextlib.suppress(ValueError):
             redflag = len(json.loads(fw["payload"]).get("features") or [])
-    top5 = sorted(
-        (f for f in fires if f["acreage"]), key=lambda f: f["acreage"], reverse=True
-    )[:5]
+    top5 = sorted((f for f in fires if f["acreage"]), key=lambda f: f["acreage"], reverse=True)[:5]
 
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
@@ -562,7 +577,8 @@ def generate_state_card(conn: sqlite3.Connection) -> bytes:
     # fit only over plausible-CA positions: one bad geocode dragged the whole
     # frame to Mexico
     placed = [
-        f for f in fires
+        f
+        for f in fires
         if f["lat"] is not None and 32.0 <= f["lat"] <= 42.5 and -125.0 <= f["lon"] <= -113.5
     ]
     if placed:
@@ -599,17 +615,26 @@ def generate_state_card(conn: sqlite3.Connection) -> bytes:
         if f["id"] in top3:
             name = (f["canonical_name"] or "").replace(" Fire", "").upper()[:14]
             lx = x + r + 5 if x < map_r - 110 else x - r - 5
-            d2.text((lx, ypix - 8), name, font=_font(15), fill=TXT,
-                    anchor="la" if x < map_r - 110 else "ra")
+            d2.text(
+                (lx, ypix - 8),
+                name,
+                font=_font(15),
+                fill=TXT,
+                anchor="la" if x < map_r - 110 else "ra",
+            )
     d2.rectangle([(40, map_top), (map_r, map_top + map_h)], outline=LINE)
     d2.text(
-        (map_r - 6, map_top + map_h - 24), "(c) OpenStreetMap - (c) CARTO",
-        font=_font(14), fill=DIM, anchor="ra",
+        (map_r - 6, map_top + map_h - 24),
+        "(c) OpenStreetMap - (c) CARTO",
+        font=_font(14),
+        fill=DIM,
+        anchor="ra",
     )
     d2.text(
         (46, map_top + map_h - 24),
         "ring size = mapped acres - pink = evac in effect - CAL FIRE + NIFC listed fires only",
-        font=_font(14), fill=DIM,
+        font=_font(14),
+        fill=DIM,
     )
 
     # ---- right glance panel
@@ -627,8 +652,11 @@ def generate_state_card(conn: sqlite3.Connection) -> bytes:
     py += 10
     stat_rows = [
         ("24H CHANGE", f"{growth24:+,} ac", EMBER if growth24 > 0 else OK),
-        ("CONTAINMENT (ACRE-WTD)", f"{contained_pct}%" if contained_pct is not None else "n/a",
-         OK if (contained_pct or 0) >= 50 else EMBER),
+        (
+            "CONTAINMENT (ACRE-WTD)",
+            f"{contained_pct}%" if contained_pct is not None else "n/a",
+            OK if (contained_pct or 0) >= 50 else EMBER,
+        ),
         ("FIRE AIRCRAFT UP (1H)", str(aircraft_up), TXT),
         ("RED FLAG ZONES", str(redflag), EVAC if redflag else DIM),
     ]
@@ -644,7 +672,7 @@ def generate_state_card(conn: sqlite3.Connection) -> bytes:
         from PIL import Image as _Image
 
         badge = _Image.open(badge_path).convert("RGBA")
-        badge.thumbnail((46, 46), _Image.LANCZOS)
+        badge.thumbnail((46, 46), _Image.Resampling.LANCZOS)
         img.paste(badge, (40, fy - 2), badge)
         tx = 40 + badge.width + 12
     d.text((tx, fy + 8), "TOAST REPORT OPS", font=_font(22), fill=EMBER)
@@ -656,8 +684,11 @@ def generate_state_card(conn: sqlite3.Connection) -> bytes:
     from toast.core.timefmt import civilian as _civ
 
     d.text(
-        (W - 40, fy + 11), f"ledger data - generated {_civ(utcnow())}",
-        font=_font(15), fill=DIM, anchor="ra",
+        (W - 40, fy + 11),
+        f"ledger data - generated {_civ(utcnow())}",
+        font=_font(15),
+        fill=DIM,
+        anchor="ra",
     )
 
     buf = io.BytesIO()
@@ -678,8 +709,7 @@ SNAP_BASEMAPS: dict[str, tuple[str, str]] = {
     "street": ("https://a.tile.openstreetmap.org/{z}/{x}/{y}.png", "(c) OpenStreetMap"),
     "terrain": ("https://a.tile.opentopomap.org/{z}/{x}/{y}.png", "(c) OpenTopoMap (CC-BY-SA)"),
     "topo": (
-        "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/"
-        "MapServer/tile/{z}/{y}/{x}",
+        "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}",
         "USGS The National Map (public domain)",
     ),
 }
@@ -806,8 +836,13 @@ def _draw_overlays(
                 props.get("zone_label") or props.get("ZONE_ID") or props.get("ZONE_NAME") or "?"
             )
             st = (props.get("STATUS") or "").lower()
-            word = "ORDER" if "order" in st else "WARNING" if "warn" in st else (
-                (props.get("STATUS") or "").upper()[:12])
+            word = (
+                "ORDER"
+                if "order" in st
+                else "WARNING"
+                if "warn" in st
+                else ((props.get("STATUS") or "").upper()[:12])
+            )
             aged = _age_short(props.get("ISSUED_AT") or props.get("issued_at"))
             text = f"{short} - {word}" + (f" - {aged}" if aged else "")
             labels.append((lx, ly, text, col, 15))
@@ -831,37 +866,100 @@ def _draw_overlays(
             log.info("snapshot_overlay_skipped", layer=name, error=str(exc)[:100])
 
     # counties: reference outline only, no fill
-    _try("counties", lambda: outlines.extend(
-        (pts, (92, 102, 116), 1)
-        for feat in __import__("toast.pipeline.countylines", fromlist=["get_county_lines"])
-        .get_county_lines(conn).get("features", [])
-        for ring in lines_of(feat.get("geometry") or {})
-        if len(pts := [to_px(p[1], p[0]) for p in ring if isinstance(p, list) and len(p) >= 2]) > 1
-        and in_frame(pts)))
-    _try("perimeters", lambda: add_polys(
-        __import__("toast.pipeline.perimeters", fromlist=["get_perimeters"])
-        .get_perimeters(conn).get("features", []), EMBER, 2, 46))
-    _try("firis", lambda: add_polys(
-        __import__("toast.pipeline.firis", fromlist=["get_firis"])
-        .get_firis(conn).get("features", []), (255, 154, 60), 2, 46))
-    _try("firewx", lambda: add_polys(
-        __import__("toast.pipeline.firewx", fromlist=["get_fire_weather"])
-        .get_fire_weather(conn).get("features", []), WARN, 2, 30))
-    _try("evacZones", lambda: add_polys(
-        __import__("toast.pipeline.evaczones", fromlist=["get_evac_zones"])
-        .get_evac_zones(conn).get("features", []), DIM, 2, 56, status_key="STATUS", label=True))
-    _try("closures", lambda: add_points(
-        __import__("toast.pipeline.closures", fromlist=["get_closures"])
-        .get_closures(conn).get("closures", []), (255, 90, 90), 4))
-    _try("hotspots", lambda: add_points(
-        [dict(r) for r in conn.execute(
-            "SELECT f.lat, f.lon FROM facts f JOIN sources s ON s.id = f.source_id"
-            " WHERE s.type = 'satellite' AND f.lat IS NOT NULL"
-            " AND unixepoch('now') - unixepoch(f.observed_at) < 86400")],
-        (255, 140, 40), 2))
-    _try("aircraft", lambda: add_points(
-        __import__("toast.pipeline.aircraft", fromlist=["current_aircraft"])
-        .current_aircraft(conn).get("aircraft", []), (120, 200, 255), 3))
+    _try(
+        "counties",
+        lambda: outlines.extend(
+            (pts, (92, 102, 116), 1)
+            for feat in __import__("toast.pipeline.countylines", fromlist=["get_county_lines"])
+            .get_county_lines(conn)
+            .get("features", [])
+            for ring in lines_of(feat.get("geometry") or {})
+            if len(pts := [to_px(p[1], p[0]) for p in ring if isinstance(p, list) and len(p) >= 2])
+            > 1
+            and in_frame(pts)
+        ),
+    )
+    _try(
+        "perimeters",
+        lambda: add_polys(
+            __import__("toast.pipeline.perimeters", fromlist=["get_perimeters"])
+            .get_perimeters(conn)
+            .get("features", []),
+            EMBER,
+            2,
+            46,
+        ),
+    )
+    _try(
+        "firis",
+        lambda: add_polys(
+            __import__("toast.pipeline.firis", fromlist=["get_firis"])
+            .get_firis(conn)
+            .get("features", []),
+            (255, 154, 60),
+            2,
+            46,
+        ),
+    )
+    _try(
+        "firewx",
+        lambda: add_polys(
+            __import__("toast.pipeline.firewx", fromlist=["get_fire_weather"])
+            .get_fire_weather(conn)
+            .get("features", []),
+            WARN,
+            2,
+            30,
+        ),
+    )
+    _try(
+        "evacZones",
+        lambda: add_polys(
+            __import__("toast.pipeline.evaczones", fromlist=["get_evac_zones"])
+            .get_evac_zones(conn)
+            .get("features", []),
+            DIM,
+            2,
+            56,
+            status_key="STATUS",
+            label=True,
+        ),
+    )
+    _try(
+        "closures",
+        lambda: add_points(
+            __import__("toast.pipeline.closures", fromlist=["get_closures"])
+            .get_closures(conn)
+            .get("closures", []),
+            (255, 90, 90),
+            4,
+        ),
+    )
+    _try(
+        "hotspots",
+        lambda: add_points(
+            [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT f.lat, f.lon FROM facts f JOIN sources s ON s.id = f.source_id"
+                    " WHERE s.type = 'satellite' AND f.lat IS NOT NULL"
+                    " AND unixepoch('now') - unixepoch(f.observed_at) < 86400"
+                )
+            ],
+            (255, 140, 40),
+            2,
+        ),
+    )
+    _try(
+        "aircraft",
+        lambda: add_points(
+            __import__("toast.pipeline.aircraft", fromlist=["current_aircraft"])
+            .current_aircraft(conn)
+            .get("aircraft", []),
+            (120, 200, 255),
+            3,
+        ),
+    )
 
     out = Image.alpha_composite(base, fills).convert("RGB")
     d = ImageDraw.Draw(out)
@@ -952,8 +1050,13 @@ def generate_map_snapshot(
             continue
         box = (bx0, by0, bx1, by1)
         label_boxes.append(box)
-        d.text((lx if right else x - rad - 5, yv - 8), name, font=lbl_font, fill=TXT,
-               anchor="la" if right else "ra")
+        d.text(
+            (lx if right else x - rad - 5, yv - 8),
+            name,
+            font=lbl_font,
+            fill=TXT,
+            anchor="la" if right else "ra",
+        )
     drawn = len(placed)
 
     # translucent chrome: a backing for the logo, a band for the tags — one
@@ -975,7 +1078,7 @@ def generate_map_snapshot(
     tx = 14
     if badge_path.exists():
         badge = Image.open(badge_path).convert("RGBA")
-        badge.thumbnail((40, 40), Image.LANCZOS)
+        badge.thumbnail((40, 40), Image.Resampling.LANCZOS)
         base.paste(badge, (14, 9), badge)
         tx = 14 + badge.width + 10
     d.text((tx, 14), "TOAST REPORT OPS", font=_font(20), fill=EMBER)
@@ -988,16 +1091,23 @@ def generate_map_snapshot(
     d.text((14, by), (brand or "Toast Report OPS")[:64], font=_font(15), fill=TXT)
     d.text((w - 250, by + 2), credit, font=_font(12), fill=DIM, anchor="ra")
     d.text(
-        (w - 14, by + 2), f"generated {civilian(utcnow())}",
-        font=_font(13), fill=DIM, anchor="ra",
+        (w - 14, by + 2),
+        f"generated {civilian(utcnow())}",
+        font=_font(13),
+        fill=DIM,
+        anchor="ra",
     )
 
     out = base.convert("RGB")
     buf = io.BytesIO()
     out.save(buf, format="PNG", optimize=True)
     get_logger("graphics").info(
-        "map_snapshot_rendered", fires=drawn, zoom=zoom, size=f"{w}x{h}",
-        overlays=",".join(overlays_drawn), bytes=buf.tell(),
+        "map_snapshot_rendered",
+        fires=drawn,
+        zoom=zoom,
+        size=f"{w}x{h}",
+        overlays=",".join(overlays_drawn),
+        bytes=buf.tell(),
     )
     return buf.getvalue()
 
@@ -1101,7 +1211,8 @@ def generate_evac_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
         d.text(
             (40, y),
             "No zones are currently elevated for this fire in the Cal OES layer.",
-            font=_font(18), fill=DIM,
+            font=_font(18),
+            fill=DIM,
         )
     else:
         counts: dict[str, int] = {}
@@ -1143,14 +1254,19 @@ def generate_evac_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
                 # date AND time it was issued, in plain civilian Pacific time so a
                 # resident reads it at a glance — never military, never bare UTC
                 d.text(
-                    (W - 40, y + 3), f"issued {_civilian_time(issued)}",
-                    font=_font(15), fill=DIM, anchor="ra",
+                    (W - 40, y + 3),
+                    f"issued {_civilian_time(issued)}",
+                    font=_font(15),
+                    fill=DIM,
+                    anchor="ra",
                 )
             y += 38
         if len(zones) > len(shown):
             d.text(
-                (58, y), f"+ {len(zones) - len(shown)} more zone(s) — see the workstation",
-                font=_font(16), fill=DIM,
+                (58, y),
+                f"+ {len(zones) - len(shown)} more zone(s) — see the workstation",
+                font=_font(16),
+                fill=DIM,
             )
             y += 30
 
@@ -1160,12 +1276,14 @@ def generate_evac_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
     d.text(
         (40, fy),
         "Source: Cal OES California Evacuation Aggregation Layer - official status,",
-        font=_font(15), fill=DIM,
+        font=_font(15),
+        fill=DIM,
     )
     d.text(
         (40, fy + 20),
         "rendered verbatim. ALWAYS follow the official county notice, not this card.",
-        font=_font(15), fill=DIM,
+        font=_font(15),
+        fill=DIM,
     )
     d.text((40, fy + 44), f"card created {_civilian_time(utcnow())}", font=_font(14), fill=EMBER)
     from toast.core.appsettings import brand_line
@@ -1178,7 +1296,7 @@ def generate_evac_card(conn: sqlite3.Connection, incident_id: str) -> bytes:
     badge_path = Path(__file__).resolve().parents[1] / "assets" / "ops-badge.png"
     if badge_path.exists():
         badge = Image.open(badge_path).convert("RGBA")
-        badge.thumbnail((50, 50), Image.LANCZOS)
+        badge.thumbnail((50, 50), Image.Resampling.LANCZOS)
         img.paste(badge, (bx - badge.width, fy + 4), badge)
         bx = bx - badge.width - 12
     d.text((bx, fy + 8), "TOAST REPORT OPS", font=_font(20), fill=EMBER, anchor="ra")

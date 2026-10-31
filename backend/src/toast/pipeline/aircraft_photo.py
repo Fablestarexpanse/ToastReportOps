@@ -92,8 +92,8 @@ def get_photo(conn: sqlite3.Connection, hex_id: str) -> dict[str, Any]:
             found = bool(thumb)
             # save the picture to the hull's ID: download it into the CAS so it
             # is ours and survives planespotters removing it
-            if large or thumb:
-                image_sha = _save_image(conn, large or thumb)
+            if image_url := large or thumb:
+                image_sha = _save_image(conn, image_url)
     except (FetchError, json.JSONDecodeError, KeyError, TypeError) as exc:
         # a photo lookup must never break the roster — record the miss and move on
         get_logger("aircraft_photo").info("photo_lookup_failed", hex=hex_id, error=str(exc)[:100])

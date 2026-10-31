@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import struct
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from toast.core.config import Settings
 from toast.core.db import utcnow
@@ -16,6 +16,9 @@ from toast.core.rawstore import store_raw
 from toast.queue import jobs
 from toast.queue.handlers import register
 from toast.sources import get_adapter, load_builtin_adapters
+
+if TYPE_CHECKING:
+    from toast.publishers import ImagePublisher
 
 load_builtin_adapters()
 
@@ -367,8 +370,10 @@ def evac_zone_sync_handler(conn: sqlite3.Connection, payload: dict[str, Any]) ->
 
     result = get_evac_zones(conn, refresh=True)
     get_logger("evaczones").info(
-        "evac_zone_sync", trigger_incident=payload.get("incident_id"),
-        followup=bool(payload.get("followup")), zones=result.get("count"),
+        "evac_zone_sync",
+        trigger_incident=payload.get("incident_id"),
+        followup=bool(payload.get("followup")),
+        zones=result.get("count"),
         matched=result.get("matched"),
     )
 
@@ -398,6 +403,47 @@ def telegram_notify_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -
     from toast.pipeline.telegram_ops import notify_sweep
 
     notify_sweep(conn)
+
+
+@register("water_refresh")
+def water_refresh_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Flood season only: refresh gauges + flood alerts and push urgent ones."""
+    from toast.core.hazard import includes_flood
+    from toast.pipeline.water import get_water, notify_water
+
+    if not includes_flood(conn):
+        return  # fire season: no polling, no noise
+    notify_water(conn, get_water(conn, refresh=True))
+
+
+@register("reservoir_refresh")
+def reservoir_refresh_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Keep the daily reservoir history (all seasons); phone alerts in flood season."""
+    from toast.core.hazard import includes_flood
+    from toast.pipeline.reservoirs import notify_reservoirs, refresh_reservoirs
+
+    refresh_reservoirs(conn)
+    if includes_flood(conn):
+        notify_reservoirs(conn)
+
+
+@register("archive_index")
+def archive_index_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Keep the full-text archive index current (bounded batches; a cache, rebuildable)."""
+    from toast.pipeline.archive_search import SearchUnavailable, index_pending
+
+    try:
+        index_pending(conn)
+    except SearchUnavailable as exc:
+        get_logger("archive_search").warning("archive_search_unavailable", error=str(exc))
+
+
+@register("watchdog")
+def watchdog_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
+    """Tell the operator when a feed, the queue or the model has gone quiet."""
+    from toast.pipeline.watchdog import run_watchdog
+
+    run_watchdog(conn)
 
 
 @register("telegram_poll")
@@ -534,7 +580,7 @@ def publish_handler(conn: sqlite3.Connection, payload: dict[str, Any]) -> None:
     try:
         publisher = get_publisher(channel, settings_with_credentials(conn))
         if image_bytes is not None:
-            receipt = publisher.publish(
+            receipt = cast("ImagePublisher", publisher).publish(
                 text, image=image_bytes, image_alt="incident map and statistics card"
             )
         else:

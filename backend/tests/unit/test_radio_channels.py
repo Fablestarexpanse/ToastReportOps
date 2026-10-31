@@ -129,8 +129,14 @@ def test_board_keeps_quiet_county_channels_visible(seeded):
 
 
 def test_statewide_channels_ride_separately(seeded):
-    _mk(seeded, county=None, name="ScanCal live", kind="link",
-        url="https://www.scancal.org/live.html", system=None)
+    _mk(
+        seeded,
+        county=None,
+        name="ScanCal live",
+        kind="link",
+        url="https://www.scancal.org/live.html",
+        system=None,
+    )
     board = routes.radio_board(Req(seeded))
     assert [c["name"] for c in board["statewide"]] == ["ScanCal live"]
 
@@ -145,8 +151,6 @@ def test_seed_radio_channels_idempotent(db):
     # link-outs (Broadcastify et al., per policy) + the operator's own live
     # SDR stream slot, waiting on hardware
     assert kinds == {"link", "stream"}
-    sdr = db.execute(
-        "SELECT county, url FROM radio_channels WHERE kind = 'stream'"
-    ).fetchone()
+    sdr = db.execute("SELECT county, url FROM radio_channels WHERE kind = 'stream'").fetchone()
     assert sdr["county"] == "Butte"
     assert sdr["url"] == "http://localhost:8100/calfire-btu"

@@ -1,0 +1,110 @@
+{
+  "schema": 1,
+  "min_ollama_version": "0.32.0",
+  "models": {
+    "qwen3.5:9b": {
+      "role": "chat",
+      "note": "Official Qwen3.5 9B. Starter default: same architecture as the previous default, from the vendor's own library tag. Ignores the /no_think soft switch; see docs/MODELS.md.",
+      "manifest_sha256": "56671c2ab9385f9cfcb404638e32cd62d88e3501d44822208363c010179a3c90",
+      "size_bytes": 6550825373,
+      "pinned_at": "2026-10-31"
+    },
+    "nomic-embed-text:latest": {
+      "role": "embed",
+      "dim": 768,
+      "note": "Current embedding model; matches the 768-dim sqlite-vec tables.",
+      "manifest_sha256": "0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f",
+      "size_bytes": 274302030,
+      "pinned_at": "2026-10-31"
+    },
+    "gemma4:12b-it-qat": {
+      "role": "chat",
+      "note": "Bake-off candidate for 12 GB cards (QAT build).",
+      "manifest_sha256": "38044be4f923e5a55264ed7df4eaac2676651a905f735197c504045140c02bd3",
+      "size_bytes": 7151003208,
+      "pinned_at": "2026-10-31"
+    },
+    "granite4.2:8b": {
+      "role": "chat",
+      "note": "Bake-off candidate; vendor positions it for extraction and JSON output.",
+      "manifest_sha256": "f586c02fdecdf151b656207c339aa003997345774a41768bac1fd6d2fb85913b",
+      "size_bytes": 5347929340,
+      "pinned_at": "2026-10-31"
+    },
+    "embeddinggemma-2:270m": {
+      "role": "embed",
+      "dim": 768,
+      "note": "Embedding challenger: natively 768-dim, so the vector tables keep their shape. Dimension is vendor-reported; the installer's smoke test checks it.",
+      "manifest_sha256": "c21dd30c1e38444d3b4faa091407b6fa97221447b4965d74931d43d7f09bbbfd",
+      "size_bytes": 303957280,
+      "pinned_at": "2026-10-31"
+    },
+    "gemma4:26b-a4b-it-qat": {
+      "role": "chat",
+      "note": "Bake-off candidate for 24 GB cards (mixture of experts, QAT build).",
+      "manifest_sha256": "2dd70431afed94dd3688d790443768c1487ed086b57147ff083851116ae4c4e4",
+      "size_bytes": 15634199400,
+      "pinned_at": "2026-10-31"
+    },
+    "granite4.2:30b": {
+      "role": "chat",
+      "note": "Bake-off candidate for 24 GB cards.",
+      "manifest_sha256": "be22829aa92aad40153c3b2cfd628269ac9281967e74c44d96750568a5af8ed4",
+      "size_bytes": 17721466716,
+      "pinned_at": "2026-10-31"
+    },
+    "qwen3.8:27b": {
+      "role": "chat",
+      "note": "Bake-off candidate for 24 GB cards.",
+      "manifest_sha256": "aaee06c39dcf2437cde036998d960e1fc1494b8191be7cc9657d01e509097813",
+      "size_bytes": 17741871939,
+      "pinned_at": "2026-10-31"
+    },
+    "qwen3.5:4b": {
+      "role": "chat",
+      "note": "Smaller official Qwen3.5 for 8 GB cards. Expect lower quality than the 9B; run the bake-off before relying on it.",
+      "manifest_sha256": "d8b0f5e9760cd1682034f292d7ef72ec46f432149be0df7574bf2d6e92e38c04",
+      "size_bytes": 3324173757,
+      "pinned_at": "2026-10-31"
+    }
+  },
+  "profiles": {
+    "starter": {
+      "description": "What the tool needs to run: one chat model and the embedding model (about 7 GB download, fits a 12 GB card).",
+      "models": [
+        "qwen3.5:9b",
+        "nomic-embed-text:latest"
+      ]
+    },
+    "small-8gb": {
+      "description": "For 8 GB cards: the 4B chat model and the embedding model (about 3.6 GB download).",
+      "models": [
+        "qwen3.5:4b",
+        "nomic-embed-text:latest"
+      ]
+    },
+    "bakeoff-12gb": {
+      "description": "Starter plus the 12 GB candidates, to compare on your own data (about 21 GB).",
+      "models": [
+        "qwen3.5:9b",
+        "nomic-embed-text:latest",
+        "gemma4:12b-it-qat",
+        "granite4.2:8b",
+        "embeddinggemma-2:270m"
+      ]
+    },
+    "bakeoff-24gb": {
+      "description": "The 12 GB bake-off plus the large candidates (about 72 GB).",
+      "models": [
+        "qwen3.5:9b",
+        "nomic-embed-text:latest",
+        "gemma4:12b-it-qat",
+        "granite4.2:8b",
+        "embeddinggemma-2:270m",
+        "gemma4:26b-a4b-it-qat",
+        "granite4.2:30b",
+        "qwen3.8:27b"
+      ]
+    }
+  }
+}

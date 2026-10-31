@@ -88,6 +88,7 @@ def extract_article(
         "url": url,
         "claims": len(result.claims),
         "dropped": result.dropped,
+        "unsupported": result.unsupported,
         "facts": [],
         "prompt_version": result.prompt_version,
         "california_relevant": result.california_relevant,
@@ -131,6 +132,8 @@ def extract_article(
                 "incident_name": claim.incident_name,
                 "location_text": claim.location_text,
                 "extractor_confidence": claim.confidence,
+                # what the source check flagged (cleared name/place, paraphrased evac)
+                **({"verification_issues": claim.issues} if claim.issues else {}),
                 # the extractor gave no usable date, so this is ingest time
                 # standing in — the panel must never read it as an observation
                 **({"observed_at_estimated": True} if not claim.observed_at else {}),

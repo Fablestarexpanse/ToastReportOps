@@ -52,8 +52,9 @@ def _pos_data(lat, lon):
 class TestDecode:
     def test_default_key_encrypted_text_decodes(self):
         """The path every real public-mesh packet takes."""
-        raw = _envelope(0xAABBCCDD, 777, _text_data("Smoke visible from Sawmill Peak"),
-                        encrypt=True)
+        raw = _envelope(
+            0xAABBCCDD, 777, _text_data("Smoke visible from Sawmill Peak"), encrypt=True
+        )
         out = decode_envelope(raw)
         assert out["kind"] == "text"
         assert out["text"] == "Smoke visible from Sawmill Peak"
@@ -109,8 +110,11 @@ class TestRegionGating:
         # the gateway proves itself local first
         li._handle(_envelope(0xFEED0001, 3, _pos_data(39.7, -121.8), gateway="!feed0001"))
         # then a neighbour with NO position, heard through it, is kept
-        li._handle(_envelope(0x0A, 4, _text_data("Anyone copy on Skyway?"),
-                             encrypt=True, gateway="!feed0001"))
+        li._handle(
+            _envelope(
+                0x0A, 4, _text_data("Anyone copy on Skyway?"), encrypt=True, gateway="!feed0001"
+            )
+        )
         msg = seeded.execute("SELECT * FROM mesh_messages").fetchone()
         assert msg is not None and "Skyway" in msg["text"]
         assert msg["node_id"] == "!0000000a"

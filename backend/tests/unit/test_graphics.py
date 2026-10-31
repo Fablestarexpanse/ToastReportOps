@@ -77,9 +77,7 @@ def test_attach_stores_in_cas_and_links_the_draft(seeded, monkeypatch, tmp_path)
     monkeypatch.setenv("TOAST_DATA_DIR", str(tmp_path))
     out = graphics.attach_card(seeded, draft_id)
     assert out["graphic_sha"]
-    row = seeded.execute(
-        "SELECT graphic_sha FROM drafts WHERE id = ?", (draft_id,)
-    ).fetchone()
+    row = seeded.execute("SELECT graphic_sha FROM drafts WHERE id = ?", (draft_id,)).fetchone()
     assert row["graphic_sha"] == out["graphic_sha"]
     blob = seeded.execute(
         "SELECT path FROM raw_blobs WHERE sha256 = ?", (out["graphic_sha"],)

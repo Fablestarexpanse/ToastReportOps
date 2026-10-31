@@ -11,7 +11,7 @@ a statewide California picture:
   possible on a firehose topic;
 - everything else is dropped on the floor, uncounted and unstored.
 
-When Brian's own nodes arrive they appear like any other node the moment they
+When the operator's own nodes arrive they appear like any other node the moment they
 join the mesh — and a later direct serial/TCP hookup only ADDS packets this
 listener cannot hear from here.
 
@@ -55,8 +55,19 @@ PRUNE_EVERY_S = 600
 # because this rides a firehose; the model work happens once, in WATCH, on
 # what survives clustering, not on every position beacon.
 FIRE_WORDS = (
-    "fire", "smoke", "wildfire", "flames", "burning", "spot fire", "ember",
-    "evac", "evacuat", "structure", "brush", "grass fire", "column",
+    "fire",
+    "smoke",
+    "wildfire",
+    "flames",
+    "burning",
+    "spot fire",
+    "ember",
+    "evac",
+    "evacuat",
+    "structure",
+    "brush",
+    "grass fire",
+    "column",
 )
 # emoji people actually type when they see one — a 🔥 in mesh chat is as good a
 # flag as the word. Matched as-is (not lowercased) so they survive the fold.
@@ -111,7 +122,10 @@ class MeshListener:
         self.received += 1
         if self.received in (1, 100) or self.received % 2000 == 0:
             self.log.info(
-                "mesh_rx", received=self.received, kept=self.kept, dropped=self.dropped,
+                "mesh_rx",
+                received=self.received,
+                kept=self.kept,
+                dropped=self.dropped,
                 sample_topic=msg.topic[:60],
             )
         if "/json/" in msg.topic or "/stat/" in msg.topic:
@@ -168,7 +182,7 @@ class MeshListener:
                        VALUES (?, ?, ?, ?, ?)""",
                     (node, gateway, decoded.get("channel"), decoded["text"], utcnow()),
                 )
-                if _looks_fire(decoded["text"]):
+                if cur.lastrowid is not None and _looks_fire(decoded["text"]):
                     self._feed_watch(cur.lastrowid, node, decoded["text"])
             self.kept += 1
         self.conn.commit()
@@ -177,9 +191,7 @@ class MeshListener:
     def _mesh_source(self) -> str:
         """The single sources row mesh-watch facts hang off. Tier 5 — community
         RF, quarantined from drafts and evac displays like every T5 source."""
-        row = self.conn.execute(
-            "SELECT id FROM sources WHERE adapter = 'mesh' LIMIT 1"
-        ).fetchone()
+        row = self.conn.execute("SELECT id FROM sources WHERE adapter = 'mesh' LIMIT 1").fetchone()
         if row:
             return row["id"]
         from toast.core.ids import ulid

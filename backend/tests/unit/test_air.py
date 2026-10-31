@@ -104,10 +104,23 @@ class TestMil:
             body = json.dumps(
                 {
                     "ac": [
-                        {"hex": "ae01", "lat": 39.5, "lon": -121.0, "t": "C130",
-                         "alt_baro": 8000, "gs": 200, "flight": "MAFFS3"},
-                        {"hex": "ae02", "lat": 48.0, "lon": -100.0, "t": "F16",
-                         "alt_baro": 30000, "gs": 400},
+                        {
+                            "hex": "ae01",
+                            "lat": 39.5,
+                            "lon": -121.0,
+                            "t": "C130",
+                            "alt_baro": 8000,
+                            "gs": 200,
+                            "flight": "MAFFS3",
+                        },
+                        {
+                            "hex": "ae02",
+                            "lat": 48.0,
+                            "lon": -100.0,
+                            "t": "F16",
+                            "alt_baro": 30000,
+                            "gs": 400,
+                        },
                     ]
                 }
             ).encode()
@@ -131,8 +144,18 @@ class TestBaseWatch:
         def fake_fetch(url, **kw):
             scanned.append(url)
             body = json.dumps(
-                {"ac": [{"hex": "a1", "lat": 39.79, "lon": -121.85, "t": "S2",
-                         "alt_baro": "ground", "flight": "TKR91"}]}
+                {
+                    "ac": [
+                        {
+                            "hex": "a1",
+                            "lat": 39.79,
+                            "lon": -121.85,
+                            "t": "S2",
+                            "alt_baro": "ground",
+                            "flight": "TKR91",
+                        }
+                    ]
+                }
             ).encode()
             return body, "application/json"
 

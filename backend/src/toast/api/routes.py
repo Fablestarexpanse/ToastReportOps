@@ -219,13 +219,17 @@ def activity_check_now(request: Request) -> dict:
 # first and would swallow the literal path as an id
 @router.get("/activity/proposals")
 def activity_proposals(request: Request) -> dict:
-    rows = _conn(request).execute(
-        """SELECT p.*, i.canonical_name, i.county FROM activity_proposals p
+    rows = (
+        _conn(request)
+        .execute(
+            """SELECT p.*, i.canonical_name, i.county FROM activity_proposals p
            JOIN incidents i ON i.id = p.incident_id
            WHERE i.status = 'active'
            ORDER BY CASE p.verdict WHEN 'close' THEN 0 WHEN 'uncertain' THEN 1 ELSE 2 END,
                     p.confidence DESC"""
-    ).fetchall()
+        )
+        .fetchall()
+    )
     out = []
     for r in rows:
         d = dict(r)
@@ -269,8 +273,7 @@ def set_incident_status(request: Request, incident_id: str, body: dict) -> dict:
     conn.execute(
         """INSERT INTO incident_events (id, incident_id, event, detail, actor, at)
            VALUES (?, ?, 'status_change', ?, 'operator', ?)""",
-        (_ulid(), incident_id,
-         json.dumps({"from": row["status"], "to": target}), _now()),
+        (_ulid(), incident_id, json.dumps({"from": row["status"], "to": target}), _now()),
     )
     conn.execute("DELETE FROM activity_proposals WHERE incident_id = ?", (incident_id,))
     conn.commit()
@@ -287,8 +290,13 @@ def locate_incident(request: Request, incident_id: str) -> dict:
     if inc is None:
         raise HTTPException(404, "incident not found")
     if inc["lat"] is not None and inc["lon"] is not None:
-        return {"lat": inc["lat"], "lon": inc["lon"], "method": "origin", "zoom": 13,
-                "label": "reported origin"}
+        return {
+            "lat": inc["lat"],
+            "lon": inc["lon"],
+            "method": "origin",
+            "zoom": 13,
+            "label": "reported origin",
+        }
 
     from toast.pipeline.counties import county_centroid
     from toast.pipeline.geocode import resolve_fire_name
@@ -298,12 +306,22 @@ def locate_incident(request: Request, incident_id: str) -> dict:
         conn, inc["canonical_name"], county=county_hit[0] if county_hit else inc["county"]
     )
     if match is not None:
-        return {"lat": match.lat, "lon": match.lon, "method": "named_feature", "zoom": 12,
-                "label": f"named feature: {match.name} (approximate — not a confirmed origin)"}
+        return {
+            "lat": match.lat,
+            "lon": match.lon,
+            "method": "named_feature",
+            "zoom": 12,
+            "label": f"named feature: {match.name} (approximate — not a confirmed origin)",
+        }
     if county_hit is not None:
         name, lat, lon = county_hit
-        return {"lat": lat, "lon": lon, "method": "county", "zoom": 9,
-                "label": f"{name} County centre — county-level only, no confirmed location"}
+        return {
+            "lat": lat,
+            "lon": lon,
+            "method": "county",
+            "zoom": 9,
+            "label": f"{name} County centre — county-level only, no confirmed location",
+        }
     raise HTTPException(404, "no location data for this fire yet")
 
 
@@ -509,9 +527,7 @@ def incident_history(request: Request, incident_id: str, shapes: bool = False) -
 
     perims = conn.execute(
         """SELECT mapped_at, acres, captured_at{geom} FROM perimeter_history
-           WHERE incident_id = ? ORDER BY mapped_at""".format(
-            geom=", geometry" if shapes else ""
-        ),
+           WHERE incident_id = ? ORDER BY mapped_at""".format(geom=", geometry" if shapes else ""),
         (incident_id,),
     ).fetchall()
     perimeters = [dict(r) for r in perims]
@@ -544,12 +560,16 @@ def incident_aqi(request: Request, incident_id: str, refresh: bool = False) -> d
 @router.get("/mesh/nodes")
 def mesh_nodes(request: Request, hours: int = Query(24, le=168)) -> dict:
     """California Meshtastic nodes heard recently, freshest first."""
-    rows = _conn(request).execute(
-        """SELECT * FROM mesh_nodes
+    rows = (
+        _conn(request)
+        .execute(
+            """SELECT * FROM mesh_nodes
            WHERE unixepoch('now') - unixepoch(last_heard) < ? * 3600
            ORDER BY last_heard DESC LIMIT 300""",
-        (hours,),
-    ).fetchall()
+            (hours,),
+        )
+        .fetchall()
+    )
     return {
         "nodes": [dict(r) for r in rows],
         "count": len(rows),
@@ -577,29 +597,41 @@ def mesh_messages(
         where.append("m.text LIKE ?")
         params.append(f"%{search.strip()}%")
     clause = f"WHERE {' AND '.join(where)}" if where else ""
-    rows = _conn(request).execute(
-        f"""SELECT m.*, n.long_name, n.short_name, n.lat, n.lon FROM mesh_messages m
+    rows = (
+        _conn(request)
+        .execute(
+            f"""SELECT m.*, n.long_name, n.short_name, n.lat, n.lon FROM mesh_messages m
            LEFT JOIN mesh_nodes n ON n.node_id = m.node_id
            {clause}
            ORDER BY m.rx_at DESC LIMIT ?""",
-        (*params, limit),
-    ).fetchall()
-    fire_count = _conn(request).execute(
-        "SELECT COUNT(*) FROM mesh_messages WHERE is_fire = 1"
-        " AND unixepoch('now') - unixepoch(rx_at) < 48 * 3600"
-    ).fetchone()[0]
+            (*params, limit),
+        )
+        .fetchall()
+    )
+    fire_count = (
+        _conn(request)
+        .execute(
+            "SELECT COUNT(*) FROM mesh_messages WHERE is_fire = 1"
+            " AND unixepoch('now') - unixepoch(rx_at) < 48 * 3600"
+        )
+        .fetchone()[0]
+    )
     return {"messages": [dict(r) for r in rows], "count": len(rows), "fire_count": fire_count}
 
 
 @router.get("/radio/calls")
 def radio_calls(request: Request, limit: int = Query(100, le=500)) -> dict:
     """Captured scanner traffic, newest first, transcript state shown honestly."""
-    rows = _conn(request).execute(
-        "SELECT * FROM radio_calls ORDER BY started_at DESC LIMIT ?", (limit,)
-    ).fetchall()
-    pend = _conn(request).execute(
-        "SELECT COUNT(*) AS n FROM radio_calls WHERE transcript_state = 'pending'"
-    ).fetchone()["n"]
+    rows = (
+        _conn(request)
+        .execute("SELECT * FROM radio_calls ORDER BY started_at DESC LIMIT ?", (limit,))
+        .fetchall()
+    )
+    pend = (
+        _conn(request)
+        .execute("SELECT COUNT(*) AS n FROM radio_calls WHERE transcript_state = 'pending'")
+        .fetchone()["n"]
+    )
     return {"calls": [dict(r) for r in rows], "count": len(rows), "pending_transcripts": pend}
 
 
@@ -681,25 +713,19 @@ def radio_board(request: Request) -> dict:
         c["acres"] += float(f["acreage"] or 0)
 
     channels = [
-        _channel_dict(r)
-        for r in conn.execute("SELECT * FROM radio_channels ORDER BY name")
+        _channel_dict(r) for r in conn.execute("SELECT * FROM radio_channels ORDER BY name")
     ]
     for county in by_county.values():
         county["channels"] = [c for c in channels if c["county"] == county["county"]]
-        county["broadcastify_search"] = (
-            "https://www.broadcastify.com/search/?q="
-            + quote(f"{county['county']} County CA fire")
+        county["broadcastify_search"] = "https://www.broadcastify.com/search/?q=" + quote(
+            f"{county['county']} County CA fire"
         )
         county["fires"].sort(key=lambda x: x["acreage"] or 0, reverse=True)
 
-    counties = sorted(
-        by_county.values(), key=lambda c: (not c["evac"], -c["acres"], c["county"])
-    )
+    counties = sorted(by_county.values(), key=lambda c: (not c["evac"], -c["acres"], c["county"]))
     # channels filed under a county with no active fire still deserve a card —
     # the operator saved them for a reason
-    quiet = sorted(
-        {c["county"] for c in channels if c["county"]} - set(by_county.keys())
-    )
+    quiet = sorted({c["county"] for c in channels if c["county"]} - set(by_county.keys()))
     for name in quiet:
         counties.append(
             {
@@ -776,11 +802,10 @@ def radio_channel_update(request: Request, channel_id: str, body: dict) -> dict:
     """Edit a saved channel — rename, move county, toggle, or paste a stream
     URL onto a link channel to upgrade it to in-app playback."""
     conn = _conn(request)
-    if conn.execute(
-        "SELECT 1 FROM radio_channels WHERE id = ?", (channel_id,)
-    ).fetchone() is None:
+    if conn.execute("SELECT 1 FROM radio_channels WHERE id = ?", (channel_id,)).fetchone() is None:
         raise HTTPException(404, "channel not found")
-    sets, params = [], []
+    sets: list[str] = []
+    params: list[Any] = []
     for col in ("name", "county", "url", "notes", "system", "kind"):
         if col in body:
             val = (str(body[col]).strip() or None) if body[col] is not None else None
@@ -813,9 +838,7 @@ def radio_channel_update(request: Request, channel_id: str, body: dict) -> dict:
 @router.delete("/radio/channels/{channel_id}")
 def radio_channel_delete(request: Request, channel_id: str) -> dict:
     """Channels are operator configuration, not evidence — deletable."""
-    cur = _conn(request).execute(
-        "DELETE FROM radio_channels WHERE id = ?", (channel_id,)
-    )
+    cur = _conn(request).execute("DELETE FROM radio_channels WHERE id = ?", (channel_id,))
     if cur.rowcount == 0:
         raise HTTPException(404, "channel not found")
     return {"ok": True}
@@ -851,6 +874,103 @@ def firis_perimeters(request: Request, refresh: bool = False) -> dict:
     from toast.pipeline.firis import get_firis
 
     return get_firis(_conn(request), refresh=refresh)
+
+
+@router.get("/system/status")
+def system_status(request: Request) -> dict:
+    """One-call health picture for operators and connected agents: what is wrong
+    right now (the watchdog's view), queue depth, and the hazard profile."""
+    from toast import __version__
+    from toast.core.hazard import hazard_profile
+    from toast.llm.client import client_for
+    from toast.pipeline.watchdog import find_problems
+    from toast.queue.jobs import counts_by_state
+
+    conn = _conn(request)
+    models = client_for(conn).list_models(timeout_s=3.0)
+    problems = find_problems(conn, llm_models=models)
+    return {
+        "version": __version__,
+        "ok": not problems,
+        "problems": problems,
+        "queue": counts_by_state(conn),
+        "hazard_profile": hazard_profile(conn),
+        "llm_models_available": len(models),
+    }
+
+
+@router.get("/archive/search")
+def archive_search_route(
+    request: Request, q: str, kind: str | None = None, limit: int = Query(20, ge=1, le=50)
+) -> dict:
+    """Full-text search over facts, drafts, radio transcripts and archived pages.
+    Results are short highlighted snippets; read a window with /archive/doc."""
+    from toast.pipeline.archive_search import SearchUnavailable, search
+
+    try:
+        return {"results": search(_conn(request), q, kind=kind, limit=limit)}
+    except SearchUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.get("/archive/doc")
+def archive_doc_route(
+    request: Request,
+    doc_id: str,
+    around: str | None = None,
+    max_chars: int = Query(1500, ge=200, le=2000),
+) -> dict:
+    """A capped window of one indexed document, centred on `around` if given."""
+    from toast.pipeline.archive_search import SearchUnavailable, read
+
+    try:
+        return read(_conn(request), doc_id, around=around, max_chars=max_chars)
+    except SearchUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(404, "document not in the archive index") from exc
+
+
+@router.get("/archive/status")
+def archive_status_route(request: Request) -> dict:
+    from toast.pipeline.archive_search import status
+
+    return status(_conn(request))
+
+
+@router.get("/hazard")
+def hazard(request: Request) -> dict:
+    """The active hazard profile and what the calendar suggests."""
+    from toast.core.hazard import hazard_profile, season_suggestion
+
+    return {"profile": hazard_profile(_conn(request)), "suggested": season_suggestion()}
+
+
+@router.get("/water")
+def water(request: Request, refresh: bool = False) -> dict:
+    """River gauges at/above action stage (plus pinned) and NWS flood alerts —
+    official categories relayed as issued, each with its valid time."""
+    from toast.core.hazard import hazard_profile
+    from toast.pipeline.water import get_water
+
+    conn = _conn(request)
+    try:
+        data = get_water(conn, refresh=refresh)
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    data["profile"] = hazard_profile(conn)
+    return data
+
+
+@router.get("/reservoirs")
+def reservoirs(request: Request, refresh: bool = False) -> dict:
+    """Every major California reservoir: storage, % of capacity, % of average,
+    inflow/outflow and 7-day trend — DWR/CDEC figures relayed as published."""
+    from toast.pipeline.reservoirs import get_reservoirs
+
+    return get_reservoirs(_conn(request), refresh=refresh)
 
 
 @router.get("/fire-weather")
@@ -890,29 +1010,35 @@ def get_wind(request: Request) -> dict:
     """Current surface wind at each active fire, from cached NWS observations —
     for the map's wind layer. Wind drives fire spread, so this is the single
     most operationally loaded overlay on the board."""
-    rows = _conn(request).execute(
-        """SELECT i.id, i.canonical_name, i.lat, i.lon, w.payload, w.fetched_at
+    rows = (
+        _conn(request)
+        .execute(
+            """SELECT i.id, i.canonical_name, i.lat, i.lon, w.payload, w.fetched_at
            FROM incidents i JOIN incident_weather w ON w.incident_id = i.id
            WHERE i.status = 'active' AND i.lat IS NOT NULL"""
-    ).fetchall()
+        )
+        .fetchall()
+    )
     winds = []
     for r in rows:
         p = json.loads(r["payload"])
         if p.get("wind_degrees") is None:
             continue
-        winds.append({
-            "incident_id": r["id"],
-            "name": r["canonical_name"],
-            "lat": r["lat"],
-            "lon": r["lon"],
-            "wind_degrees": p.get("wind_degrees"),
-            "wind_compass": p.get("wind_compass"),
-            "wind_mph": p.get("wind_mph"),
-            "gust_mph": p.get("gust_mph"),
-            "station_km": (p.get("station") or {}).get("distance_km"),
-            "forecast": p.get("forecast"),
-            "fetched_at": r["fetched_at"],
-        })
+        winds.append(
+            {
+                "incident_id": r["id"],
+                "name": r["canonical_name"],
+                "lat": r["lat"],
+                "lon": r["lon"],
+                "wind_degrees": p.get("wind_degrees"),
+                "wind_compass": p.get("wind_compass"),
+                "wind_mph": p.get("wind_mph"),
+                "gust_mph": p.get("gust_mph"),
+                "station_km": (p.get("station") or {}).get("distance_km"),
+                "forecast": p.get("forecast"),
+                "fetched_at": r["fetched_at"],
+            }
+        )
     return {
         "winds": winds,
         "count": len(winds),
@@ -988,14 +1114,18 @@ def get_hotspots(request: Request, hours: int = Query(24, ge=1, le=168)) -> dict
     it radiated), and the layer's own age is reported, because a bright dot from
     this morning's pass is not a live flame front.
     """
-    rows = _conn(request).execute(
-        """SELECT f.lat, f.lon, f.observed_at, f.structured, f.incident_id
+    rows = (
+        _conn(request)
+        .execute(
+            """SELECT f.lat, f.lon, f.observed_at, f.structured, f.incident_id
            FROM facts f JOIN sources s ON s.id = f.source_id
            WHERE s.type = 'satellite' AND f.lat IS NOT NULL
              AND unixepoch('now') - unixepoch(f.observed_at) < ? * 3600
            ORDER BY f.observed_at DESC""",
-        (hours,),
-    ).fetchall()
+            (hours,),
+        )
+        .fetchall()
+    )
     points = []
     latest = None
     for r in rows:
@@ -1018,8 +1148,7 @@ def get_hotspots(request: Request, hours: int = Query(24, ge=1, le=168)) -> dict
         "latest_pass": latest,
         "window_hours": hours,
         "note": (
-            "NASA FIRMS VIIRS 375 m — a hot pixel at satellite overpass, "
-            "not a confirmed live fire."
+            "NASA FIRMS VIIRS 375 m — a hot pixel at satellite overpass, not a confirmed live fire."
         ),
     }
 
@@ -1421,9 +1550,11 @@ def deferred_count(request: Request) -> dict:
     """How many facts the operator has set aside. 'Deferred' means 'later', so
     there must always be a way back to them — this is what the restore control
     counts against."""
-    n = _conn(request).execute(
-        "SELECT COUNT(*) AS n FROM fact_triage WHERE state = 'deferred'"
-    ).fetchone()["n"]
+    n = (
+        _conn(request)
+        .execute("SELECT COUNT(*) AS n FROM fact_triage WHERE state = 'deferred'")
+        .fetchone()["n"]
+    )
     return {"deferred": n}
 
 
@@ -1632,9 +1763,7 @@ def create_draft(request: Request, incident_id: str, body: dict) -> dict:
 
 
 @router.get("/drafts")
-def list_drafts(
-    request: Request, status: str | None = None, archived: bool = False
-) -> dict:
+def list_drafts(request: Request, status: str | None = None, archived: bool = False) -> dict:
     clauses, params = [f"d.archived = {1 if archived else 0}"], []
     if status:
         clauses.append("d.status = ?")
@@ -1747,14 +1876,18 @@ def get_draft(request: Request, draft_id: str) -> dict:
 def upcoming_publications(request: Request) -> dict:
     """Every scheduled release across all drafts — so a pending post is never
     a surprise and never double-scheduled."""
-    rows = _conn(request).execute(
-        """SELECT p.id, p.channel, p.not_before, p.draft_id, d.title
+    rows = (
+        _conn(request)
+        .execute(
+            """SELECT p.id, p.channel, p.not_before, p.draft_id, d.title
            FROM publications p JOIN drafts d ON d.id = p.draft_id
            WHERE p.status = 'queued' AND p.enqueued = 0
              AND p.not_before IS NOT NULL
              AND unixepoch(p.not_before) > unixepoch('now')
            ORDER BY p.not_before"""
-    ).fetchall()
+        )
+        .fetchall()
+    )
     return {"upcoming": [dict(r) for r in rows], "count": len(rows)}
 
 
@@ -1867,9 +2000,10 @@ def create_manual_draft(request: Request, body: dict) -> dict:
 
     conn = _conn(request)
     incident_id = (body.get("incident_id") or "").strip() or None
-    if incident_id and conn.execute(
-        "SELECT 1 FROM incidents WHERE id = ?", (incident_id,)
-    ).fetchone() is None:
+    if (
+        incident_id
+        and conn.execute("SELECT 1 FROM incidents WHERE id = ?", (incident_id,)).fetchone() is None
+    ):
         raise HTTPException(404, "incident not found")
     did = _ulid()
     now = utcnow()
@@ -2062,9 +2196,7 @@ def map_snapshot(
 
     from toast.pipeline.graphics import generate_map_snapshot
 
-    png = generate_map_snapshot(
-        _conn(request), lat, lon, int(round(zoom)), w, h, basemap, layers
-    )
+    png = generate_map_snapshot(_conn(request), lat, lon, int(round(zoom)), w, h, basemap, layers)
     return Response(content=png, media_type="image/png")
 
 
@@ -2127,9 +2259,7 @@ def release_draft_route(request: Request, draft_id: str, body: dict) -> dict:
         if at is None:
             raise HTTPException(400, "'at' must be an ISO timestamp")
     try:
-        return release_draft(
-            _conn(request), draft_id, list(body.get("channels") or []), at=at
-        )
+        return release_draft(_conn(request), draft_id, list(body.get("channels") or []), at=at)
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
 

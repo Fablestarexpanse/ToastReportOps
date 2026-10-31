@@ -20,12 +20,18 @@ class Settings(BaseSettings):
 
     # LLM (OpenAI-compatible local endpoint)
     llm_base_url: str = "http://localhost:11434/v1"
-    llm_model: str = "qwen3"
+    llm_model: str = "qwen3.5:9b"  # official library tag; pinned in model_manifest.json
     llm_api_key: str = "unused-for-local"
     llm_timeout_s: float = 300.0
     # qwen3 and similar reasoning models default to slow "thinking"; the soft
     # switch below is appended to the system prompt to skip it for extraction.
     llm_no_think_token: str = "/no_think"
+    # How "no thinking" is asked for. "soft" prepends llm_no_think_token to the prompt
+    # over the OpenAI-compatible route (what qwen3 honours; Qwen3.5 does NOT).
+    # "native" calls Ollama's own /api/chat with think:false, which Qwen3.5 and Gemma 4
+    # do honour. Run `python -m toast.eval.model_bakeoff probe` to see which works on
+    # your Ollama and model before switching.
+    llm_think_mode: str = "soft"  # soft | native
     # ...but that blanket suppression was chosen for EXTRACTION and then
     # inherited by every call. Extraction is transcription — "pull the acreage
     # out of this sentence" — and reasoning there is pure latency on the hottest
@@ -45,6 +51,9 @@ class Settings(BaseSettings):
     # operator API
     api_bind: str = "127.0.0.1"
     api_port: int = 8400
+    # extra hostnames accepted in Host/Origin besides loopback (comma-separated);
+    # `api` is the compose service name
+    api_allowed_hosts: str = "api"
 
     # per-service health endpoint (workers/scheduler); 0 disables
     health_port: int = 0
@@ -75,6 +84,9 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_channel_id: str = ""
     telegram_ops_chat_id: str = ""
+    # Telegram user ids allowed to press APPROVE / SEND BACK in the ops chat
+    # (comma-separated). Empty = anyone in that chat.
+    telegram_ops_user_ids: str = ""
     bluesky_handle: str = ""
     bluesky_app_password: str = ""
     x_api_key: str = ""

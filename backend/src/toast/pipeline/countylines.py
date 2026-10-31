@@ -68,9 +68,7 @@ def get_county_lines(conn: sqlite3.Connection, *, refresh: bool = False) -> dict
         data = fetch_county_lines()
     except (FetchError, ValueError, RuntimeError) as exc:
         get_logger("countylines").warning("county_lines_fetch_failed", error=repr(exc))
-        stale = conn.execute(
-            "SELECT payload FROM map_cache WHERE key = ?", (CACHE_KEY,)
-        ).fetchone()
+        stale = conn.execute("SELECT payload FROM map_cache WHERE key = ?", (CACHE_KEY,)).fetchone()
         if stale:
             out = json.loads(stale["payload"])
             out["cached"] = True

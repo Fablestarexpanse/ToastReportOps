@@ -189,7 +189,8 @@ class TestRoster:
 
 
 class TestPhoto:
-    def test_photo_is_fetched_cached_and_credited(self, seeded, monkeypatch):
+    def test_photo_is_fetched_cached_and_credited(self, seeded, monkeypatch, tmp_path):
+        monkeypatch.setenv("TOAST_DATA_DIR", str(tmp_path))  # the CAS write must not land in ./data
         from toast.pipeline import aircraft_photo
 
         calls = []

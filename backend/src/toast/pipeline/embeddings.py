@@ -13,7 +13,14 @@ import struct
 
 from toast.core.config import Settings
 
-DUP_THRESHOLD = 0.10  # cosine distance below this = near-duplicate content
+# NOTE on units: the fact_embeddings vec0 table is created without a distance_metric,
+# so sqlite-vec reports plain L2 (euclidean) distance, NOT cosine distance (verified
+# against the installed extension). For unit-length vectors L2 = sqrt(2 * (1 - cos)), so
+# 0.10 means cosine similarity >= ~0.995 and 0.45 means >= ~0.90. The thresholds below
+# were tuned empirically in these units; changing the metric or the embedding model
+# means re-tuning (python -m toast.eval.model_bakeoff embeddings does it from labelled
+# pairs).
+DUP_THRESHOLD = 0.10  # L2 distance below this = near-duplicate content
 # Tuned against the live ledger (see docs/CORROBORATION.md): with the same-kind
 # guard, 0.45 captures 22 genuine same-incident matches vs 14 at 0.35 while
 # admitting zero cross-kind pairs; 0.55 lets 14 cross-kind pairs in.

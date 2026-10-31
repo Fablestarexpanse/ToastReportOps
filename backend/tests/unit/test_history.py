@@ -5,7 +5,6 @@ growth curve. And perimeter snapshots must be idempotent: a hundred re-fetches
 store nothing until the IR flight actually flies again.
 """
 
-
 from toast.api import routes
 from toast.core.ids import ulid
 from toast.pipeline.perimeters import _archive_snapshots

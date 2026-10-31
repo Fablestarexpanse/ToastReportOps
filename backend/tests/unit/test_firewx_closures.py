@@ -5,7 +5,6 @@ drops routine lane work; a dead NWS zone degrades the layer instead of failing
 it; and both payloads carry the labels the UI is required to show.
 """
 
-
 from toast.pipeline import closures, firewx
 
 
@@ -33,9 +32,9 @@ class TestClosures:
     def test_full_near_fire_kept_lane_work_dropped(self, seeded, monkeypatch):
         seeded.execute("UPDATE incidents SET lat = 39.76, lon = -121.62 WHERE id = 'i1'")
         records = [
-            self._rec("Full", 39.75, -121.60),          # full + near the fire -> kept
-            self._rec("Lane", 39.75, -121.60),          # near, but only a lane -> dropped
-            self._rec("Full", 34.0, -118.2),            # full, but 500 km away -> dropped
+            self._rec("Full", 39.75, -121.60),  # full + near the fire -> kept
+            self._rec("Lane", 39.75, -121.60),  # near, but only a lane -> dropped
+            self._rec("Full", 34.0, -118.2),  # full, but 500 km away -> dropped
             # far from any fire but fire-worded -> kept
             self._rec("Full", 41.9, -124.1, "Fire equipment staging"),
         ]

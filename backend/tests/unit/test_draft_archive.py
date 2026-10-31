@@ -25,7 +25,7 @@ def _draft(db, status="draft"):
     db.execute(
         "INSERT INTO drafts (id, kind, body_md, status, approved_by, approved_at,"
         " created_at, updated_at)"
-        " VALUES (?, 'update', 'x', 'draft', 'brian', ?, ?, ?)",
+        " VALUES (?, 'update', 'x', 'draft', 'operator', ?, ?, ?)",
         (did, NOW, NOW, NOW),
     )
     order = ["needs_review", "approved", "published"]
@@ -76,6 +76,4 @@ def test_a_never_published_draft_deletes_cleanly(seeded):
     did = _draft(seeded)
     routes.delete_draft(req, did)
     assert did not in _ids(req)
-    assert (
-        seeded.execute("SELECT COUNT(*) FROM drafts WHERE id = ?", (did,)).fetchone()[0] == 0
-    )
+    assert seeded.execute("SELECT COUNT(*) FROM drafts WHERE id = ?", (did,)).fetchone()[0] == 0

@@ -13,10 +13,37 @@ for one-click relaunch. (Public site preview: http://localhost:8400/site/)
 To stop: close the window, then `docker compose --profile desktop down` if you
 want the backend down too (it's fine to leave it running).
 
+## Update to the latest version
+
+Double-click **`Update and Launch.cmd`** (same folder). In order, it: checks Docker
+and git; takes a verified database snapshot into `data\backups`; pulls the latest
+code with `git pull --ff-only`; rebuilds the backend only if backend files
+changed and reinstalls UI packages only if `package-lock.json` changed; restarts
+the stack; waits for the API to report healthy; prints what changed; and opens
+the workstation.
+
+- **It stops before changing anything** if Docker isn't running, GitHub can't be
+  reached, the snapshot fails, or the code can't fast-forward (e.g. your local
+  edits would conflict). It never merges and never discards local changes.
+- **If the API doesn't come back healthy** it tells you how to go back
+  (`git checkout <old commit>` and rebuild). Database migrations only move
+  forward, so if the old code can't read the migrated database, restore the
+  pre-update snapshot (see docs/BACKUP-RESTORE.md).
+- **Third-party images** (Ollama, SearXNG, Local Deep Research, Icecast) are pinned by
+  tag and digest in `docker-compose.yml`, so they change only when an update changes a
+  pin; `docker compose up` then fetches exactly that image. `-PullImages` re-downloads
+  the pinned images (useful only to repair a damaged one). To move to a newer image,
+  change its pin deliberately and test.
+- `ToastReport.cmd` still launches *without* updating. Extra options go after the
+  command name: `-NoLaunch`, `-SkipBackup`, `-Rebuild`.
+- This script has only been reviewed, not run on Windows — try it once while the
+  stack is idle and read the output before relying on it during a fire.
+
 ## Start / stop (Phase 0)
 
 ```sh
-docker compose --profile desktop up -d     # everything
+docker compose --profile desktop up -d     # everything except the optional MESH listener
+docker compose --profile desktop --profile mesh up -d   # ...and MESH too
 docker compose --profile desktop down
 docker compose restart <service>           # any service is individually restartable
 docker compose logs -f <service>
@@ -28,6 +55,13 @@ right now: `dead_recent`, a 6-hour window, not the lifetime total) — plus a
 queue chip. **Click the queue chip** to open the dead-letter panel: what died,
 why, how long ago, and a RETRY button per stage. Publishing is deliberately
 excluded from bulk retry, because a dead publish job may already have posted.
+
+**MESH is optional (2026-10-31).** Its listener uses the Meshtastic library, which is
+GPL-3.0, so the default stack leaves it out. To keep using the MESH tab, add
+`TOAST_MESH=1` to `.env`; the three buttons then build and start the `mesh` service
+(its image alone gets the `mesh` extra). If you were running MESH before this change,
+add that line or the tab stops receiving new traffic after your next update. To turn it
+off again, remove the line and run `docker compose stop mesh`.
 
 ## Configuration (Phase 0)
 
@@ -229,13 +263,23 @@ self-contained incident bundle (ledger JSONL, media manifest, GeoJSON perimeters
 
 No separate program to remember: `docker compose --profile desktop up` starts
 an `llm` service (Ollama in a container, GPU passthrough) alongside everything
-else. First boot pulls the models named in `LLM_PULL_MODEL` /
-`LLM_EMBED_PULL_MODEL` into `OLLAMA_MODELS_DIR` (a named volume by default; on
-this machine it is pointed at the existing F:\Pi Coder\models cache so
-nothing re-downloads). Every later boot is instant.
+else. Models live in `OLLAMA_MODELS_DIR` (a named volume by default; on this
+machine it can point at an existing host model cache so nothing
+re-downloads). Since 2026-10-31 the container downloads nothing by itself — see
+below.
 
 Why: twice now a separately-started host Ollama was down without anyone
 noticing, and extraction/watch/triage jobs dead-lettered silently. The stack
 owning its model ends that failure class. The backend contract is unchanged —
 `LLM_BASE_URL=http://llm:11434/v1` — so pointing it at OpenAI/OpenRouter/etc.
 with a key still overrides for anyone who prefers cloud.
+
+**Installing or changing models (2026-10-31):** use `Install Models.cmd` (or
+`docker compose --profile desktop exec -T api python -m toast.modelsetup install`).
+It installs only official, digest-pinned models, refuses a tag that changed upstream,
+skips models too big for the GPU and smoke-tests each one; `modelsetup status` shows
+whether what's installed still matches its pin. The old first-boot auto-pull is off;
+`LLM_AUTO_PULL=1` in `.env` restores it, unverified. `ToastReport.cmd` tells you when
+models are missing. Profiles, the bake-off and the default-model
+change are in docs/MODELS.md. The watchdog reports "the language model endpoint is
+unreachable" to the ops chat if the `llm` service goes away.

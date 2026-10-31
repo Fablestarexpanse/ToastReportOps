@@ -69,7 +69,8 @@ def fire_timeline(conn: sqlite3.Connection, incident_id: str) -> dict[str, Any]:
     # which facts were later superseded — shown struck-through, not hidden, so
     # the progression (acreage climbing, containment growing) stays visible
     superseded = {
-        r[0] for r in conn.execute(
+        r[0]
+        for r in conn.execute(
             "SELECT supersedes FROM facts WHERE supersedes IS NOT NULL AND supersedes != ''"
         )
     }
@@ -95,19 +96,21 @@ def fire_timeline(conn: sqlite3.Connection, incident_id: str) -> dict[str, Any]:
             if start_seen:
                 continue
             start_seen = True
-        events.append({
-            "at": f["observed_at"],
-            "ingested_at": f["ingested_at"],
-            "category": _KIND_CATEGORY.get(f["kind"], "note"),
-            "title": _fact_title(f),
-            "detail": (f["content"] or "").strip() or None,
-            "source": f["source_name"],
-            "tier": f["tier"],
-            "confidence": f["confidence"],
-            "starred": bool(f["starred"]),
-            "superseded": f["id"] in superseded,
-            "url": None,
-        })
+        events.append(
+            {
+                "at": f["observed_at"],
+                "ingested_at": f["ingested_at"],
+                "category": _KIND_CATEGORY.get(f["kind"], "note"),
+                "title": _fact_title(f),
+                "detail": (f["content"] or "").strip() or None,
+                "source": f["source_name"],
+                "tier": f["tier"],
+                "confidence": f["confidence"],
+                "starred": bool(f["starred"]),
+                "superseded": f["id"] in superseded,
+                "url": None,
+            }
+        )
 
     # 2) articles at their release time — published pieces about this fire
     pubs = conn.execute(
@@ -117,16 +120,18 @@ def fire_timeline(conn: sqlite3.Connection, incident_id: str) -> dict[str, Any]:
         (incident_id,),
     ).fetchall()
     for p in pubs:
-        events.append({
-            "at": p["sent_at"],
-            "category": "article",
-            "title": p["title"] or "Published report",
-            "detail": f"Released to {p['channel']}" if p["channel"] else None,
-            "source": p["channel"],
-            "tier": None,
-            "url": p["external_url"],
-            "superseded": False,
-        })
+        events.append(
+            {
+                "at": p["sent_at"],
+                "category": "article",
+                "title": p["title"] or "Published report",
+                "detail": f"Released to {p['channel']}" if p["channel"] else None,
+                "source": p["channel"],
+                "tier": None,
+                "url": p["external_url"],
+                "superseded": False,
+            }
+        )
 
     # 3) reports the operator approved (even if not externally published) — the
     #    newsroom paper trail for this fire
@@ -137,16 +142,18 @@ def fire_timeline(conn: sqlite3.Connection, incident_id: str) -> dict[str, Any]:
         (incident_id,),
     ).fetchall()
     for r in reports:
-        events.append({
-            "at": r["approved_at"] or r["created_at"],
-            "category": "report",
-            "title": r["title"] or "Report",
-            "detail": f"{(r['kind'] or 'report').upper()} · {r['status']}",
-            "source": "Newsroom",
-            "tier": None,
-            "url": None,
-            "superseded": False,
-        })
+        events.append(
+            {
+                "at": r["approved_at"] or r["created_at"],
+                "category": "report",
+                "title": r["title"] or "Report",
+                "detail": f"{(r['kind'] or 'report').upper()} · {r['status']}",
+                "source": "Newsroom",
+                "tier": None,
+                "url": None,
+                "superseded": False,
+            }
+        )
 
     # 4) perimeter maps — each infrared/GIS footprint as it landed
     perims = conn.execute(
@@ -156,16 +163,18 @@ def fire_timeline(conn: sqlite3.Connection, incident_id: str) -> dict[str, Any]:
     ).fetchall()
     for pm in perims:
         acres = f"{int(pm['acres']):,} ac" if pm["acres"] is not None else "mapped"
-        events.append({
-            "at": pm["mapped_at"] or pm["captured_at"],
-            "category": "perimeter",
-            "title": f"Perimeter mapped — {acres}",
-            "detail": None,
-            "source": "Perimeter feed",
-            "tier": 1,
-            "url": None,
-            "superseded": False,
-        })
+        events.append(
+            {
+                "at": pm["mapped_at"] or pm["captured_at"],
+                "category": "perimeter",
+                "title": f"Perimeter mapped — {acres}",
+                "detail": None,
+                "source": "Perimeter feed",
+                "tier": 1,
+                "url": None,
+                "superseded": False,
+            }
+        )
 
     # 5) lifecycle marks — created, status changes (contained, reopened)
     for ev in conn.execute(
@@ -173,16 +182,18 @@ def fire_timeline(conn: sqlite3.Connection, incident_id: str) -> dict[str, Any]:
         " ORDER BY at ASC",
         (incident_id,),
     ).fetchall():
-        events.append({
-            "at": ev["at"],
-            "category": "status",
-            "title": (ev["event"] or "event").replace("_", " ").title(),
-            "detail": ev["detail"],
-            "source": ev["actor"],
-            "tier": None,
-            "url": None,
-            "superseded": False,
-        })
+        events.append(
+            {
+                "at": ev["at"],
+                "category": "status",
+                "title": (ev["event"] or "event").replace("_", " ").title(),
+                "detail": ev["detail"],
+                "source": ev["actor"],
+                "tier": None,
+                "url": None,
+                "superseded": False,
+            }
+        )
 
     events = [e for e in events if e["at"]]
     events.sort(key=lambda e: e["at"])

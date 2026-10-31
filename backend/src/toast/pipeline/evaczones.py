@@ -81,8 +81,7 @@ def public_zone_id(raw: str | None) -> str | None:
 def hazard_of(props: dict[str, Any]) -> str | None:
     """What this evacuation is FOR, from the zone's own official text."""
     text = " ".join(
-        str(props.get(k) or "")
-        for k in ("EVENT_TYPE", "NOTES", "CRITICAL_INFO", "PUBLIC_INFO")
+        str(props.get(k) or "") for k in ("EVENT_TYPE", "NOTES", "CRITICAL_INFO", "PUBLIC_INFO")
     ).lower()
     if not text.strip():
         return None

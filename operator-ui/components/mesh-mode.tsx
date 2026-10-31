@@ -23,7 +23,7 @@ import { age, fmtStamp } from "@/lib/time";
    Why it's here at all: LoRa mesh keeps moving traffic when PSPS takes the
    internet and cell towers with it — Paradise knows exactly why that matters.
    Honesty cuts both ways, and the banner says so: the MESH ITSELF needs no
-   internet, but this VIEW of it (public broker) does. Brian's own nodes appear
+   internet, but this VIEW of it (public broker) does. The operator's own nodes appear
    like any other the moment they join; a direct serial hookup later only adds
    packets the broker can't hear.
 

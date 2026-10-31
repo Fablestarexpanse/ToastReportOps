@@ -45,10 +45,16 @@ def test_attach_proposal_stores_with_candidate_validation(seeded):
         " WHERE id = 'i1'"
     )
     fid = _claim(seeded, "The Sawmill Fire burned 400 acres near Paradise.", name="Sawmill Fire")
-    llm = FakeLLM([
-        {"action": "attach", "incident_id": "i1", "confidence": 0.9,
-         "reasoning": "Name matches the tracked Sawmill Fire."},
-    ])
+    llm = FakeLLM(
+        [
+            {
+                "action": "attach",
+                "incident_id": "i1",
+                "confidence": 0.9,
+                "reasoning": "Name matches the tracked Sawmill Fire.",
+            },
+        ]
+    )
     out = autotriage.propose_batch(seeded, client=llm)
     assert out["proposed"] == 1
     prop = seeded.execute("SELECT * FROM triage_proposals WHERE fact_id = ?", (fid,)).fetchone()
@@ -64,10 +70,16 @@ def test_attach_proposal_stores_with_candidate_validation(seeded):
 
 def test_a_model_invented_id_is_never_trusted(seeded):
     fid = _claim(seeded)
-    llm = FakeLLM([
-        {"action": "attach", "incident_id": "totally-made-up", "confidence": 0.99,
-         "reasoning": "trust me"},
-    ])
+    llm = FakeLLM(
+        [
+            {
+                "action": "attach",
+                "incident_id": "totally-made-up",
+                "confidence": 0.99,
+                "reasoning": "trust me",
+            },
+        ]
+    )
     autotriage.propose_batch(seeded, client=llm)
     prop = seeded.execute("SELECT * FROM triage_proposals WHERE fact_id = ?", (fid,)).fetchone()
     assert prop["action"] == "unsure" and prop["incident_id"] is None
@@ -75,10 +87,12 @@ def test_a_model_invented_id_is_never_trusted(seeded):
 
 def test_proposed_items_are_not_reproposed(seeded):
     _claim(seeded)
-    llm = FakeLLM([
-        {"action": "not_incident", "confidence": 0.8, "reasoning": "old fire retrospective"},
-        {"action": "not_incident", "confidence": 0.8, "reasoning": "should never be asked"},
-    ])
+    llm = FakeLLM(
+        [
+            {"action": "not_incident", "confidence": 0.8, "reasoning": "old fire retrospective"},
+            {"action": "not_incident", "confidence": 0.8, "reasoning": "should never be asked"},
+        ]
+    )
     assert autotriage.propose_batch(seeded, client=llm)["proposed"] == 1
     assert autotriage.propose_batch(seeded, client=llm)["proposed"] == 0
     assert len(llm.prompts) == 1

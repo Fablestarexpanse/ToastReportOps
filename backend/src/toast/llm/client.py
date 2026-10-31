@@ -58,6 +58,7 @@ class LLMClient:
         self.api_key = s.llm_api_key
         self.default_timeout_s = s.llm_timeout_s
         self.no_think_token = s.llm_no_think_token
+        self.think_mode = s.llm_think_mode if s.llm_think_mode in ("soft", "native") else "soft"
         self.reasoning_on_judgment = s.llm_reasoning_on_judgment
 
     def _headers(self) -> dict[str, str]:
@@ -76,6 +77,8 @@ class LLMClient:
         no_think appends the reasoning-skip soft switch to the first system
         message (harmless for models that don't recognize it)."""
         msgs = [dict(m) for m in messages]
+        if self.think_mode == "native":
+            return self._native_chat_json(msgs, temperature, timeout_s, no_think)
         if no_think and self.no_think_token and msgs:
             msgs[0]["content"] = f"{self.no_think_token}\n{msgs[0]['content']}"
         # Every prompt in this pipeline is a single system message — the whole
@@ -101,6 +104,41 @@ class LLMClient:
             raise LLMError(f"chat failed: {resp.status_code} {resp.text[:300]}")
         content = resp.json()["choices"][0]["message"]["content"]
         return _parse_json_lenient(content)
+
+    def _native_chat_json(
+        self,
+        msgs: list[dict[str, str]],
+        temperature: float,
+        timeout_s: float | None,
+        no_think: bool,
+    ) -> Any:
+        """Same contract as chat_json, over Ollama's native /api/chat. Thinking is
+        switched off with the real `think` parameter (not a prompt hint); when it is
+        left on, the reasoning comes back in a separate field, not in the content."""
+        if not any(m.get("role") == "user" for m in msgs):
+            msgs.append({"role": "user", "content": "Proceed."})
+        body: dict[str, Any] = {
+            "model": self.model,
+            "messages": msgs,
+            "stream": False,
+            "format": "json",
+            "options": {"temperature": temperature},
+        }
+        if no_think:
+            body["think"] = False
+        resp = httpx.post(
+            f"{self.native_url}/api/chat",
+            json=body,
+            timeout=timeout_s or self.default_timeout_s,
+        )
+        if resp.status_code != 200:
+            raise LLMError(f"chat failed: {resp.status_code} {resp.text[:300]}")
+        return _parse_json_lenient(resp.json().get("message", {}).get("content", ""))
+
+    @property
+    def native_url(self) -> str:
+        """Ollama's own API root: the OpenAI-compatible base URL without /v1."""
+        return self.base_url.removesuffix("/v1")
 
     def judge_json(
         self,

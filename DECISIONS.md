@@ -2,6 +2,27 @@
 
 Architectural decision log. Newest first. Each entry: context → decision → why.
 
+## 2026-10-31 — Archive search, capped agent reads, no automatic model downloads
+
+- Toast needed to search its own text (facts, drafts, radio transcripts, archived
+  pages) for the operator's agents. We had already hardened a desktop file-search
+  tool for our agents; rather than embed it, we took its *ideas* and wrote our own,
+  smaller version for Toast's data. No code was copied, and the feature is simply
+  "archive search".
+- **Index:** SQLite FTS5 (part of SQLite — no new software, nothing to download),
+  created on first use rather than in a migration so a build without FTS5 degrades
+  to "unavailable" instead of failing startup. It's a cache, rebuildable from the
+  ledger. JSON feeds are not indexed (their content is already facts).
+- **Capped reads:** most of what agents read is scraped text, so every agent result
+  is bounded (text field 600 chars, list 50 items, result 16,000 chars, snippet 160,
+  archive read 2,000). Before this, one call could return 60,000 characters.
+- **Typed queries are inert:** every term is quoted before it reaches FTS5.
+- **No automatic model downloads:** the `llm` container's first-boot pull is now
+  opt-in (`LLM_AUTO_PULL=1`); the pinned installer is the default path.
+- Left out on purpose: OCR (needs an external engine and language data, which would
+  have to be pinned and never auto-downloaded), file watching outside Toast's own
+  data, and semantic search (facts already have embeddings).
+
 ## 2026-07-22 — Auto-close on official word; live signals veto to a proposal
 
 - Fires only ever entered the system; nothing asked whether they should leave,
@@ -116,7 +137,7 @@ that attempts the violation and asserts the refusal.
 ## 2026-07-20 — No automatic publishing to any website (supersedes the entry below)
 
 - **Operator decision**: reports are published by hand until Toast Report is
-  wired into Brian's own site. Nothing auto-deploys.
+  wired into the operator's own site. Nothing auto-deploys.
 - **Cloudflare removed entirely** — config, docs, and the deploy step. There is
   no production host and no CF token to acquire.
 - `approved → published` fans out to *social* channels only (credential-gated).
@@ -364,7 +385,7 @@ that attempts the violation and asserts the refusal.
 ## 2026-07-21 — Two decisions waiting on the operator (researched, not built)
 
 The assessment ranked these the two biggest remaining gaps against Watch Duty.
-Neither is a code task until Brian decides; the research is recorded here so
+Neither is a code task until the operator decides; the research is recorded here so
 the decision needs no re-work.
 
 ### 1. Evacuation zones as map polygons — RESOLVED 2026-07-21

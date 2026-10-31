@@ -162,16 +162,19 @@ def gather_evidence(
         "days_since_last_fact": round(days_quiet, 1) if days_quiet is not None else None,
         "containment_pct": containment["containment_pct"] if containment else None,
         "official_status": (
-            "active" if official and official["is_active"]
-            else "inactive" if official
-            else "active (federal)" if fed_status == "current"
-            else "inactive (federal — off the national current-fire list)" if fed_status
-            else "not on CAL FIRE list" if cfid
+            "active"
+            if official and official["is_active"]
+            else "inactive"
+            if official
+            else "active (federal)"
+            if fed_status == "current"
+            else "inactive (federal — off the national current-fire list)"
+            if fed_status
+            else "not on CAL FIRE list"
+            if cfid
             else "never had a CAL FIRE id"
         ),
-        "official_containment": (
-            official["containment"] if official else fed_containment
-        ),
+        "official_containment": (official["containment"] if official else fed_containment),
         "hotspots_within_8km": hotspots_near,
         "fire_aircraft_last_48h": aircraft,
         "aircraft_overhead_6h": len(overhead),
@@ -183,10 +186,7 @@ def _rules_verdict(ev: dict[str, Any]) -> tuple[str, str]:
     and always stored beside the LLM's view."""
     quiet = ev["days_since_last_fact"] or 0
     cont = ev["official_containment"] or ev["containment_pct"] or 0
-    signals_out = (
-        ev["official_status"].startswith("inactive")
-        or (cont >= 95 and quiet >= 2)
-    )
+    signals_out = ev["official_status"].startswith("inactive") or (cont >= 95 and quiet >= 2)
     signals_alive = ev["hotspots_within_8km"] > 0 or ev["aircraft_overhead_6h"] > 0
     if signals_out and not signals_alive:
         return "close", (
@@ -207,12 +207,8 @@ def _rules_verdict(ev: dict[str, Any]) -> tuple[str, str]:
     return "uncertain", "signals are mixed — needs eyes"
 
 
-def check_active(
-    conn: sqlite3.Connection, *, client: LLMClient | None = None
-) -> dict[str, Any]:
-    incidents = conn.execute(
-        "SELECT * FROM incidents WHERE status = 'active'"
-    ).fetchall()
+def check_active(conn: sqlite3.Connection, *, client: LLMClient | None = None) -> dict[str, Any]:
+    incidents = conn.execute("SELECT * FROM incidents WHERE status = 'active'").fetchall()
     calfire = _calfire_live(conn)
     wfigs = _wfigs_live()
     llm = client
@@ -253,17 +249,25 @@ def check_active(
                 conn.execute(
                     """INSERT INTO incident_events (id, incident_id, event, detail, actor, at)
                        VALUES (?, ?, 'status_change', ?, ?, ?)""",
-                    (_ulid(), inc["id"],
-                     json.dumps({"from": "active", "to": "contained",
-                                 "why": (
-                                     "no longer on NIFC's national current-fire list"
-                                     if federal else "CAL FIRE lists this fire inactive"
-                                 )}),
-                     "nifc-official" if federal else "calfire-official", utcnow()),
+                    (
+                        _ulid(),
+                        inc["id"],
+                        json.dumps(
+                            {
+                                "from": "active",
+                                "to": "contained",
+                                "why": (
+                                    "no longer on NIFC's national current-fire list"
+                                    if federal
+                                    else "CAL FIRE lists this fire inactive"
+                                ),
+                            }
+                        ),
+                        "nifc-official" if federal else "calfire-official",
+                        utcnow(),
+                    ),
                 )
-                conn.execute(
-                    "DELETE FROM activity_proposals WHERE incident_id = ?", (inc["id"],)
-                )
+                conn.execute("DELETE FROM activity_proposals WHERE incident_id = ?", (inc["id"],))
             auto_closed += 1
             log.info("auto_closed_official", incident=inc["canonical_name"])
             continue
@@ -284,11 +288,18 @@ def check_active(
             ]
             try:
                 # judgment: "is this fire still burning?" weighed over evidence
-                out = llm.judge_json([{"role": "system", "content": prompt.render(
-                    name=inc["canonical_name"],
-                    evidence=json.dumps(ev, indent=1),
-                    recent=chr(10).join(snippets) or "(no reporting)",
-                )}])
+                out = llm.judge_json(
+                    [
+                        {
+                            "role": "system",
+                            "content": prompt.render(
+                                name=inc["canonical_name"],
+                                evidence=json.dumps(ev, indent=1),
+                                recent=chr(10).join(snippets) or "(no reporting)",
+                            ),
+                        }
+                    ]
+                )
                 v = str(out.get("verdict") or "")
                 if v in ("close", "keep", "uncertain"):
                     verdict = v
@@ -312,7 +323,5 @@ def check_active(
     closable = conn.execute(
         "SELECT COUNT(*) FROM activity_proposals WHERE verdict = 'close'"
     ).fetchone()[0]
-    log.info(
-        "activity_check_done", checked=proposed, closable=closable, auto_closed=auto_closed
-    )
+    log.info("activity_check_done", checked=proposed, closable=closable, auto_closed=auto_closed)
     return {"checked": proposed, "closable": closable, "auto_closed": auto_closed}

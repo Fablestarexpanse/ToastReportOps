@@ -28,6 +28,16 @@ class Publisher(Protocol):
         ...
 
 
+class ImagePublisher(Protocol):
+    """A channel that can attach a picture (Bluesky, Telegram)."""
+
+    channel: str
+
+    def publish(
+        self, text: str, image: bytes | None = None, image_alt: str = ""
+    ) -> dict[str, Any]: ...
+
+
 def split_social_body(body_md: str) -> tuple[str, str]:
     """A social draft body is post_text + optional short (X-length) version.
     Returns (post_text, short_text); short falls back to a trimmed post."""

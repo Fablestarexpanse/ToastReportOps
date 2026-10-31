@@ -140,7 +140,9 @@ class TestDraftStateMachine:
         self._draft(seeded)
         seeded.execute("UPDATE drafts SET status='needs_review' WHERE id='d1'")
         seeded.execute("UPDATE drafts SET status='approved' WHERE id='d1'")
-        seeded.execute("UPDATE drafts SET approved_by='brian', approved_at=? WHERE id='d1'", (NOW,))
+        seeded.execute(
+            "UPDATE drafts SET approved_by='operator', approved_at=? WHERE id='d1'", (NOW,)
+        )
         seeded.execute("UPDATE drafts SET status='published' WHERE id='d1'")
 
     def test_published_is_terminal(self, seeded):

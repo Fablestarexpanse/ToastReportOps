@@ -55,9 +55,7 @@ def _epoch_iso(ms: Any) -> str | None:
 def fetch_firis() -> dict[str, Any]:
     query = urlencode(
         {
-            "where": (
-                f"poly_DateCurrent >= CURRENT_TIMESTAMP - INTERVAL '{RECENT_DAYS}' DAY"
-            ),
+            "where": (f"poly_DateCurrent >= CURRENT_TIMESTAMP - INTERVAL '{RECENT_DAYS}' DAY"),
             "outFields": "incident_name,incident_number,area_acres,poly_DateCurrent,"
             "mission,source,type,displayStatus",
             "returnGeometry": "true",
@@ -81,9 +79,7 @@ def _match_incidents(conn: sqlite3.Connection, features: list[dict[str, Any]]) -
     """Tag each footprint with the active incident whose name it carries."""
     incidents = [
         (r["id"], _norm(r["canonical_name"]))
-        for r in conn.execute(
-            "SELECT id, canonical_name FROM incidents WHERE status = 'active'"
-        )
+        for r in conn.execute("SELECT id, canonical_name FROM incidents WHERE status = 'active'")
     ]
     matched = 0
     for feature in features:
@@ -117,9 +113,7 @@ def get_firis(conn: sqlite3.Connection, *, refresh: bool = False) -> dict[str, A
         data = fetch_firis()
     except (FetchError, ValueError, RuntimeError) as exc:
         get_logger("firis").warning("firis_fetch_failed", error=repr(exc))
-        stale = conn.execute(
-            "SELECT payload FROM map_cache WHERE key = ?", (CACHE_KEY,)
-        ).fetchone()
+        stale = conn.execute("SELECT payload FROM map_cache WHERE key = ?", (CACHE_KEY,)).fetchone()
         if stale:
             out = json.loads(stale["payload"])
             out["cached"] = True

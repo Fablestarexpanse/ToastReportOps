@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "toast": {
+      "command": "docker",
+      "args": ["compose", "--profile", "desktop", "exec", "-T", "api", "python", "-m", "toast.mcp_server"]
+    }
+  }
+}

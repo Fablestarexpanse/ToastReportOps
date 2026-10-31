@@ -33,10 +33,20 @@ def test_worst_reading_wins_and_area_is_named(seeded, monkeypatch):
     _with_key(seeded)
     body = json.dumps(
         [
-            {"ParameterName": "O3", "AQI": 42, "Category": {"Name": "Good"},
-             "ReportingArea": "Chico", "HourObserved": 14},
-            {"ParameterName": "PM2.5", "AQI": 158, "Category": {"Name": "Unhealthy"},
-             "ReportingArea": "Chico", "HourObserved": 14},
+            {
+                "ParameterName": "O3",
+                "AQI": 42,
+                "Category": {"Name": "Good"},
+                "ReportingArea": "Chico",
+                "HourObserved": 14,
+            },
+            {
+                "ParameterName": "PM2.5",
+                "AQI": 158,
+                "Category": {"Name": "Unhealthy"},
+                "ReportingArea": "Chico",
+                "HourObserved": 14,
+            },
         ]
     ).encode()
     seen = {}

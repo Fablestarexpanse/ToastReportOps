@@ -13,8 +13,10 @@ from typing import Any
 
 from toast.core.db import utcnow
 from toast.core.ids import ulid
+from toast.core.logging import get_logger
 from toast.llm.client import LLMClient, client_for
 from toast.llm.prompts import load_prompt
+from toast.pipeline.verify_draft import verify_draft
 
 
 def gather_facts(
@@ -142,6 +144,14 @@ def generate_draft(
     cited_short = [str(c) for c in raw.get("cited_fact_ids", [])]
     cited_real = [id_map[c] for c in cited_short if c in id_map]
 
+    # Mechanical check of the body against the facts it was written from — run
+    # BEFORE the Sources list is appended, or evacuation text would match itself.
+    issues = verify_draft(body_md, facts, id_map, window=(window_start, window_end))
+    if issues:
+        get_logger("drafting").warning(
+            "draft_verification_failed", incident=incident_id, issues=len(issues)
+        )
+
     # Always append the source account — every report carries its provenance,
     # listing every fact it was generated from (numbered to match [#n]).
     if body_md:
@@ -151,8 +161,8 @@ def generate_draft(
     now = utcnow()
     conn.execute(
         """INSERT INTO drafts (id, incident_id, kind, status, title, window_start, window_end,
-                               body_md, cited_fact_ids, created_at, updated_at)
-           VALUES (?, ?, 'update', 'draft', ?, ?, ?, ?, ?, ?, ?)""",
+                               body_md, cited_fact_ids, verify_issues, created_at, updated_at)
+           VALUES (?, ?, 'update', 'draft', ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             draft_id,
             incident_id,
@@ -161,12 +171,14 @@ def generate_draft(
             window_end,
             body_md,
             json.dumps(cited_real),
+            json.dumps(issues),
             now,
             now,
         ),
     )
     return {
         "created": True,
+        "verify_issues": issues,
         "draft_id": draft_id,
         "title": title,
         "facts_used": len(facts),
@@ -178,9 +190,7 @@ def generate_draft(
 STATEWIDE_TITLE = "CALIFORNIA WILDFIRE ROUNDUP"
 
 
-def _latest_fact_row(
-    conn: sqlite3.Connection, incident_id: str, kind: str
-) -> sqlite3.Row | None:
+def _latest_fact_row(conn: sqlite3.Connection, incident_id: str, kind: str) -> sqlite3.Row | None:
     return conn.execute(
         """SELECT * FROM facts
            WHERE incident_id = ? AND kind = ?
@@ -228,7 +238,7 @@ def generate_statewide_roundup(conn: sqlite3.Connection) -> dict[str, Any]:
                 "facts": [f for f in (ac, ct, ev) if f is not None],
             }
         )
-    entries.sort(key=lambda e: (e["acreage"] or 0), reverse=True)
+    entries.sort(key=lambda e: e["acreage"] or 0, reverse=True)
 
     cited: list[sqlite3.Row] = []
     index: dict[str, int] = {}
@@ -292,8 +302,12 @@ def generate_statewide_roundup(conn: sqlite3.Connection) -> dict[str, Any]:
     if evac_entries:
         lines += ["## Under evacuation", ""]
         lines += [line(e) for e in evac_entries]
-        lines += ["", "Evacuation boundaries and instructions are issued by county "
-                  "officials — always follow the official notice, not this summary.", ""]
+        lines += [
+            "",
+            "Evacuation boundaries and instructions are issued by county "
+            "officials — always follow the official notice, not this summary.",
+            "",
+        ]
     if sized:
         lines += ["## Largest active fires", ""]
         lines += [line(e) for e in sized[:12]]

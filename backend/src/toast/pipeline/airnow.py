@@ -38,9 +38,7 @@ CATEGORY_ORDER = [
 
 
 def aqi_for(conn: sqlite3.Connection, incident_id: str, *, refresh: bool = False) -> dict[str, Any]:
-    inc = conn.execute(
-        "SELECT lat, lon FROM incidents WHERE id = ?", (incident_id,)
-    ).fetchone()
+    inc = conn.execute("SELECT lat, lon FROM incidents WHERE id = ?", (incident_id,)).fetchone()
     if inc is None:
         raise ValueError("incident not found")
     if inc["lat"] is None:
@@ -113,7 +111,9 @@ def aqi_for(conn: sqlite3.Connection, incident_id: str, *, refresh: bool = False
     )
     conn.commit()
     get_logger("airnow").info(
-        "airnow_fetched", incident=incident_id, readings=len(readings),
+        "airnow_fetched",
+        incident=incident_id,
+        readings=len(readings),
         worst=worst["aqi"] if worst else None,
     )
     return payload

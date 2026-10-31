@@ -26,7 +26,6 @@ def release_draft(
     channels: list[str],
     *,
     at: str | None = None,
-    operator: str = "brian",
 ) -> dict[str, Any]:
     """Clear an approved social draft for release to the SELECTED channels.
 
@@ -80,8 +79,11 @@ def release_draft(
     conn.commit()
     enqueued = release_due(conn)  # immediate releases go out on this same call
     get_logger("release").info(
-        "draft_released", draft=draft_id, channels=[c["channel"] for c in created],
-        scheduled_for=at, enqueued_now=enqueued,
+        "draft_released",
+        draft=draft_id,
+        channels=[c["channel"] for c in created],
+        scheduled_for=at,
+        enqueued_now=enqueued,
     )
     return {
         "draft_id": draft_id,

@@ -98,6 +98,11 @@ const CHOICES: Record<string, { value: string; label: string }[]> = {
     { value: "utc", label: "ZULU / UTC" },
     { value: "local", label: "LOCAL" },
   ],
+  hazard_profile: [
+    { value: "fire", label: "FIRE" },
+    { value: "flood", label: "FLOOD" },
+    { value: "both", label: "BOTH" },
+  ],
   clock_format: [
     { value: "24h", label: "24-HOUR" },
     { value: "12h", label: "AM / PM" },
@@ -445,6 +450,25 @@ export default function SettingsPanel({
                 style={{ width: 90, background: C.bg, border: `1px solid ${C.line}`, borderRadius: 4, color: C.txt, fontFamily: font.mono, fontSize: 11, padding: "6px 8px", outline: "none" }}
               />,
               "how often the workstation refetches live data",
+            )}
+
+            <div style={{ fontFamily: font.disp, fontSize: 11, letterSpacing: 2, color: C.ember, marginTop: 14 }}>
+              HAZARD SEASON
+            </div>
+            {row(
+              "hazard_profile",
+              chips("hazard_profile"),
+              "FLOOD or BOTH turns on background polling of river gauges and flood alerts, phone alerts for flood warnings and near-full reservoirs, and the matching health checks. Reservoir history is always collected.",
+            )}
+            {row(
+              "water_watch_lids",
+              <input
+                value={draft.water_watch_lids ?? ""}
+                onChange={(e) => set("water_watch_lids", e.target.value)}
+                placeholder="BKCC1, ORO"
+                style={{ width: "100%", background: C.bg, border: `1px solid ${C.line}`, borderRadius: 4, color: C.txt, fontFamily: font.mono, fontSize: 11, padding: "6px 8px", outline: "none" }}
+              />,
+              "river gauges (NWS ids like BKCC1) and reservoirs (CDEC ids like ORO) always shown on the WATER board, even when calm",
             )}
 
             <div style={{ fontFamily: font.disp, fontSize: 11, letterSpacing: 2, color: C.ember, marginTop: 14 }}>
