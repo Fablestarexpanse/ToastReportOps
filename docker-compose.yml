@@ -4,6 +4,10 @@
 #   degraded — PSPS sentinel: official-API polling + site updates only (free-tier VM)
 # Later phases add: gpu-worker, publisher, site-builder, operator-ui.
 
+# Third-party images are pinned by tag AND digest (2026-10-31): a tag can be re-pointed,
+# a digest cannot, and "latest" once changed model behaviour under us. Each pin is what
+# that image's :latest was on the pin date, so pinning changed nothing that day.
+# To upgrade one, look up the new tag's digest on Docker Hub, change it here, test.
 x-backend: &backend
   build: ./backend
   env_file: .env
@@ -78,14 +82,14 @@ services:
   # material; facts enter the ledger only via the validated point-at-URL path.
   searxng:
     profiles: [desktop]
-    image: searxng/searxng:latest
+    image: searxng/searxng:2026.10.30-ffa88e3ba@sha256:f4aa660c54d062dedb268be84e821ea24e39f48c7a496af8dd02cc9eedb93847
     volumes:
       - ./infra/searxng/settings.yml:/etc/searxng/settings.yml:ro
     restart: unless-stopped
 
   ldr:
     profiles: [desktop]
-    image: localdeepresearch/local-deep-research:latest
+    image: localdeepresearch/local-deep-research:1.10.7@sha256:ce95481a35d3eebc2c1ae7bd34fad426108c3fb8d1a22f66c9e772276869c2f0
     depends_on:
       - searxng
     environment:
@@ -111,7 +115,7 @@ services:
   # not secrets (override in .env if the mount is ever exposed beyond localhost).
   icecast:
     profiles: [desktop]
-    image: libretime/icecast:latest
+    image: libretime/icecast:2.4.4@sha256:91150fa27342bb6f1aca90a8dfe0a78912de69f0e0c2112470370251d5e71326
     environment:
       ICECAST_SOURCE_PASSWORD: "${ICECAST_SOURCE_PASSWORD:-toast-sdr-source}"
       ICECAST_ADMIN_PASSWORD: "${ICECAST_ADMIN_PASSWORD:-toast-sdr-admin}"
@@ -138,7 +142,7 @@ services:
   # LLM_AUTO_PULL=1 to restore the old unverified first-boot pull.
   llm:
     profiles: [desktop]
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.40.13@sha256:b2f0122c476bc9fe7ce679d8bb4bd555351e25e2554eefb156f61cb0a89cf429
     restart: unless-stopped
     entrypoint: ["/bin/sh", "-c"]
     command:

@@ -220,7 +220,7 @@ def notify_reservoirs(
         elif pct < NEAR_FULL_CLEAR_PCT:
             high.discard(r["station"])
     sent = 0
-    cfg = telegram_ops._cfg(settings)
+    cfg = telegram_ops._cfg(settings, conn)
     if cfg and messages and not first_run:
         token, chat = cfg
         own = client is None

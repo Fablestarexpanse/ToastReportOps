@@ -8,14 +8,15 @@
 #     only move forward, so the snapshot is the way back);
 #   * code is updated with `git pull --ff-only` - it never merges, never
 #     overwrites your local edits, and stops before changing anything if it can't;
-#   * third-party images (Ollama, SearXNG, ...) are NOT pulled unless you ask,
-#     because "latest" can change model behaviour under you;
+#   * third-party images (Ollama, SearXNG, ...) are pinned by digest in
+#     docker-compose.yml, so they only change when an update changes a pin -
+#     and then `docker compose up` fetches exactly that image;
 #   * if the API doesn't come back healthy it tells you how to roll back instead
 #     of guessing - the database may already have migrated.
 #
 # Options:  -NoLaunch      update only, don't open the window
 #           -SkipBackup    skip the snapshot (not recommended)
-#           -PullImages    also `docker compose pull` the third-party images
+#           -PullImages    re-download the pinned images (repairs a damaged image)
 #           -Rebuild       rebuild the backend image even if nothing changed
 
 param(

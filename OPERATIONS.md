@@ -29,9 +29,11 @@ the workstation.
   (`git checkout <old commit>` and rebuild). Database migrations only move
   forward, so if the old code can't read the migrated database, restore the
   pre-update snapshot (see docs/BACKUP-RESTORE.md).
-- **Third-party images** (Ollama, SearXNG, ...) are left alone by default, since
-  `latest` can change model behaviour. Run `scripts\update.ps1 -PullImages` to
-  refresh them deliberately.
+- **Third-party images** (Ollama, SearXNG, Local Deep Research, Icecast) are pinned by
+  tag and digest in `docker-compose.yml`, so they change only when an update changes a
+  pin; `docker compose up` then fetches exactly that image. `-PullImages` re-downloads
+  the pinned images (useful only to repair a damaged one). To move to a newer image,
+  change its pin deliberately and test.
 - `ToastReport.cmd` still launches *without* updating. Extra options go after the
   command name: `-NoLaunch`, `-SkipBackup`, `-Rebuild`.
 - This script has only been reviewed, not run on Windows — try it once while the

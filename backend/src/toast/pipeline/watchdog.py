@@ -127,7 +127,7 @@ def run_watchdog(
     fresh = [k for k in problems if k not in active or now - active[k] >= REMIND_S]
     recovered = [k for k in active if k not in problems]
 
-    cfg = telegram_ops._cfg(settings)
+    cfg = telegram_ops._cfg(settings, conn)
     sent = False
     if cfg and (fresh or (recovered and not problems)):
         token, chat = cfg

@@ -98,7 +98,7 @@ class TestApprovalFromChat:
         seeded.execute("UPDATE drafts SET status = 'needs_review' WHERE id = ?", (draft_id,))
         return draft_id
 
-    def _updates(self, chat_id, data):
+    def _updates(self, chat_id, data, user_id=None, acks=None):
         def handler(request):
             if "getUpdates" in str(request.url):
                 return httpx.Response(
@@ -111,11 +111,14 @@ class TestApprovalFromChat:
                                     "id": "cb1",
                                     "data": data,
                                     "message": {"chat": {"id": chat_id}},
+                                    **({"from": {"id": user_id}} if user_id else {}),
                                 },
                             }
                         ]
                     },
                 )
+            if acks is not None and "answerCallbackQuery" in str(request.url):
+                acks.append(json.loads(request.content)["text"])
             return httpx.Response(200, json={"ok": True})
 
         return _client(handler)
@@ -139,6 +142,40 @@ class TestApprovalFromChat:
         telegram_ops.poll_updates(seeded, SET, self._updates(777, f"approve:{draft_id}"))
         row = seeded.execute("SELECT status FROM drafts WHERE id = ?", (draft_id,)).fetchone()
         assert row["status"] == "needs_review"
+
+    def test_only_listed_approvers_can_press_approve(self, seeded):
+        listed = Settings(**{**SET.model_dump(), "telegram_ops_user_ids": "42, 43"})
+        draft_id = self._draft(seeded)
+        acks: list[str] = []
+        out = telegram_ops.poll_updates(
+            seeded, listed, self._updates(777, f"approve:{draft_id}", user_id=99, acks=acks)
+        )
+        assert out == {"handled": 0, "ignored": 1} and acks == ["not authorised to approve"]
+        status = seeded.execute("SELECT status FROM drafts WHERE id = ?", (draft_id,)).fetchone()
+        assert status["status"] == "needs_review"
+        seeded.execute("DELETE FROM map_cache")  # reset the update offset
+        out = telegram_ops.poll_updates(
+            seeded, listed, self._updates(777, f"approve:{draft_id}", user_id=42)
+        )
+        assert out["handled"] == 1
+
+    def test_without_a_list_anyone_in_the_ops_chat_may_approve(self, seeded):
+        draft_id = self._draft(seeded)
+        out = telegram_ops.poll_updates(
+            seeded, SET, self._updates(777, f"approve:{draft_id}", user_id=99)
+        )
+        assert out["handled"] == 1
+
+    def test_a_bot_configured_in_options_is_used_not_just_env(self, seeded, monkeypatch):
+        """OPTIONS stores credentials in the database; alerts must not read .env only."""
+        from toast.core.credentials import set_credential
+
+        for name in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHANNEL_ID", "TELEGRAM_OPS_CHAT_ID"):
+            monkeypatch.delenv(name, raising=False)
+        set_credential(seeded, "TELEGRAM_BOT_TOKEN", "123:abc")
+        set_credential(seeded, "TELEGRAM_OPS_CHAT_ID", "777")
+        assert telegram_ops._cfg(conn=seeded) == ("123:abc", "777")
+        assert telegram_ops._cfg() is None  # env alone has nothing: the old behaviour
 
     def test_a_foreign_chat_is_ignored_the_auth_boundary(self, seeded):
         draft_id = self._draft(seeded)

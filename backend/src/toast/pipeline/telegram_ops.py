@@ -43,11 +43,32 @@ EVAC_LABEL = {
 }
 
 
-def _cfg(settings: Settings | None = None) -> tuple[str, str] | None:
-    s = settings or Settings()
+def _settings(settings: Settings | None, conn: sqlite3.Connection | None) -> Settings:
+    """Explicit settings win; otherwise .env PLUS what the operator saved in OPTIONS.
+    (Reading .env alone silently ignored a bot configured in OPTIONS.)"""
+    if settings is not None:
+        return settings
+    if conn is not None:
+        from toast.core.credentials import settings_with_credentials
+
+        return settings_with_credentials(conn)
+    return Settings()
+
+
+def _cfg(
+    settings: Settings | None = None, conn: sqlite3.Connection | None = None
+) -> tuple[str, str] | None:
+    s = _settings(settings, conn)
     if s.telegram_bot_token and s.telegram_ops_chat_id:
         return s.telegram_bot_token, s.telegram_ops_chat_id
     return None
+
+
+def _approvers(settings: Settings | None, conn: sqlite3.Connection | None) -> set[str]:
+    """Telegram user ids allowed to press APPROVE / SEND BACK. Empty = anyone in the ops
+    chat (fine while the chat is just you; set it before adding anyone else)."""
+    raw = _settings(settings, conn).telegram_ops_user_ids
+    return {u.strip() for u in raw.replace(";", ",").split(",") if u.strip()}
 
 
 def _state(conn: sqlite3.Connection, key: str) -> dict[str, Any] | None:
@@ -82,7 +103,7 @@ def notify_sweep(
     settings: Settings | None = None,
     client: httpx.Client | None = None,
 ) -> dict[str, Any]:
-    cfg = _cfg(settings)
+    cfg = _cfg(settings, conn)
     if cfg is None:
         return {"skipped": "telegram not configured"}
     token, chat = cfg
@@ -187,7 +208,7 @@ def poll_updates(
     settings: Settings | None = None,
     client: httpx.Client | None = None,
 ) -> dict[str, Any]:
-    cfg = _cfg(settings)
+    cfg = _cfg(settings, conn)
     if cfg is None:
         return {"skipped": "telegram not configured"}
     token, ops_chat = cfg
@@ -196,6 +217,7 @@ def poll_updates(
     log = get_logger("telegram")
 
     offset = (_state(conn, OFFSET_KEY) or {}).get("offset", 0)
+    approvers = _approvers(settings, conn)
     handled = ignored = 0
     try:
         r = client.post(
@@ -215,6 +237,13 @@ def poll_updates(
             if from_chat != str(ops_chat):
                 ignored += 1
                 log.warning("telegram_command_ignored", chat=from_chat, data=data[:40])
+                continue
+            # ...and, when configured, only named people inside it
+            presser = str((cb.get("from") or {}).get("id", ""))
+            if approvers and presser not in approvers:
+                ignored += 1
+                log.warning("telegram_command_unauthorised", user=presser, data=data[:40])
+                _ack(client, token, cb["id"], "not authorised to approve")
                 continue
             action, _, draft_id = data.partition(":")
             if action in ("approve", "reject") and draft_id:

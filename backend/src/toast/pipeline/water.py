@@ -217,7 +217,7 @@ def notify_water(
     major flood. First run baselines silently; each item alerts once."""
     from toast.pipeline import telegram_ops
 
-    cfg = telegram_ops._cfg(settings)
+    cfg = telegram_ops._cfg(settings, conn)
     state = telegram_ops._state(conn, STATE_KEY)
     first_run = state is None
     state = state or {"alerts": [], "gauges": {}}

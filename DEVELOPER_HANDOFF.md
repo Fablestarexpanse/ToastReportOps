@@ -331,8 +331,10 @@ bug):
    column + a migration if a full season's facts slow the pickers.
 2. **Disk capacity** — `raw_blobs`/`envelopes`/`facts` grow unbounded by design
    (permanent archive). Plan a season-end size estimate / cold-tier offload.
-3. **Telegram approval** authenticates the chat, not the clicking user — only
-   matters if the ops chat ever becomes a group; add a user-id allowlist then.
+3. ~~**Telegram approval** authenticates the chat, not the clicking user~~ — fixed
+   2026-10-31: `TELEGRAM_OPS_USER_IDS` limits who may press APPROVE / SEND BACK.
+   Also fixed then: alerts and approvals read Telegram credentials saved in OPTIONS,
+   not only `.env` (before, a bot set up in OPTIONS was silently ignored).
 
 Open as of the 2026-10-31 audit:
 
@@ -345,8 +347,9 @@ Open as of the 2026-10-31 audit:
 7. **Default model unmeasured** — `qwen3.5:9b` is a safe official baseline, not a
    bake-off winner; run the bake-off on real cases. Extraction still uses the
    `/no_think` hint that Qwen3.5 ignores until `LLM_THINK_MODE=native` is confirmed.
-8. **Dev-only npm advisories** — `brace-expansion`/`minimatch` inside the lint
-   toolchain; the fix needs a breaking ESLint upgrade. Nothing shipped is affected.
+8. **Dev-only npm advisory** — a moderate `minimatch` advisory inside the ESLint
+   toolchain; its fix (minimatch 11) needs a breaking ESLint upgrade. Nothing shipped
+   is affected; the high `brace-expansion` one is fixed by an override.
 9. **Large files** — `api/routes.py` and `components/workstation.tsx` would benefit
    from splitting by area.
 10. **Archive search has no UI yet** — it's reachable from agents, the CLI and the API;

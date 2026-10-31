@@ -84,6 +84,9 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_channel_id: str = ""
     telegram_ops_chat_id: str = ""
+    # Telegram user ids allowed to press APPROVE / SEND BACK in the ops chat
+    # (comma-separated). Empty = anyone in that chat.
+    telegram_ops_user_ids: str = ""
     bluesky_handle: str = ""
     bluesky_app_password: str = ""
     x_api_key: str = ""

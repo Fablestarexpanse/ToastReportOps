@@ -127,6 +127,13 @@ SERVICES: list[Service] = [
             Field("TELEGRAM_CHANNEL_ID", "Public channel id (@name or -100…)"),
             Field("TELEGRAM_OPS_CHAT_ID", "Private ops chat id"),
         ],
+        optional_fields=[
+            Field(
+                "TELEGRAM_OPS_USER_IDS",
+                "Who may approve from chat (your Telegram user id; comma-separate several)",
+                secret=False,
+            ),
+        ],
     ),
 ]
 
