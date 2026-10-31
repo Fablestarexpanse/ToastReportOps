@@ -153,7 +153,7 @@ if ($backendChanged -or $Rebuild) {
 }
 if ($uiDepsChanged) {
     Write-Host "    UI dependencies changed - installing..." -ForegroundColor DarkGray
-    if ((Invoke-Native npm @("--prefix", "operator-ui", "ci")) -ne 0) { Stop-Update "npm install failed. To go back: git checkout $before" }
+    if ((Invoke-Native npm @("--prefix", (Join-Path $root "operator-ui"), "ci")) -ne 0) { Stop-Update "npm install failed. To go back: git checkout $before" }
     # the running dev server holds the old modules; the launcher starts a fresh one
     Get-NetTCPConnection -LocalPort $UiPort -State Listen -ErrorAction SilentlyContinue |
         ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }

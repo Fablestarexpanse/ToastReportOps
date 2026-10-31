@@ -194,7 +194,7 @@ $compose = @("compose") + $profiles
 Step 3 "workstation UI packages..."
 if (Test-Path (Join-Path $root "operator-ui\node_modules\.bin")) { Ok "already installed" }
 else {
-    if ((Invoke-Native npm @("--prefix", "operator-ui", "ci")) -ne 0) { Stop-Install "installing the UI packages failed - see the npm output above." }
+    if ((Invoke-Native npm @("--prefix", (Join-Path $root "operator-ui"), "ci")) -ne 0) { Stop-Install "installing the UI packages failed - see the npm output above." }
     Ok "installed"
 }
 

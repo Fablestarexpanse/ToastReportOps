@@ -34,6 +34,7 @@ Write-Host "[1/3] backend (Docker)..." -ForegroundColor DarkYellow
 docker compose @profiles up -d --quiet-pull | Out-Null
 
 Write-Host "[2/3] operator UI..." -ForegroundColor DarkYellow
+$uiDir = Join-Path $root "operator-ui"
 if (-not (Test-Port $UiPort)) {
     if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
         throw "Node.js is not installed. Install Node 20 or newer from https://nodejs.org, then run this again."
@@ -41,21 +42,23 @@ if (-not (Test-Port $UiPort)) {
     $nodeMajor = [int]((& node --version) -replace "^v(\d+).*", '$1')
     if ($nodeMajor -lt 20) { throw "Node.js $(& node --version) is too old; the UI needs Node 20 or newer (https://nodejs.org)." }
     # a fresh clone has no UI packages yet; without them the hidden window just dies
-    if (-not (Test-Path (Join-Path $root "operator-ui\node_modules\.bin"))) {
+    if (-not (Test-Path (Join-Path $uiDir "node_modules\.bin"))) {
         Write-Host "    installing UI packages (first run only, a minute or two)..." -ForegroundColor DarkGray
         $prev = $ErrorActionPreference
         $ErrorActionPreference = "Continue"
-        & npm --prefix operator-ui ci 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+        & npm --prefix $uiDir ci 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
         $npmCode = $LASTEXITCODE
         $ErrorActionPreference = $prev
         if ($npmCode -ne 0) { throw "installing the UI packages failed (npm exit $npmCode) - see the lines above." }
     }
-    Start-Process -WindowStyle Hidden cmd.exe -ArgumentList "/c", "npm --prefix operator-ui run dev -- -p $UiPort"
+    # absolute paths + an explicit working folder: Start-Process does not follow
+    # Set-Location, so a relative path would resolve against wherever PowerShell started
+    Start-Process -WindowStyle Hidden -WorkingDirectory $root cmd.exe -ArgumentList "/c", "npm --prefix `"$uiDir`" run dev -- -p $UiPort"
 }
 $deadline = (Get-Date).AddSeconds(120)
 while (-not (Test-Port $UiPort)) {
     if ((Get-Date) -gt $deadline) {
-        throw "operator UI did not start on port $UiPort. To see why, run in this folder: npm --prefix operator-ui run dev -- -p $UiPort"
+        throw "operator UI did not start on port $UiPort. To see why, run: npm --prefix `"$uiDir`" run dev -- -p $UiPort"
     }
     Start-Sleep -Milliseconds 700
 }
