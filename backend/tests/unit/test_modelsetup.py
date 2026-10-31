@@ -261,3 +261,23 @@ def test_chat_model_command_names_each_profiles_chat_model(capsys):
     for profile, want in (("starter", "qwen3.5:9b"), ("small-8gb", "qwen3.5:4b")):
         assert ms.main(["chat-model", "--profile", profile]) == 0
         assert capsys.readouterr().out.strip() == want
+
+
+def test_plan_says_plainly_when_no_chat_model_fits():
+    items = ms.plan(manifest(), ["chat:9b", "emb:latest"], {}, vram_gb=5)
+    text = ms.format_plan(items)
+    assert "No chat model fits" in text and "small-8gb" in text
+    ok = ms.format_plan(ms.plan(manifest(), ["chat:9b", "emb:latest"], {}, vram_gb=24))
+    assert "No chat model fits" not in ok
+
+
+def test_status_lists_what_is_needed_and_counts_optional_models(capsys):
+    m = manifest()
+    m["models"]["extra:27b"] = {"role": "chat", "manifest_sha256": DIGEST, "size_bytes": GB}
+    m["profiles"]["starter"] = {"models": ["chat:9b", "emb:latest"]}
+    lines = []
+    ms.status(m, FakeOllama(), "chat:9b", out=lines.append)
+    text = "\n".join(lines)
+    assert "chat:9b" in text and "emb:latest" in text and "extra:27b" not in text
+    assert "1 optional comparison models not installed" in text
+    assert "Install Models.cmd" in text

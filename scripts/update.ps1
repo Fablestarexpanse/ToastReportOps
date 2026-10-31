@@ -27,6 +27,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+# Containers print UTF-8; without this Windows PowerShell shows an em dash as "an unreadable 3-character mess".
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
@@ -138,12 +140,12 @@ $uiDepsChanged = [bool]($changed | Where-Object { $_ -like "operator-ui/package*
 Step 4 $total "rebuilding what changed..."
 if ($PullImages) {
     Write-Host "    pulling third-party images (-PullImages)..." -ForegroundColor DarkGray
-    if ((Invoke-Native docker (@("compose") + $profiles + @("pull", "--ignore-buildable"))) -ne 0) {
+    if ((Invoke-Native docker (@("compose") + $profiles + @("pull", "--quiet", "--ignore-buildable"))) -ne 0) {
         Write-Host "    image pull failed - continuing with the images you already have" -ForegroundColor Yellow
     }
 }
 if ($backendChanged -or $Rebuild) {
-    if ((Invoke-Native docker (@("compose") + $profiles + @("build"))) -ne 0) {
+    if ((Invoke-Native docker (@("compose") + $profiles + @("build", "--quiet"))) -ne 0) {
         Stop-Update "the backend build failed. The code is updated but the old containers are still running. To go back: git checkout $before"
     }
 } else {

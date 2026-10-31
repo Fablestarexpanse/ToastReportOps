@@ -268,7 +268,7 @@ SEEDS = SEEDS + MEDIA_SEEDS + GENERAL_SEEDS
 # (the operator upgrades any of them to an in-app stream by pasting a stream
 # URL, or adds OpenMHz systems from the RADIO tab's picker). Broadcastify stays
 # a link-out by operator decision: their terms prohibit third-party embedding.
-RADIO_CHANNEL_SEEDS = [
+RADIO_CHANNEL_SEEDS: list[dict[str, Any]] = [
     {
         "name": "Broadcastify — California directory",
         "kind": "link",
@@ -292,9 +292,9 @@ RADIO_CHANNEL_SEEDS = [
     # SDR host starts streaming — see docs/RADIO-SETUP.md. Free forever, no
     # third-party terms, works through a PSPS.
     {
-        "name": "My SDR — LIVE (Butte CAL FIRE VHF)",
+        "name": "My SDR — LIVE (local stream)",
         "kind": "stream",
-        "county": "Butte",
+        "county": None,
         "url": "http://localhost:8100/calfire-btu",
         "notes": "Own RTL-SDR via rtl_airband -> in-stack icecast. Silent until the "
         "SDR host streams (docs/RADIO-SETUP.md, 'live listening').",
@@ -362,10 +362,23 @@ def seed(conn) -> list[str]:
     return created
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    """python -m toast.seed [--if-empty]
+
+    --if-empty seeds only a brand-new database (no sources yet). The installer uses it,
+    so re-running the installer never re-adds a source the operator deliberately removed.
+    """
+    import sys
+
+    args = sys.argv[1:] if argv is None else argv
     settings = Settings()
     conn = connect(settings.toast_db_path)
     apply_migrations(conn)
+    if "--if-empty" in args:
+        existing = conn.execute("SELECT COUNT(*) AS n FROM sources").fetchone()["n"]
+        if existing:
+            print(f"seeded: nothing (database already has {existing} sources)")
+            return
     created = seed(conn)
     print(f"seeded: {created or 'nothing (all present)'}")
 

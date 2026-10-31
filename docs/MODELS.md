@@ -18,6 +18,12 @@ again; downloads resume. It never deletes anything.
 The installer detects your NVIDIA card's memory and skips chat models that won't fit
 (an estimate: weights + 15% + 1.5 GB for context). Pass `-VramGb N` if it can't detect it.
 
+If other programs already hold graphics memory (another AI app, a game), it says how much
+and which programs, and asks whether to plan for the **whole card** (you'll close them
+before using Toast) or only **what's free now**. A model that doesn't fit next to them
+runs very slowly. If no chat model fits at all, the plan says so plainly: without one the
+AI features don't work.
+
 ## What "safe" means here
 
 1. **Official sources only.** Names must be plain Ollama-library names. Community

@@ -14,19 +14,22 @@ and tests all gate CI), and a UI that type-checks, lints and builds clean.
 
 ## Quick start (Windows)
 
-Three buttons in the install folder:
+Four buttons in the install folder:
 
 | Double-click | What it does |
 |---|---|
+| **`Install.cmd`** | **First time.** Checks this computer (starts Docker Desktop if needed, tests the GPU, Node, disk and ports), creates `.env` with fresh local passwords, installs the UI packages, starts the stack, seeds the sources, installs the AI models (shows the plan first), verifies everything and opens the app. Safe to re-run; `Install.cmd -CheckOnly` changes nothing. Writes `install.log`. |
 | **`ToastReport.cmd`** | Starts the Docker stack and the operator UI (port 3005) in its own app window. Safe to run repeatedly. |
 | **`Install Models.cmd`** | Downloads the AI models **safely**: official sources only, checked against pinned fingerprints before and after, skipped if too big for your graphics card, test-run afterwards. Resumable. → [docs/MODELS.md](docs/MODELS.md) |
 | **`Update and Launch.cmd`** | Takes a verified database snapshot, pulls the latest code (fast-forward only — never overwrites your edits), rebuilds only what changed, restarts, checks health, opens the app. Stops with the exact undo command if anything fails. |
 
-First time: install the prerequisites below, `cp .env.example .env`, then run
-`ToastReport.cmd`, then `Install Models.cmd`. Elsewhere: `docker compose --profile desktop up -d`.
+**First time:** install Docker Desktop, Node 20+ and git (see below), clone the repo
+(any drive works), then double-click **`Install.cmd`**. Elsewhere:
+[Install & run (any OS)](#install--run-any-os).
 
-> The PowerShell behind these buttons (`scripts/*.ps1`) has been reviewed but not run
-> on Windows by its author — try each once while nothing depends on the app.
+> The stack itself has been installed end to end on Windows (images, build, seed, model
+> plan). `Install.cmd` is new and gathers those same steps; if it stops, `install.log`
+> has the exact error.
 
 ## What's in the workstation
 
@@ -150,38 +153,31 @@ transcripts, archived news pages) in capped snippets. `.mcp.json` is preconfigur
 default; `TOAST_AGENT_WRITE=1` adds two tools (leave a note, request a draft for you to
 review). → [docs/AGENT-INTERFACE.md](docs/AGENT-INTERFACE.md)
 
-### One-shot setup prompt for an AI coding agent
+### Setup prompt for an AI coding agent
+
+`Install.cmd` does the work, so an agent only needs to run it and read the log:
 
 ```text
-Set up "Toast Report OPs", a local-first, Docker-based California wildfire and flood
-intelligence workstation, on this machine — end to end — and report status at each step.
+Install "Toast Report OPs" (a local-first, Docker-based California wildfire and flood
+workstation) on this Windows machine and report status as you go.
 
-Facts:
-- Repo (private): https://github.com/Fablestarexpanse/ToastReportOps
-- Docker Compose stack (profile "desktop", 8 services; MESH optional) plus a Next.js operator UI on
-  port 3005. API on 8400. Localhost-only, single operator, no login.
-- Models are NOT auto-downloaded; they are installed and verified by:
-  python -m toast.modelsetup (see docs/MODELS.md).
+- Repo (private): https://github.com/Fablestarexpanse/ToastReportOps - clone it to the
+  folder I name (I'll authorize GitHub access if prompted).
+- Run commands in a real PowerShell on this machine. If your own shell is a sandbox
+  that can't see Docker, my GPU or localhost, give me each command to run instead and
+  read install.log afterwards.
 
 Do this:
-1. Check prerequisites; ask me before installing any system software: Docker running
-   (Windows: WSL2 backend); if an NVIDIA GPU exists, confirm containers see it with
-   `docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi` and note
-   its memory; git; Node 20+ if the UI will run outside Docker.
-2. Clone the repo (I'll authorize access if prompted) and cd into it.
-3. `cp .env.example .env`. Keep the defaults. Do NOT invent secrets — leave optional keys blank.
-4. No usable NVIDIA GPU: stop and ask me whether to use a cloud OpenAI-compatible endpoint.
-5. `docker compose --profile desktop up -d`, then seed:
-   `docker compose --profile desktop exec -T api python -m toast.seed`.
-6. Install models: `... exec -T api python -m toast.modelsetup install --vram-gb <GPU GB>`
-   (use `--profile small-8gb` on an 8 GB card). Show me the plan before it downloads.
-7. Verify: `docker compose --profile desktop ps` all healthy;
-   `curl http://127.0.0.1:8400/system/status` shows ok; `modelsetup status` shows the
-   models match their pins; the UI answers on http://localhost:3005.
-8. Report the URLs, the active model, and anything needing my attention.
+1. Ask me before installing any system software (Docker Desktop with WSL2, Node 20+, git).
+2. Run: Install.cmd -CheckOnly   then read install.log and tell me what it found.
+3. If it passed, run: Install.cmd   (it shows the model download plan and asks before
+   downloading; tell me what it proposes before I answer).
+4. Report the URLs, the active model and everything under "Needs your attention" in
+   install.log.
 
-Rules: do not commit or push; do not fabricate keys; bind everything to localhost; never
-enable agent write access or publishing; if a step fails, show the exact error and stop.
+Rules: don't commit or push; don't invent API keys (the installer generates only local
+passwords); keep everything on localhost; never enable agent write access or publishing;
+if a step fails, show me the exact error from install.log and stop.
 ```
 
 ## Core principles

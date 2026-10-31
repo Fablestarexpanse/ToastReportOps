@@ -151,6 +151,9 @@ def test_seed_radio_channels_idempotent(db):
     # link-outs (Broadcastify et al., per policy) + the operator's own live
     # SDR stream slot, waiting on hardware
     assert kinds == {"link", "stream"}
-    sdr = db.execute("SELECT county, url FROM radio_channels WHERE kind = 'stream'").fetchone()
-    assert sdr["county"] == "Butte"
+    sdr = db.execute(
+        "SELECT name, county, url FROM radio_channels WHERE kind = 'stream'"
+    ).fetchone()
+    # a generic slot for whoever installs it: no county, the in-stack icecast mount
+    assert sdr["county"] is None and "local stream" in sdr["name"]
     assert sdr["url"] == "http://localhost:8100/calfire-btu"

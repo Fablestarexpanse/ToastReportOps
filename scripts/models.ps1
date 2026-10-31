@@ -19,6 +19,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+# Containers print UTF-8; without this Windows PowerShell shows an em dash as "an unreadable 3-character mess".
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
@@ -64,15 +66,35 @@ while ((Get-Date) -lt $deadline) {
 }
 if (-not $ready) { Stop-Models "the model server didn't start. Look at: docker compose logs llm --tail 50" }
 
-# graphics card memory, so models that can't fit are skipped
+# graphics card memory, so models that can't fit are skipped. Other programs (another
+# AI app, a game) may already hold some of it; say so and let the operator decide.
 if ($VramGb -le 0 -and (Get-Command nvidia-smi -ErrorAction SilentlyContinue)) {
-    $mib = (& nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>$null | Select-Object -First 1)
-    if ($mib -match "^\s*\d+") { $VramGb = [math]::Round([double]$mib / 1024, 1) }
+    $row = (& nvidia-smi --query-gpu=name,memory.total,memory.used --format=csv,noheader,nounits 2>$null | Select-Object -First 1)
+    $parts = @("$row".Split(",") | ForEach-Object { $_.Trim() })
+    if ($parts.Count -ge 3 -and $parts[1] -match "^\d+$" -and $parts[2] -match "^\d+$") {
+        $totalGb = [math]::Round([double]$parts[1] / 1024, 1)
+        $usedGb = [math]::Round([double]$parts[2] / 1024, 1)
+        $freeGb = [math]::Round($totalGb - $usedGb, 1)
+        Write-Host "    graphics card: $($parts[0]) - $totalGb GB, $usedGb GB already in use, $freeGb GB free" -ForegroundColor DarkGray
+        $VramGb = $totalGb
+        if ($usedGb -ge 2) {
+            $apps = @(& nvidia-smi --query-compute-apps=process_name --format=csv,noheader 2>$null |
+                ForEach-Object { Split-Path -Leaf "$_".Trim() } | Where-Object { $_ } | Sort-Object -Unique)
+            Write-Host ""
+            Write-Host "    Other programs are using $usedGb GB of graphics memory." -ForegroundColor Yellow
+            if ($apps.Count) { Write-Host "    Using the GPU now: $($apps -join ', ')" -ForegroundColor Yellow }
+            Write-Host "    A model that doesn't fit next to them runs very slowly (partly on the CPU)." -ForegroundColor Yellow
+            if (-not $Yes) {
+                $answer = Read-Host "    Plan for the [W]hole card (you'll close those programs before using Toast) or only what's [F]ree now? [W/f]"
+                if ($answer -match "^[Ff]") { $VramGb = $freeGb }
+            }
+        }
+    }
 }
 $vramArgs = @()
 if ($VramGb -gt 0) {
     $vramArgs = @("--vram-gb", "$VramGb")
-    Write-Host "    graphics card memory: $VramGb GB" -ForegroundColor DarkGray
+    Write-Host "    planning for $VramGb GB of graphics memory" -ForegroundColor DarkGray
 } else {
     Write-Host "    couldn't detect graphics card memory - not checking fit (use -VramGb N)" -ForegroundColor Yellow
 }
@@ -88,6 +110,7 @@ if (-not $Yes) {
 
 Write-Host "[4/4] downloading and verifying (can take a while; safe to interrupt and re-run)..." -ForegroundColor DarkYellow
 $code = Invoke-Native docker ($setup + @("install", "--profile", $Profile) + $vramArgs)
+$installCode = $code
 if ($code -eq 1) { Stop-Models "see the message above." }
 if ($code -ne 0) {
     Write-Host ""
@@ -121,3 +144,5 @@ if (Test-Path $envFile) {
 }
 Write-Host ""
 Write-Host "Models are ready." -ForegroundColor Green
+# the real result for whoever called this (0 = ok, 3 = finished with warnings)
+exit $installCode

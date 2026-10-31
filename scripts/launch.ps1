@@ -4,6 +4,8 @@
 # anything already running is reused.
 
 $ErrorActionPreference = "Stop"
+# Containers print UTF-8; without this Windows PowerShell shows an em dash as "an unreadable 3-character mess".
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
@@ -29,15 +31,32 @@ function Test-Port([int]$port) {
 Write-Host "[1/3] backend (Docker)..." -ForegroundColor DarkYellow
 # NOTE: no stderr redirection - PowerShell 5.1 turns redirected native stderr
 # (docker's progress output) into script-killing NativeCommandErrors.
-docker compose @profiles up -d | Out-Null
+docker compose @profiles up -d --quiet-pull | Out-Null
 
 Write-Host "[2/3] operator UI..." -ForegroundColor DarkYellow
 if (-not (Test-Port $UiPort)) {
+    if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+        throw "Node.js is not installed. Install Node 20 or newer from https://nodejs.org, then run this again."
+    }
+    $nodeMajor = [int]((& node --version) -replace "^v(\d+).*", '$1')
+    if ($nodeMajor -lt 20) { throw "Node.js $(& node --version) is too old; the UI needs Node 20 or newer (https://nodejs.org)." }
+    # a fresh clone has no UI packages yet; without them the hidden window just dies
+    if (-not (Test-Path (Join-Path $root "operator-ui\node_modules\.bin"))) {
+        Write-Host "    installing UI packages (first run only, a minute or two)..." -ForegroundColor DarkGray
+        $prev = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        & npm --prefix operator-ui ci 2>&1 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+        $npmCode = $LASTEXITCODE
+        $ErrorActionPreference = $prev
+        if ($npmCode -ne 0) { throw "installing the UI packages failed (npm exit $npmCode) - see the lines above." }
+    }
     Start-Process -WindowStyle Hidden cmd.exe -ArgumentList "/c", "npm --prefix operator-ui run dev -- -p $UiPort"
 }
-$deadline = (Get-Date).AddSeconds(90)
+$deadline = (Get-Date).AddSeconds(120)
 while (-not (Test-Port $UiPort)) {
-    if ((Get-Date) -gt $deadline) { throw "operator UI did not start on port $UiPort" }
+    if ((Get-Date) -gt $deadline) {
+        throw "operator UI did not start on port $UiPort. To see why, run in this folder: npm --prefix operator-ui run dev -- -p $UiPort"
+    }
     Start-Sleep -Milliseconds 700
 }
 
