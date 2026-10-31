@@ -1,206 +1,232 @@
 # Toast Report OPs
 
-Local-first California wildfire intelligence system. Ingests official APIs, satellite
-hotspots, scanner audio, news, social, video, images, ADS-B aircraft data, and weather;
-uses local AI to sift, verify, and attribute facts to specific fires; a single human
-operator reviews AI-drafted reports and publishes them to a static public site and
-social channels. Every incident is permanently archived.
+A local-first California **wildfire and flood** intelligence workstation for one person,
+run at home. It ingests official feeds (CAL FIRE, NIFC/WFIGS, Cal OES evacuation zones,
+NWS alerts and weather, NOAA river gauges, DWR reservoirs, AirNow), satellite hotspots,
+ADS-B aircraft, your own scanner audio, news, social and community mesh traffic. Local
+AI sifts and attributes facts to specific incidents into an append-only ledger; you
+review AI-drafted reports and decide what, if anything, gets published. Every incident
+is permanently archived.
 
-**Status: built and operating** — the full loop runs (ingest → ledger → AI sift →
-newsroom → publish), with a 9-mode operator UI, a Docker stack, and 520+ passing tests.
+**Status:** built and operating — ingest → ledger → AI sift → newsroom → publish, a
+12-mode operator UI, a 9-service Docker stack, 663 backend tests (lint, format, types
+and tests all gate CI), and a UI that type-checks, lints and builds clean.
 
-**Quick start:** double-click `ToastReport.cmd` — it starts the Docker stack and the
-operator UI (port 3005) in its own app window. Alternative:
-`docker compose --profile desktop up`.
+## Quick start (Windows)
 
-**Agents & scripts:** the stack ships an MCP server and a `toast` CLI so Claude, Hermes
-or any MCP client can read the ledger, flood/reservoir boards and drafts — read-only
-by default, and never able to approve or publish. See [docs/AGENT-INTERFACE.md](docs/AGENT-INTERFACE.md).
+Three buttons in the install folder:
 
-**Models:** double-click `Install Models.cmd` to download the AI models safely — official
-sources only, checked against pinned fingerprints before and after, skipped if too big
-for your graphics card, and test-run afterwards. Details: [docs/MODELS.md](docs/MODELS.md).
+| Double-click | What it does |
+|---|---|
+| **`ToastReport.cmd`** | Starts the Docker stack and the operator UI (port 3005) in its own app window. Safe to run repeatedly. |
+| **`Install Models.cmd`** | Downloads the AI models **safely**: official sources only, checked against pinned fingerprints before and after, skipped if too big for your graphics card, test-run afterwards. Resumable. → [docs/MODELS.md](docs/MODELS.md) |
+| **`Update and Launch.cmd`** | Takes a verified database snapshot, pulls the latest code (fast-forward only — never overwrites your edits), rebuilds only what changed, restarts, checks health, opens the app. Stops with the exact undo command if anything fails. |
 
-**Updating:** double-click `Update and Launch.cmd`. It takes a verified database
-snapshot, pulls the latest code (fast-forward only — it never overwrites local
-edits), rebuilds only what changed, restarts the stack and opens the workstation.
-If anything fails it stops with the exact command to go back. Options (pass them
-on the command line): `-NoLaunch`, `-SkipBackup`, `-PullImages` (also refresh
-Ollama/SearXNG images — off by default because `latest` can change model
-behaviour), `-Rebuild`.
+First time: install the prerequisites below, `cp .env.example .env`, then run
+`ToastReport.cmd`, then `Install Models.cmd`. Elsewhere: `docker compose --profile desktop up -d`.
+
+> The PowerShell behind these buttons (`scripts/*.ps1`) has been reviewed but not run
+> on Windows by its author — try each once while nothing depends on the app.
+
+## What's in the workstation
+
+| Mode | What it's for |
+|---|---|
+| **OPS** | Live intake stream, incident panel (ledger with supersession, evac state, weather, aircraft, cameras), statewide map |
+| **EVAC** | Official Cal OES evacuation zones — orders, warnings, reductions — relayed verbatim |
+| **AIR** | ADS-B aircraft over incidents; tanker/air-attack orbit detection |
+| **WATER** | NWS flood alerts, NOAA river gauges at or above action stage (plus ones you pin), and all ~48 DWR reservoirs with % of capacity, % of average and 7-day trend |
+| **RADIO** | Your own SDR captures and stream channels, optional transcription |
+| **MESH** | NorCal/statewide Meshtastic picture via the public MQTT broker |
+| **TIMELINE** | Per-incident event timeline |
+| **NEWSROOM** | AI drafts for review, the draft verifier's findings, approval, release to channels, the local static-site build |
+| **WATCH** | Candidate new-start fires not yet in the ledger, for triage |
+| **ARCHIVE** | Every incident ever tracked, filed by year and month; frozen fires are immutable |
+| **SOURCES** | Feeds, trust tiers (T1 official → T5 community) and their performance |
+| **ANALYTICS** | Facts per day, source performance, attribution and corroboration rates |
+
+**Hazard season.** OPTIONS → *Hazard season* switches between `fire`, `flood` and
+`both`. Flood/both turns on background polling of gauges and flood alerts, phone alerts
+for flood warnings and near-full reservoirs, and the matching health checks. The WATER
+tab works on demand in any season; reservoir history is always collected.
+
+**Phone.** With a Telegram bot configured, your ops chat gets new fires, evacuation
+changes, flood warnings, near-full reservoirs, system-health problems, and drafts to
+approve (a draft the verifier flagged can't be approved from the phone).
+
+## How it stays trustworthy
+
+- **A human publishes.** Nothing goes public without your approval — enforced by a
+  database trigger, not convention. Publishing is manual; nothing auto-deploys.
+- **The model proposes, code verifies.** Extracted claims must quote numbers, fire
+  names and places that appear in their source, or they're dropped/cleared. AI drafts
+  are checked against the facts they cite (invented figures, paraphrased or missing
+  evacuation text, bad citations) and flagged in the NEWSROOM.
+- **Official first.** Official figures outrank media; evacuation text comes verbatim
+  from officials; unofficial reports are badged as such.
+- **Silence is an alarm.** A watchdog tells your phone when a feed stops, the queue
+  stalls or the model goes away — so "no alerts" never quietly means "broken".
+- **Localhost only, guarded.** Everything binds to `127.0.0.1`; the API also refuses
+  cross-site requests and foreign `Host` headers (CSRF / DNS rebinding).
+- **Agents can read, not publish.** The MCP server and CLI are read-only by default and
+  have no tool that can approve, publish, delete or change settings.
+- **Safe models.** Official, digest-pinned models; community uploads are refused by
+  the installer.
+
+Details: [docs/SECURITY.md](docs/SECURITY.md), [docs/AGENT-INTERFACE.md](docs/AGENT-INTERFACE.md),
+[docs/MODELS.md](docs/MODELS.md).
 
 ## System requirements
 
-Everything runs on one machine, bound to localhost — no cloud account required. The
-main hardware driver is the local LLM.
+Everything runs on one machine; no cloud account is required. The main hardware driver
+is the local language model.
 
-**The local LLM.** Reasoning and embeddings run on-machine via **Ollama** (in-stack
-container, GPU passthrough). Two models, auto-pulled on first boot:
-
-| Role | Model | Size | Notes |
-|---|---|---|---|
-| Extraction / drafting / sift | **Qwen3.5 9B** (official `qwen3.5:9b`) | ~6.6 GB | Default; swappable — see `.env` `LLM_MODEL` and [docs/MODELS.md](docs/MODELS.md) |
-| Embeddings (dedup / corroboration) | **`nomic-embed-text`** (768-dim) | ~0.3 GB | Runs on the same GPU |
-
-The endpoint is OpenAI-compatible, so `LLM_BASE_URL` can point at a **cloud API**
-instead — then no GPU is needed at all.
-
-**Software prerequisites:**
-- **Docker Desktop** — the backend is 8 containers (api, worker, scheduler, llm/Ollama,
-  searxng, local-deep-research, mesh, litestream)
-- Windows: **WSL2** + the **NVIDIA WSL driver**; Linux: **NVIDIA Container Toolkit** (GPU passthrough)
-- **Node 20+** — only to run the operator UI outside Docker
-- Broadband internet — for the free/keyless public feeds (CAL FIRE, Cal OES, NWS, ADS-B, …)
-
-**Minimum hardware:**
-
-| Component | Minimum | Notes |
+| Role | Default model | Download |
 |---|---|---|
-| OS | Windows 10/11 (WSL2) or Linux | macOS only if you skip the NVIDIA GPU / run a smaller model on Metal |
-| GPU | NVIDIA, **≥ 12 GB VRAM** (e.g. RTX 3060 12 GB / 4070) | To hold the default model. Use `qwen3:8b` (~5 GB) on an 8 GB card, or go cloud for none |
-| CPU | Modern 6-core / 12-thread | Runs the 8 services + WSL2 |
-| RAM | **16 GB** | 32 GB comfortable alongside a browser + the UI |
-| Disk | **~50 GB free, SSD** | ~15–20 GB images + ~10 GB models + a growing data archive |
-| Network | Broadband | First boot pulls ~10 GB of models + images |
+| Extraction, drafting, judgment | official **`qwen3.5:9b`** | ~6.6 GB |
+| Embeddings (dedupe / corroboration) | **`nomic-embed-text`** (768-dim) | ~0.3 GB |
+| *8 GB cards* | *`qwen3.5:4b` via `Install Models.cmd -Profile small-8gb`* | *~3.3 GB* |
 
-**Recommended (the reference build):** NVIDIA **RTX 4090 (24 GB VRAM)** via WSL2/Docker,
-**32 GB+ RAM**, 8-core+ CPU, and an **NVMe SSD with 100 GB+ free** — the append-only
-ledger and raw-content archive grow unbounded by design, so budget storage for
-long-running use.
+The default is a starting point, not a measured winner: compare candidates on your own
+data with the bake-off ([docs/MODELS.md](docs/MODELS.md)), using the research in
+[reports/](reports/Lightweight%20local%20models%20for%20wildfire%20tool.md). The endpoint
+is OpenAI-compatible, so `LLM_BASE_URL` can point at a cloud API instead (no GPU needed).
 
-## Install & run
+| Component | Minimum | Comfortable |
+|---|---|---|
+| OS | Windows 10/11 (WSL2) or Linux | — |
+| GPU | NVIDIA **12 GB** (e.g. RTX 3060 12 GB / 4070); 8 GB with the small profile | 24 GB lets you try larger candidates |
+| CPU | modern 6-core / 12-thread | 8-core+ |
+| RAM | 16 GB | 32 GB |
+| Disk | ~50 GB free, SSD | NVMe, 100 GB+ — the ledger and raw archive grow by design |
+| Network | broadband (first run pulls images + ~7 GB of models) | — |
 
-**Prerequisites:** Docker Desktop (Windows: WSL2 backend enabled); for NVIDIA GPUs, the
-WSL2 GPU driver (Windows) or NVIDIA Container Toolkit (Linux) so containers can see the
-GPU; `git`; and Node 20+ only if you run the UI outside Docker.
+**Software:** Docker Desktop (Windows: WSL2 backend + the NVIDIA WSL driver; Linux:
+NVIDIA Container Toolkit), `git`, and Node 20+ only if you run the UI outside Docker.
+
+**The stack (9 services):** `api`, `worker`, `scheduler`, `llm` (Ollama), `mesh`,
+`litestream`, `searxng` + `ldr` (optional deep research), `icecast` (radio streams).
+The `degraded` profile runs only `api` + `worker` + `scheduler` for power outages
+([OPERATIONS.md](OPERATIONS.md)).
+
+## Install & run (any OS)
 
 ```bash
-# 1. Get the code
 git clone https://github.com/Fablestarexpanse/ToastReportOps.git
 cd ToastReportOps
-
-# 2. Create config (works as-is with the local LLM; optional keys unlock more sources
-#    and social publishing — see docs/API-KEYS.md). Never commit .env.
-cp .env.example .env
-
-# 3. Start the stack. FIRST BOOT downloads ~10 GB of models (the LLM +
-#    nomic-embed-text) into the ollama_models volume — later boots are instant.
-docker compose --profile desktop up -d
-
-# 4. Seed the source list into the fresh database
-docker compose exec api python -m toast.seed
+cp .env.example .env                       # works as-is; optional keys: docs/API-KEYS.md. Never commit .env
+docker compose --profile desktop up -d     # first boot also pulls the two default models
+docker compose --profile desktop exec -T api python -m toast.seed             # seed the source list
+docker compose --profile desktop exec -T api python -m toast.modelsetup install --vram-gb 12
 ```
 
-Then open the workstation at **http://localhost:3005** (API at `http://localhost:8400`,
-public-site preview at `http://localhost:8400/site/`).
+Open **http://localhost:3005** (API `http://localhost:8400`, site preview
+`http://localhost:8400/site/`). UI outside Docker: `npm --prefix operator-ui run dev -- -p 3005`.
 
-**Windows one-click:** instead of steps 3–4 you can double-click **`ToastReport.cmd`** —
-it brings up the Docker stack, starts the operator UI on port 3005, and opens it in a
-standalone app window (`scripts/launch.ps1`).
+**Check it:**
 
-**Verify:**
 ```bash
-docker compose ps                       # every service "healthy"
-curl http://127.0.0.1:8400/healthz      # {"service":"api","ok":true,...}
-docker compose exec llm ollama list     # default LLM + nomic-embed-text present
+docker compose --profile desktop ps                                            # all healthy
+curl http://127.0.0.1:8400/system/status                                       # "ok": true, no problems
+docker compose --profile desktop exec -T api python -m toast.modelsetup status # models match their pins
 ```
 
-**Stop:** `docker compose --profile desktop down` (add `-v` to also drop the DB and
-downloaded models). **UI outside Docker:** `npm --prefix operator-ui run dev -- -p 3005`
-(proxies `/api/*` to `:8400`).
+**Stop:** `docker compose --profile desktop down` (`-v` also drops the database and
+models). **No NVIDIA GPU:** point `LLM_BASE_URL`/`LLM_API_KEY` at a cloud
+OpenAI-compatible endpoint and remove the GPU reservation from the `llm` service.
 
-**No NVIDIA GPU?** Either set `LLM_MODEL=qwen3:8b` (fits ~8 GB / slower on CPU) or point
-`LLM_BASE_URL` at a cloud OpenAI-compatible endpoint with `LLM_API_KEY`, and remove the
-`deploy.resources` GPU reservation from the `llm` service in `docker-compose.yml`.
+**Update without Windows:** `git pull --ff-only`, take a snapshot
+(`docker compose --profile desktop exec -T api python -m toast.backup`), then
+`docker compose --profile desktop up -d --build`.
 
-### One-shot AI-agent setup prompt
+## Agents and scripts
 
-Paste this into an AI coding agent with shell access (e.g. Claude Code) to install and
-configure the stack on a fresh machine:
+An MCP server and a `toast` CLI let Claude, Hermes or any MCP client read the ledger,
+the WATER board and drafts. `.mcp.json` is preconfigured for Claude Code. Read-only by
+default; `TOAST_AGENT_WRITE=1` adds two tools (leave a note, request a draft for you to
+review). → [docs/AGENT-INTERFACE.md](docs/AGENT-INTERFACE.md)
+
+### One-shot setup prompt for an AI coding agent
 
 ```text
-Set up "Toast Report OPs", a local-first, Docker-based California wildfire
-intelligence system, on this machine — end to end — and report status at each step.
+Set up "Toast Report OPs", a local-first, Docker-based California wildfire and flood
+intelligence workstation, on this machine — end to end — and report status at each step.
 
 Facts:
 - Repo (private): https://github.com/Fablestarexpanse/ToastReportOps
-- Runs as a Docker Compose stack (profile "desktop", 8 services) plus a Next.js
-  operator UI on port 3005. API on 8400. Localhost-only, single operator, no auth.
-- Local LLM via in-stack Ollama: the default model + nomic-embed-text, auto-pulled on first
-  boot (~10 GB). NVIDIA GPU with >=12 GB VRAM strongly recommended.
+- Docker Compose stack (profile "desktop", 9 services) plus a Next.js operator UI on
+  port 3005. API on 8400. Localhost-only, single operator, no login.
+- Models are installed and verified by: python -m toast.modelsetup (see docs/MODELS.md).
 
 Do this:
-1. Check prerequisites; ask me before installing any system software:
-   - Docker Desktop installed and running (Windows: WSL2 backend on).
-   - If an NVIDIA GPU is present, confirm containers can use it:
-     `docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi`.
-   - git present; Node 20+ if the UI will run outside Docker.
+1. Check prerequisites; ask me before installing any system software: Docker running
+   (Windows: WSL2 backend); if an NVIDIA GPU exists, confirm containers see it with
+   `docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi` and note
+   its memory; git; Node 20+ if the UI will run outside Docker.
 2. Clone the repo (I'll authorize access if prompted) and cd into it.
-3. `cp .env.example .env`. Keep the local-LLM defaults. Do NOT invent secrets —
-   leave every optional key blank.
-4. If this machine has NO usable NVIDIA GPU, stop and tell me, then either set
-   LLM_MODEL=qwen3:8b, or (if I provide one) set LLM_BASE_URL + LLM_API_KEY to a
-   cloud OpenAI-compatible endpoint and remove the deploy.resources GPU reservation
-   from the `llm` service in docker-compose.yml. Confirm the choice with me first.
-5. `docker compose --profile desktop up -d`. First boot pulls ~10 GB of models —
-   poll `docker compose exec llm ollama list` until BOTH the default LLM (see `LLM_MODEL` in `.env.example`) and
-   nomic-embed-text appear.
-6. Seed sources: `docker compose exec api python -m toast.seed`.
-7. Verify: `docker compose ps` all healthy; `curl http://127.0.0.1:8400/healthz`
-   returns ok; UI answers on http://localhost:3005 (start it with
-   `npm --prefix operator-ui run dev -- -p 3005` if needed; on Windows you may run
-   ToastReport.cmd instead).
-8. Report the workstation URL, the API URL, which LLM is active, and anything needing
-   my attention (missing GPU, blank optional keys).
+3. `cp .env.example .env`. Keep the defaults. Do NOT invent secrets — leave optional keys blank.
+4. No usable NVIDIA GPU: stop and ask me whether to use a cloud OpenAI-compatible endpoint.
+5. `docker compose --profile desktop up -d`, then seed:
+   `docker compose --profile desktop exec -T api python -m toast.seed`.
+6. Install models: `... exec -T api python -m toast.modelsetup install --vram-gb <GPU GB>`
+   (use `--profile small-8gb` on an 8 GB card). Show me the plan before it downloads.
+7. Verify: `docker compose --profile desktop ps` all healthy;
+   `curl http://127.0.0.1:8400/system/status` shows ok; `modelsetup status` shows the
+   models match their pins; the UI answers on http://localhost:3005.
+8. Report the URLs, the active model, and anything needing my attention.
 
-Rules: do not commit or push; do not fabricate keys or credentials; bind everything to
-localhost; if a step fails, show the exact error and stop for my input.
+Rules: do not commit or push; do not fabricate keys; bind everything to localhost; never
+enable agent write access or publishing; if a step fails, show the exact error and stop.
 ```
 
 ## Core principles
 
 1. **Local-first, append-only.** SQLite is the primary store. The fact ledger is
-   append-only; corrections are supersession records, never edits. Frozen incidents
-   are immutable (enforced by DB triggers, not convention).
-2. **Bi-temporal facts.** Every fact records `observed_at` (when it happened) and
-   `ingested_at` (when we received it). Stale news = large divergence between the two.
-3. **Everything is a pipeline stage.** ingest → normalize → extract → geocode →
-   attribute → corroborate → publish. Raw source material is preserved before any
-   processing.
-4. **Trust is data, not config.** Five-tier source trust (T1 official → T5 community)
-   with per-source performance tracking. Promotions are computed, operator-approved.
-5. **Human-in-the-loop publishing.** The AI drafts; nothing goes public without
-   explicit operator approval. Evacuation data is rendered verbatim from official
-   sources — never paraphrased by an LLM.
-6. **Plugin extensibility.** Sources, extractors, and publishers are adapters behind
-   stable interfaces; new ones require zero core changes.
+   append-only; corrections are supersession records, never edits — enforced by DB
+   triggers, not convention.
+2. **Bi-temporal facts.** Every fact records `observed_at` and `ingested_at`; stale
+   news is a large gap between them.
+3. **Everything is a pipeline stage.** ingest → normalize → extract → verify →
+   geocode → attribute → corroborate → draft → verify → (human) publish. Raw source
+   material is preserved before any processing.
+4. **Trust is data.** Five source tiers with tracked performance; promotions are
+   computed suggestions you approve.
+5. **Human-in-the-loop publishing.** The AI drafts; you decide. Evacuation information
+   is relayed verbatim from officials, never paraphrased by a model.
+6. **The model proposes, code verifies.** Anything a model writes is checked in code
+   against its source before it can matter.
+7. **Plugin extensibility.** Sources and publishers are adapters behind stable
+   interfaces.
 
 ## Documents
 
 | Doc | Contents |
 |---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design, services, interfaces, operator UI |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | Phases 0–5 with tasks, acceptance criteria, demos |
+| [OPERATIONS.md](OPERATIONS.md) | Runbook: start/stop, updating, backup/restore, PSPS mode, publishing |
+| [DEVELOPER_HANDOFF.md](DEVELOPER_HANDOFF.md) | Developer's guide to the codebase |
+| [DECISIONS.md](DECISIONS.md) | Architectural decision log (newest first) |
+| [docs/MODELS.md](docs/MODELS.md) | Which models, safe installation, the bake-off |
+| [docs/AGENT-INTERFACE.md](docs/AGENT-INTERFACE.md) | MCP server and `toast` CLI for agents and scripts |
 | [docs/SECURITY.md](docs/SECURITY.md) | Threat model, prompt-injection posture, SSRF rules |
-| [docs/API-KEYS.md](docs/API-KEYS.md) | Every key/credential to register and what each unlocks |
-| [docs/AUDIT-2026-07-20.md](docs/AUDIT-2026-07-20.md) | Audit findings (partly superseded — its header says which) |
-| [docs/BACKUP-RESTORE.md](docs/BACKUP-RESTORE.md) | Backup layers + the executed restore drill, output recorded |
-| [docs/CORROBORATION.md](docs/CORROBORATION.md) | Corroboration model tuning notes (audit R6) |
-| [docs/OPS-PANEL-SPEC.md](docs/OPS-PANEL-SPEC.md) | OPS incident panel build spec (from concept review) |
-| [docs/RADIO-SETUP.md](docs/RADIO-SETUP.md) | SDR scanner hardware setup feeding the RADIO tab |
-| [docs/SATELLITE-MEDIA-GNIS-PLAN.md](docs/SATELLITE-MEDIA-GNIS-PLAN.md) | Plan: satellite layers, media/video, GNIS place names |
-| [docs/UI-GAP-ANALYSIS.md](docs/UI-GAP-ANALYSIS.md) | Concept vs. built, panel by panel (2026-07-20 snapshot) |
-| [backend/src/toast/migrations/0001_init.sql](backend/src/toast/migrations/0001_init.sql) | Full SQLite schema |
-| [DECISIONS.md](DECISIONS.md) | Architectural decision log |
-| [OPERATIONS.md](OPERATIONS.md) | Runbook (start/stop, backup/restore, PSPS mode) |
-| [docs/mockups/](docs/mockups/) | Operator UI design reference |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design, services, interfaces |
+| [docs/API-KEYS.md](docs/API-KEYS.md) | Every optional key and what it unlocks |
+| [docs/BACKUP-RESTORE.md](docs/BACKUP-RESTORE.md) | Backup layers and the restore drill |
+| [docs/CORROBORATION.md](docs/CORROBORATION.md) | Corroboration tuning notes |
+| [docs/RADIO-SETUP.md](docs/RADIO-SETUP.md) | SDR scanner hardware for the RADIO tab |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Original phase plan (history; most phases are built) |
+| [docs/AUDIT-2026-07-20.md](docs/AUDIT-2026-07-20.md), [-07-22](docs/AUDIT-2026-07-22.md), [EVAC-07-23](docs/AUDIT-EVAC-2026-07-23.md) | Earlier audits (history) |
+| [docs/OPS-PANEL-SPEC.md](docs/OPS-PANEL-SPEC.md), [docs/UI-GAP-ANALYSIS.md](docs/UI-GAP-ANALYSIS.md), [docs/SATELLITE-MEDIA-GNIS-PLAN.md](docs/SATELLITE-MEDIA-GNIS-PLAN.md) | Design notes and plans (history) |
+| [reports/](reports/) | Research reports (lightweight local models) with notes in `research_notes/` |
+| [backend/src/toast/migrations/](backend/src/toast/migrations/README.md) | Schema migrations and their rules |
 
 ## Layout
 
-- `backend/` — Python workers, pipeline, FastAPI, migrations (uv-managed)
+- `ToastReport.cmd`, `Install Models.cmd`, `Update and Launch.cmd` — the buttons; `scripts/` holds their PowerShell
+- `backend/` — Python 3.12: FastAPI, workers, pipeline, migrations, MCP server and CLI (uv-managed)
 - `operator-ui/` — Next.js operator workstation (localhost only)
-- `public-site/` — placeholder; the site is generated by `backend/src/toast/sitegen/`
-  and previewed at `/site/`. Nothing publishes it — that is manual, by decision.
-- `prompts/` — versioned LLM prompt files
-- `infra/` — Litestream/B2 and PSPS degraded-mode configs
-- `data/` — git-ignored: `toast.db`, raw archive (sha256 CAS), tiles
+- `prompts/` — versioned LLM prompt files (every fact records the prompt version that produced it)
+- `infra/` — Litestream, SearXNG and PSPS degraded-mode config
+- `public-site/` — placeholder; the site is generated by `backend/src/toast/sitegen/` and previewed at `/site/`
+- `docs/`, `reports/`, `research_notes/` — documentation and research
+- `.mcp.json` — MCP server config for Claude Code
+- `data/` — git-ignored: `toast.db`, raw archive (sha256 content-addressed), backups, eval results

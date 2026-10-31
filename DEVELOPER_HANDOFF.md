@@ -13,23 +13,32 @@ newest-first log). For the last full audit, see
 ## 1. Current status
 
 **Built and operating.** The full pipeline runs: ingest → append-only ledger
-→ AI sifting → newsroom drafting → human-approved publishing, with a nine-mode
-operator UI. 444 tests pass (unit + HTTP integration). It runs as a local
-Docker stack on the operator's machine.
+→ AI sifting → newsroom drafting → human-approved publishing, with a twelve-mode
+operator UI. 663 backend tests pass (unit + HTTP integration) and CI also gates on
+ruff, ruff format and mypy; the UI type-checks, lints and builds. It runs as a local
+Docker stack (9 services) on the operator's machine.
 
-- **Works:** all nine UI modes; CAL FIRE + WFIGS/federal ingest; the fact
+- **Works:** all twelve UI modes; CAL FIRE + WFIGS/federal ingest; the fact
   ledger; AI extraction/triage/activity-check; statewide + per-fire drafts and
   graphics; site generation; Bluesky/X/Facebook/Telegram publishing
   (credential-gated); ADS-B aircraft, ALERTCalifornia cameras, Cal OES evac
   zones, NWS weather/red-flag, AirNow AQI, Meshtastic mesh, scanner-radio
-  inbox.
+  inbox; **flood season** (hazard switch, NWS flood alerts, NOAA river gauges,
+  DWR reservoirs with daily history — the WATER mode); deterministic **verifiers**
+  on extraction (`llm/verify_extraction.py`) and on drafts (`pipeline/verify_draft.py`);
+  the **watchdog** (silent feeds / stalled queue / model down → phone);
+  the **agent interface** (MCP server + `toast` CLI, read-only by default); the safe
+  **model installer** (`modelsetup.py`, digest-pinned `model_manifest.json`); the
+  **bake-off harness** (`eval/model_bakeoff.py`); one-click update and model install.
 - **Experimental / optional:** RADIO transcription (needs a Whisper endpoint +
   SDR hardware); FIRMS satellite hotspots (adapter present, disabled pending a
-  key); deep research (LDR + SearXNG containers).
+  key); deep research (LDR + SearXNG containers); `LLM_THINK_MODE=native` (Ollama's
+  real `think:false`; off until `model_bakeoff probe` confirms it on your setup).
 - **Do not change without discussion:** the append-only ledger triggers
   (`migrations/0001`,`0018`–`0020`,`0035`); the draft state-machine trigger
-  (approval gate); the SSRF fetcher (`core/fetch.py`); the localhost-only bind.
-  See §11.
+  (approval gate); the SSRF fetcher (`core/fetch.py`); the localhost-only bind and
+  the origin guard (`api/guard.py`); the agent tool allowlist (`agent_tools.py`);
+  the model pins (`model_manifest.json` — change only via `modelsetup pin`). See §11.
 
 ---
 
@@ -37,17 +46,18 @@ Docker stack on the operator's machine.
 
 | Layer | Choice |
 |-------|--------|
-| Backend | Python 3.11, FastAPI, uvicorn |
+| Backend | Python 3.12, FastAPI, uvicorn |
 | Data | SQLite (WAL, STRICT tables, enforced FKs, append-only bi-temporal ledger) |
 | Async work | in-process job queue (a `jobs` table) + a worker process + a scheduler process |
 | AI | in-stack Ollama container (OpenAI-compatible API); embeddings via sqlite-vec |
 | Frontend | Next.js 16 (App Router, Turbopack), React 19, TypeScript, Leaflet (bundled, no CDN) |
-| Packaging | Docker Compose (8 services), all ports bound to `127.0.0.1` |
+| Packaging | Docker Compose (9 services), all ports bound to `127.0.0.1` |
 | Tooling | pytest, ruff (lint+format), tsc, eslint |
 
-**No authentication by design** — single operator, localhost only. The browser
-origin is the trust boundary (see the XSS findings in the audit). Any
-non-localhost deployment would need auth + CSRF added first.
+**No login by design** — single operator, localhost only. The browser origin is
+the trust boundary, so `api/guard.py` refuses state-changing requests with a
+foreign `Origin` and any request with an unknown `Host` (CSRF and DNS rebinding).
+Any non-localhost deployment would still need real authentication first.
 
 ---
 
@@ -68,10 +78,14 @@ backend/
                   handlers.py (stage registry)
     publishers/   bluesky, facebook, telegram, x  (credential-gated)
     sitegen/      static site builder
-    migrations/   0001…0035 *.sql, applied in order at startup
-    llm/, mesh/, eval/, assets/, seed.py, scheduler.py, backup*.py, rawsync.py
+    migrations/   0001…0039 *.sql, applied in order at startup (index in its README)
+    llm/          client, extraction, prompts, verify_extraction
+    eval/         attribution replay eval + model_bakeoff (cases in eval/cases/)
+    agent_tools.py, mcp_server.py, cli.py   the agent interface (one tool registry)
+    modelsetup.py + model_manifest.json     safe model download (pinned digests)
+    mesh/, assets/, seed.py, scheduler.py, backup*.py, rawsync.py
   tests/
-    unit/         ~62 files, one per module
+    unit/         ~80 files, one per module
     integration/  real FastAPI app over HTTP on a fresh migrated DB
 operator-ui/
   app/            Next.js App Router entry (page.tsx → Workstation)
@@ -79,7 +93,8 @@ operator-ui/
   lib/            api.ts (typed client), theme.ts, time.ts, html.ts, california.ts
 docs/             architecture, audits, roadmap, per-subsystem guides
 prompts/          versioned, operator-editable LLM prompts (*.vN.md)
-docker-compose.yml, ToastReport.cmd, scripts/launch.ps1
+docker-compose.yml, .mcp.json
+ToastReport.cmd, Install Models.cmd, Update and Launch.cmd → scripts/*.ps1
 ```
 
 **Where to find a feature:** almost every backend feature is one
@@ -96,12 +111,14 @@ Docker), and (Windows) the bundled launcher.
 
 ```bash
 cp .env.example .env      # fill in optional keys/credentials; LLM works as-is
-docker compose --profile desktop up   # starts all 8 services
+docker compose --profile desktop up   # starts all 9 services
 ```
 
 The **one-step Windows launcher** is `ToastReport.cmd` (double-click): it
 brings up the Docker stack, starts the operator UI on **port 3005**, and opens
-it in a standalone app window. See `scripts/launch.ps1`.
+it in a standalone app window. See `scripts/launch.ps1`. Its siblings:
+`Install Models.cmd` (safe, verified model download — docs/MODELS.md) and
+`Update and Launch.cmd` (snapshot → fast-forward pull → rebuild what changed).
 
 **UI-only dev loop** (backend already up): `npm --prefix operator-ui run dev`.
 The UI proxies `/api/*` to `127.0.0.1:8400`.
@@ -110,15 +127,18 @@ The UI proxies `/api/*` to `127.0.0.1:8400`.
 
 ```bash
 # backend (from backend/)
-uv run pytest                         # 444 tests
-uv run ruff check .                   # lint  (ruff format . to format)
-uv run python -m toast.seed           # seed sources into a fresh DB
+uv run --frozen pytest                # 663 tests
+uv run --frozen ruff check .          # lint
+uv run --frozen ruff format --check . # format (CI gate; `ruff format .` to fix)
+uv run --frozen mypy                  # types (CI gate)
+uv run --frozen python -m toast.seed  # seed sources into a fresh DB
+# always pass --frozen: without it uv may re-resolve and rewrite uv.lock
 
 # frontend (from operator-ui/)
 npx tsc --noEmit                      # type check
 npx eslint .                          # lint
 npm run build                         # production build
-npm audit                             # 0 vulnerabilities as of 2026-07-22
+npm audit --omit=dev                  # 0 vulnerabilities as of 2026-10-31 (dev-only: see §12)
 ```
 
 Inside the container, run backend commands via
@@ -258,7 +278,12 @@ All free/keyless-first. Keyed ones are optional and inert until configured:
 `TestClient` on a fresh migrated DB (draft lifecycle, publish guard, markdown
 sanitizer, activity-check through the actual queue+worker). Tests are
 deterministic (`utcnow` is the only time source; no network — adapters are
-monkeypatched). No secrets, no live external calls.
+monkeypatched). No secrets, no live external calls. A test that writes files must
+point `TOAST_DATA_DIR` at `tmp_path` — the suite leaves the working tree clean.
+
+Model quality is not unit-testable; `python -m toast.eval.model_bakeoff` measures it
+against a live model (see docs/MODELS.md). Its own scoring is unit-tested: a scripted
+perfect model must score perfectly and a reckless one must rank last.
 
 ---
 
@@ -281,6 +306,15 @@ monkeypatched). No secrets, no live external calls.
   container while the stack is up; host-side writes can wedge Docker's
   file-share locks (see the outage note in the session history).
 - **Migrations** — forward-only; test on a copy; never delete history.
+- **The verifiers** — `verify_extraction.py` drops claims whose numbers aren't in the
+  source; `verify_draft.py` flags drafts and blocks phone approval. Loosening either
+  lets invented figures into a permanent ledger or a public post.
+- **Agent tools** — adding a tool to `agent_tools.TOOLS` exposes it to any connected
+  agent, which reads hostile scraped text. `test_agent_interface.py` asserts no tool
+  reaches approve/publish/settings routes; keep it that way.
+- **Embedding distances** are L2 (sqlite-vec default), not cosine — the thresholds in
+  `pipeline/embeddings.py` are tuned in L2 units. Changing model or metric means
+  re-embedding and re-tuning.
 
 ---
 
@@ -298,6 +332,22 @@ bug):
 3. **Telegram approval** authenticates the chat, not the clicking user — only
    matters if the ops chat ever becomes a group; add a user-id allowlist then.
 
+Open as of the 2026-10-31 audit:
+
+4. **Offsite backup is not live** — the Litestream B2 replica is commented out
+   pending keys; the only copy of the archive is on the same disk.
+5. **No UI unit tests** — CI runs lint, types and build only.
+6. **Windows scripts unrun** — `scripts/*.ps1` were reviewed, not executed, by
+   their author; the model installer was tested against simulated Ollama/registry
+   servers only.
+7. **Default model unmeasured** — `qwen3.5:9b` is a safe official baseline, not a
+   bake-off winner; run the bake-off on real cases. Extraction still uses the
+   `/no_think` hint that Qwen3.5 ignores until `LLM_THINK_MODE=native` is confirmed.
+8. **Dev-only npm advisories** — `brace-expansion`/`minimatch` inside the lint
+   toolchain; the fix needs a breaking ESLint upgrade. Nothing shipped is affected.
+9. **Large files** — `api/routes.py` and `components/workstation.tsx` would benefit
+   from splitting by area.
+
 Product backlog lives in [docs/ROADMAP.md](docs/ROADMAP.md); the open UI-polish
 item is char-count/queue-search/Spanish-version in the newsroom.
 
@@ -309,7 +359,7 @@ item is char-count/queue-search/Spanish-version in the newsroom.
 module + handler + route + component + client quintet repeats for every
 feature), naming is purposeful, there is no dead code or TODO debt, types are
 strong, and the invariants that matter are enforced in the database rather than
-by convention. The two large files (`api/routes.py` ~2000 lines,
+by convention. The two large files (`api/routes.py` ~2500 lines,
 `components/workstation.tsx`) are big but coherent and internally sectioned —
 grep by path group / mode. Read this file, then DECISIONS.md, then trace one
 feature end to end (the OPS map or a draft) and the rest follows the same shape.

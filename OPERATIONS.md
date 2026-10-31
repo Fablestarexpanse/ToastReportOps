@@ -263,3 +263,12 @@ noticing, and extraction/watch/triage jobs dead-lettered silently. The stack
 owning its model ends that failure class. The backend contract is unchanged —
 `LLM_BASE_URL=http://llm:11434/v1` — so pointing it at OpenAI/OpenRouter/etc.
 with a key still overrides for anyone who prefers cloud.
+
+**Installing or changing models (2026-10-31):** use `Install Models.cmd` (or
+`docker compose --profile desktop exec -T api python -m toast.modelsetup install`).
+It installs only official, digest-pinned models, refuses a tag that changed upstream,
+skips models too big for the GPU and smoke-tests each one; `modelsetup status` shows
+whether what's installed still matches its pin. The first-boot auto-pull still exists
+for convenience but does no verification. Profiles, the bake-off and the default-model
+change are in docs/MODELS.md. The watchdog reports "the language model endpoint is
+unreachable" to the ops chat if the `llm` service goes away.
