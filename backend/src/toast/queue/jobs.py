@@ -22,10 +22,12 @@ from toast.core.ids import ulid
 #
 # After AGING_AFTER_S a waiting job's EFFECTIVE priority is capped at
 # AGED_PRIORITY, so it overtakes the batch tiers and runs. The cap is deliberate:
-# an aged job still never cuts ahead of the evacuation sync (2) or the realtime
-# feeds (3), because those are time-critical by nature and cheap to run.
+# an aged job never cuts ahead of the evacuation sync (2), the realtime feeds (3)
+# or a source poll (5), which is what the tie-break in claim() is for. A poll is
+# seconds of work, while a requeued backlog is hours of it, all of it "old": when
+# it could outrank polls, requeuing 172 extract jobs stopped every feed.
 AGING_AFTER_S = 900
-AGED_PRIORITY = 4
+AGED_PRIORITY = 5
 
 # A job parked because the model it needs is not installed. It keeps its attempts
 # and is looked at again every MODEL_WAIT_S, so installing a model is all it takes
@@ -80,6 +82,7 @@ def claim(
                                  CASE WHEN unixepoch('now') - unixepoch(created_at)
                                            >= {AGING_AFTER_S}
                                       THEN {AGED_PRIORITY} ELSE 99 END),
+                             priority > {AGED_PRIORITY},
                              created_at
                     LIMIT 1)
                 RETURNING *""",

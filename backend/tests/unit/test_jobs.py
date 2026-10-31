@@ -32,6 +32,30 @@ def test_sweep_runs_only_when_due_and_frees_abandoned_jobs(db):
     assert db.execute("SELECT state FROM jobs").fetchone()["state"] == "queued"
 
 
+def _age(db, job_id):
+    db.execute("UPDATE jobs SET created_at = '2020-01-01T00:00:00.000Z' WHERE id = ?", (job_id,))
+
+
+def test_an_old_llm_backlog_never_holds_up_a_fresh_feed_poll(db):
+    """Requeuing 172 extract jobs stopped every feed, CAL FIRE included: aged, they
+    outranked new polls, and would have for the 100 minutes the backlog took."""
+    _age(db, jobs.enqueue(db, "extract", {}, priority=6))
+    poll = jobs.enqueue(db, "poll", {}, priority=5)
+    assert jobs.claim(db, "w1")["id"] == poll
+
+
+def test_aged_low_priority_work_still_takes_its_turn_behind_feeds(db):
+    extract = jobs.enqueue(db, "extract", {}, priority=6)
+    maintenance = jobs.enqueue(db, "archive_index", {}, priority=8)
+    fresher_extract = jobs.enqueue(db, "extract", {}, priority=6)
+    _age(db, maintenance)
+    db.execute("UPDATE jobs SET created_at = '2019-01-01T00:00:00.000Z' WHERE id = ?", (extract,))
+    # both aged jobs run in age order, ahead of the fresh batch job they would starve behind
+    assert jobs.claim(db, "w1")["id"] == extract
+    assert jobs.claim(db, "w1")["id"] == maintenance
+    assert jobs.claim(db, "w1")["id"] == fresher_extract
+
+
 def test_enqueue_claim_complete(db):
     job_id = jobs.enqueue(db, "demo_noop", {"n": 1})
     job = jobs.claim(db, "w1")
