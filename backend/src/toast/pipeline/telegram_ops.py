@@ -63,7 +63,10 @@ def _save(conn: sqlite3.Connection, key: str, state: dict[str, Any]) -> None:
 
 
 def _send(
-    client: httpx.Client, token: str, chat: str, text: str,
+    client: httpx.Client,
+    token: str,
+    chat: str,
+    text: str,
     buttons: list[list[dict[str, str]]] | None = None,
 ) -> bool:
     payload: dict[str, Any] = {"chat_id": chat, "text": text, "parse_mode": "HTML"}
@@ -113,9 +116,7 @@ def notify_sweep(
         from toast.pipeline.evacstate import evac_state, zone_index
 
         zidx = zone_index(conn)
-        for r in conn.execute(
-            "SELECT id, canonical_name FROM incidents WHERE status = 'active'"
-        ):
+        for r in conn.execute("SELECT id, canonical_name FROM incidents WHERE status = 'active'"):
             st = evac_state(conn, r["id"], zone_index=zidx).status
             cur = st if st in ACTIVE_EVAC else "none"
             prev = state["evac"].get(r["id"], "none")
@@ -136,20 +137,22 @@ def notify_sweep(
                 sent += 1
 
         # drafts arriving for review, with approval buttons
-        for r in conn.execute(
-            "SELECT id, title FROM drafts WHERE status = 'needs_review'"
-        ):
+        for r in conn.execute("SELECT id, title FROM drafts WHERE status = 'needs_review'"):
             if r["id"] in seen_drafts:
                 continue
             seen_drafts.add(r["id"])
             if first_run:
                 continue
-            buttons = [[
-                {"text": "✓ APPROVE", "callback_data": f"approve:{r['id']}"},
-                {"text": "✗ SEND BACK", "callback_data": f"reject:{r['id']}"},
-            ]]
+            buttons = [
+                [
+                    {"text": "✓ APPROVE", "callback_data": f"approve:{r['id']}"},
+                    {"text": "✗ SEND BACK", "callback_data": f"reject:{r['id']}"},
+                ]
+            ]
             if _send(
-                client, token, chat,
+                client,
+                token,
+                chat,
                 f"📝 DRAFT FOR REVIEW: <b>{html.escape(r['title'] or r['id'][-6:])}</b>\n"
                 "Approving here is the same human approval as the newsroom click; "
                 "releasing to channels stays a separate step.",

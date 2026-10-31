@@ -63,9 +63,7 @@ def test_only_selected_channels_release(seeded, approved_draft):
 
 
 def test_scheduled_release_waits_for_its_time(seeded, approved_draft):
-    out = release.release_draft(
-        seeded, approved_draft, ["bluesky"], at="2099-01-01T08:00:00.000Z"
-    )
+    out = release.release_draft(seeded, approved_draft, ["bluesky"], at="2099-01-01T08:00:00.000Z")
     assert out["enqueued_now"] == 0
     assert not _jobs(seeded)  # nothing goes out early
     row = seeded.execute("SELECT * FROM publications").fetchone()
@@ -74,9 +72,7 @@ def test_scheduled_release_waits_for_its_time(seeded, approved_draft):
 
     # the sweep is idempotent and time-gated
     assert release.release_due(seeded) == 0
-    seeded.execute(
-        "UPDATE publications SET not_before = '2020-01-01T00:00:00.000Z'"
-    )
+    seeded.execute("UPDATE publications SET not_before = '2020-01-01T00:00:00.000Z'")
     seeded.commit()
     assert release.release_due(seeded) == 1
     assert release.release_due(seeded) == 0  # exactly one job, ever
@@ -140,9 +136,7 @@ class TestUpcoming:
     def test_upcoming_lists_only_future_scheduled(self, seeded, approved_draft):
         from toast.api import routes
 
-        release.release_draft(
-            seeded, approved_draft, ["bluesky"], at="2099-01-01T08:00:00.000Z"
-        )
+        release.release_draft(seeded, approved_draft, ["bluesky"], at="2099-01-01T08:00:00.000Z")
         out = routes.upcoming_publications(self._req(seeded))
         assert out["count"] == 1
         assert out["upcoming"][0]["channel"] == "bluesky"

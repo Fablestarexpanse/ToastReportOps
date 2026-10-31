@@ -61,9 +61,7 @@ def freshen_official_sources(
         except Exception as exc:
             jobs.fail(conn, job, str(exc)[:200])
 
-    newest = conn.execute(
-        "SELECT MAX(observed_at) AS t FROM facts WHERE tier <= 2"
-    ).fetchone()["t"]
+    newest = conn.execute("SELECT MAX(observed_at) AS t FROM facts WHERE tier <= 2").fetchone()["t"]
     out = {
         "polled": polled,
         "normalized": drained,

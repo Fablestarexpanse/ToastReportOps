@@ -66,7 +66,7 @@ CA_BBOX = (32.0, 42.5, -125.0, -113.5)  # lat min/max, lon min/max
 def _alt(a: dict[str, Any]) -> int | None:
     """alt_baro is an int in flight and the string "ground" on the ramp."""
     v = a.get("alt_baro")
-    return v if isinstance(v, int | float) else None
+    return int(v) if isinstance(v, int | float) else None
 
 
 class Throttle:
@@ -101,9 +101,7 @@ def _cache_put(conn: sqlite3.Connection, key: str, payload: dict[str, Any]) -> N
 
 
 def _cache_get(conn: sqlite3.Connection, key: str) -> tuple[dict[str, Any] | None, str | None]:
-    row = conn.execute(
-        "SELECT payload, fetched_at FROM map_cache WHERE key = ?", (key,)
-    ).fetchone()
+    row = conn.execute("SELECT payload, fetched_at FROM map_cache WHERE key = ?", (key,)).fetchone()
     if not row:
         return None, None
     return json.loads(row["payload"]), row["fetched_at"]
@@ -117,9 +115,7 @@ def focus_poll(conn: sqlite3.Connection, incident_id: str) -> dict[str, Any]:
 
     Between allowed upstream hits, callers get the current picture from the
     position store — so a 2-second UI poll degrades gracefully to reads."""
-    inc = conn.execute(
-        "SELECT * FROM incidents WHERE id = ?", (incident_id,)
-    ).fetchone()
+    inc = conn.execute("SELECT * FROM incidents WHERE id = ?", (incident_id,)).fetchone()
     if inc is None:
         raise ValueError("unknown incident")
     if inc["lat"] is None or inc["lon"] is None:
@@ -173,19 +169,13 @@ def _over_incident(conn: sqlite3.Connection, incident_id: str) -> list[dict[str,
             }
         )
     cutoff = CURRENT_WINDOW_S
-    current = [
-        a
-        for a in by_hex.values()
-        if _age_s(conn, a["seen_at"]) < cutoff
-    ]
+    current = [a for a in by_hex.values() if _age_s(conn, a["seen_at"]) < cutoff]
     current.sort(key=lambda a: (not a["fire_ops"], a["role"] or "z"))
     return current
 
 
 def _age_s(conn: sqlite3.Connection, iso: str) -> float:
-    return conn.execute(
-        "SELECT unixepoch('now') - unixepoch(?)", (iso,)
-    ).fetchone()[0]
+    return conn.execute("SELECT unixepoch('now') - unixepoch(?)", (iso,)).fetchone()[0]
 
 
 # ---------------------------------------------------------------- base watch
@@ -214,8 +204,11 @@ def base_watch(conn: sqlite3.Connection) -> dict[str, Any]:
         seen_now = set()
         for a in ac:
             role = classify_role(
-                a.get("t"), a.get("category"), _alt(a),
-                a.get("flight"), a.get("ownOp"),
+                a.get("t"),
+                a.get("category"),
+                _alt(a),
+                a.get("flight"),
+                a.get("ownOp"),
             )
             if role == "other" and not is_military(a.get("dbFlags")):
                 continue  # base watch cares about fire + military hulls only
@@ -241,9 +234,7 @@ def base_watch(conn: sqlite3.Connection) -> dict[str, Any]:
                 s["departed_at"] = now
         # forget sightings older than an hour — this is a watch, not a record
         state["sightings"] = {
-            hx: s
-            for hx, s in state["sightings"].items()
-            if _age_s(conn, s["last_seen"]) < 3600
+            hx: s for hx, s in state["sightings"].items() if _age_s(conn, s["last_seen"]) < 3600
         }
         state["scanned"] = {"base": base["id"], "at": now}
         _cache_put(conn, "air:bases:state", state)
@@ -307,8 +298,11 @@ def mil_snapshot(conn: sqlite3.Connection) -> dict[str, Any]:
                 "gs": a.get("gs"),
                 "track": a.get("track"),
                 "role": classify_role(
-                    a.get("t"), a.get("category"), _alt(a),
-                    a.get("flight"), a.get("ownOp"),
+                    a.get("t"),
+                    a.get("category"),
+                    _alt(a),
+                    a.get("flight"),
+                    a.get("ownOp"),
                 ),
             }
         )

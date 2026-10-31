@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     # LLM (OpenAI-compatible local endpoint)
     llm_base_url: str = "http://localhost:11434/v1"
-    llm_model: str = "qwen3"
+    llm_model: str = "hf.co/DavidAU/Qwen3.5-9B-The-Defiant-Fable-Uncensored-Heretic-NEO-IMATRIX-MAX-MTP-GGUF:Q6_K"
     llm_api_key: str = "unused-for-local"
     llm_timeout_s: float = 300.0
     # qwen3 and similar reasoning models default to slow "thinking"; the soft
@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     # operator API
     api_bind: str = "127.0.0.1"
     api_port: int = 8400
+    # extra hostnames accepted in Host/Origin besides loopback (comma-separated);
+    # `api` is the compose service name
+    api_allowed_hosts: str = "api"
 
     # per-service health endpoint (workers/scheduler); 0 disables
     health_port: int = 0

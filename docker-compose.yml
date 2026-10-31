@@ -141,7 +141,7 @@ services:
       - |
         ollama serve &
         sleep 4
-        ollama pull "${LLM_PULL_MODEL:-qwen3:14b}" || true
+        ollama pull "${LLM_PULL_MODEL:-hf.co/DavidAU/Qwen3.5-9B-The-Defiant-Fable-Uncensored-Heretic-NEO-IMATRIX-MAX-MTP-GGUF:Q6_K}" || true
         ollama pull "${LLM_EMBED_PULL_MODEL:-nomic-embed-text}" || true
         wait
     environment:

@@ -1,6 +1,5 @@
 """CAL FIRE adapter + active-status derivation through the normalize pipeline."""
 
-
 from toast.core.envelope import insert_envelope
 from toast.pipeline.normalize import normalize_envelope
 from toast.sources.calfire import incident_to_payload

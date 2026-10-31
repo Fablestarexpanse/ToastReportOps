@@ -46,6 +46,7 @@ def _adopt_cross_ref(
             continue
         if (
             lat is not None
+            and lon is not None
             and row["lat"] is not None
             and haversine_km(lat, lon, row["lat"], row["lon"]) > ADOPT_RADIUS_KM
         ):

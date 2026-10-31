@@ -45,8 +45,8 @@ UI_DEFAULTS = {
 
 def brand_line(conn: sqlite3.Connection) -> str | None:
     """The operator's links, one line, or None when nothing is configured."""
-    parts = [get_setting(conn, k) for k in ("brand_web", "brand_social")]
-    parts = [p.strip() for p in parts if p and p.strip()]
+    values = [get_setting(conn, k) for k in ("brand_web", "brand_social")]
+    parts = [v.strip() for v in values if v and v.strip()]
     return " - ".join(parts) if parts else None
 
 

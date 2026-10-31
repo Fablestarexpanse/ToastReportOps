@@ -178,9 +178,7 @@ def generate_draft(
 STATEWIDE_TITLE = "CALIFORNIA WILDFIRE ROUNDUP"
 
 
-def _latest_fact_row(
-    conn: sqlite3.Connection, incident_id: str, kind: str
-) -> sqlite3.Row | None:
+def _latest_fact_row(conn: sqlite3.Connection, incident_id: str, kind: str) -> sqlite3.Row | None:
     return conn.execute(
         """SELECT * FROM facts
            WHERE incident_id = ? AND kind = ?
@@ -228,7 +226,7 @@ def generate_statewide_roundup(conn: sqlite3.Connection) -> dict[str, Any]:
                 "facts": [f for f in (ac, ct, ev) if f is not None],
             }
         )
-    entries.sort(key=lambda e: (e["acreage"] or 0), reverse=True)
+    entries.sort(key=lambda e: e["acreage"] or 0, reverse=True)
 
     cited: list[sqlite3.Row] = []
     index: dict[str, int] = {}
@@ -292,8 +290,12 @@ def generate_statewide_roundup(conn: sqlite3.Connection) -> dict[str, Any]:
     if evac_entries:
         lines += ["## Under evacuation", ""]
         lines += [line(e) for e in evac_entries]
-        lines += ["", "Evacuation boundaries and instructions are issued by county "
-                  "officials — always follow the official notice, not this summary.", ""]
+        lines += [
+            "",
+            "Evacuation boundaries and instructions are issued by county "
+            "officials — always follow the official notice, not this summary.",
+            "",
+        ]
     if sized:
         lines += ["## Largest active fires", ""]
         lines += [line(e) for e in sized[:12]]

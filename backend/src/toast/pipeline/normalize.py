@@ -74,13 +74,18 @@ def _normalize_report(conn, payload, observed, common) -> list[str]:
         typ = (payload.get("type") or "").upper()
         if typ == "RX" or "RX" in name.upper().split():
             return []  # prescribed burns are not wildfires — standing doctrine
-        known = conn.execute(
-            "SELECT 1 FROM incidents WHERE irwin_id = ?", (ref_id,)
-        ).fetchone()
-        if not known and inc._adopt_cross_ref(
-            conn, ref_col="irwin_id", name=name,
-            lat=payload.get("lat"), lon=payload.get("lon"),
-        ) is None:
+        known = conn.execute("SELECT 1 FROM incidents WHERE irwin_id = ?", (ref_id,)).fetchone()
+        if (
+            not known
+            and inc._adopt_cross_ref(
+                conn,
+                ref_col="irwin_id",
+                name=name,
+                lat=payload.get("lat"),
+                lon=payload.get("lon"),
+            )
+            is None
+        ):
             acres = payload.get("acreage") or 0
             crew = payload.get("personnel") or 0
             if acres < WFIGS_MIN_ACRES and crew < WFIGS_MIN_PERSONNEL:

@@ -66,14 +66,13 @@ def get_wind_field(conn: sqlite3.Connection, *, refresh: bool = False) -> dict[s
         "&wind_speed_unit=mph&timezone=UTC"
     )
     try:
-        body, _ct = fetch(url, accept_types=("application/json", "text/plain"),
-                          max_bytes=4 * 1024 * 1024)
+        body, _ct = fetch(
+            url, accept_types=("application/json", "text/plain"), max_bytes=4 * 1024 * 1024
+        )
         data = json.loads(body)
     except (FetchError, ValueError) as exc:
         get_logger("windfield").warning("wind_field_fetch_failed", error=repr(exc))
-        stale = conn.execute(
-            "SELECT payload FROM map_cache WHERE key = ?", (CACHE_KEY,)
-        ).fetchone()
+        stale = conn.execute("SELECT payload FROM map_cache WHERE key = ?", (CACHE_KEY,)).fetchone()
         if stale:
             out = json.loads(stale["payload"])
             out["cached"] = True
@@ -88,13 +87,15 @@ def get_wind_field(conn: sqlite3.Connection, *, refresh: bool = False) -> dict[s
         mph = cur.get("wind_speed_10m")
         if deg is None or mph is None:
             continue
-        arrows.append({
-            "lat": e.get("latitude"),
-            "lon": e.get("longitude"),
-            "deg": deg,          # direction the wind blows FROM (met convention)
-            "mph": round(mph, 1),
-            "gust": cur.get("wind_gusts_10m"),
-        })
+        arrows.append(
+            {
+                "lat": e.get("latitude"),
+                "lon": e.get("longitude"),
+                "deg": deg,  # direction the wind blows FROM (met convention)
+                "mph": round(mph, 1),
+                "gust": cur.get("wind_gusts_10m"),
+            }
+        )
 
     payload: dict[str, Any] = {
         "arrows": arrows,

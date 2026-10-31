@@ -76,6 +76,4 @@ def test_a_never_published_draft_deletes_cleanly(seeded):
     did = _draft(seeded)
     routes.delete_draft(req, did)
     assert did not in _ids(req)
-    assert (
-        seeded.execute("SELECT COUNT(*) FROM drafts WHERE id = ?", (did,)).fetchone()[0] == 0
-    )
+    assert seeded.execute("SELECT COUNT(*) FROM drafts WHERE id = ?", (did,)).fetchone()[0] == 0

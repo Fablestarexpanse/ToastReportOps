@@ -217,9 +217,7 @@ def records(conn: sqlite3.Connection) -> dict[str, Any]:
     ).fetchone()
     return {
         "biggest_fire": dict(biggest) if biggest and biggest["acres"] else None,
-        "fastest_growth": (
-            dict(fastest) if fastest and fastest["acres_per_hour"] else None
-        ),
+        "fastest_growth": (dict(fastest) if fastest and fastest["acres_per_hour"] else None),
         "longest_burning": dict(longest) if longest else None,
         "busiest_day": dict(busiest) if busiest else None,
         "most_corroborated": dict(corro) if corro else None,
@@ -340,7 +338,8 @@ def radio_stats(conn: sqlite3.Connection, days: int) -> dict[str, Any]:
     since = f"-{days} days"
     return {
         "calls": _scalar(
-            conn, "SELECT COUNT(*) FROM radio_calls WHERE ingested_at >= datetime('now', ?)",
+            conn,
+            "SELECT COUNT(*) FROM radio_calls WHERE ingested_at >= datetime('now', ?)",
             (since,),
         ),
         "airtime_s": _scalar(

@@ -151,8 +151,11 @@ def _queue_evac_zone_sync(conn: sqlite3.Connection, incident_id: str | None) -> 
             .replace("+00:00", "Z")
         )
         jobs.enqueue(
-            conn, "evac_zone_sync", {"incident_id": incident_id, "followup": True},
-            priority=2, run_after=later,
+            conn,
+            "evac_zone_sync",
+            {"incident_id": incident_id, "followup": True},
+            priority=2,
+            run_after=later,
         )
     except Exception:
         # the fact write must never fail because a convenience sync could not
@@ -196,4 +199,4 @@ def write_value_fact(
             observed_at=observed_at,
             supersedes=prev["id"] if prev is not None else None,
             **merged,
-    )
+        )

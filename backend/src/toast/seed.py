@@ -305,9 +305,7 @@ RADIO_CHANNEL_SEEDS = [
 def seed_radio_channels(conn) -> list[str]:
     created = []
     for spec in RADIO_CHANNEL_SEEDS:
-        if conn.execute(
-            "SELECT 1 FROM radio_channels WHERE name = ?", (spec["name"],)
-        ).fetchone():
+        if conn.execute("SELECT 1 FROM radio_channels WHERE name = ?", (spec["name"],)).fetchone():
             continue
         now = utcnow()
         conn.execute(

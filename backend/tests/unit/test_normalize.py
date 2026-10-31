@@ -135,13 +135,25 @@ class TestCrossSourceAdoption:
         from toast.pipeline.incidents import upsert_incident
 
         first, created = upsert_incident(
-            seeded, ref_col="calfire_id", ref_id="cf-park", name="Park Fire",
-            lat=39.8, lon=-121.6, county="Butte", via="calfire",
+            seeded,
+            ref_col="calfire_id",
+            ref_id="cf-park",
+            name="Park Fire",
+            lat=39.8,
+            lon=-121.6,
+            county="Butte",
+            via="calfire",
         )
         assert created
         second, created2 = upsert_incident(
-            seeded, ref_col="irwin_id", ref_id="irwin-park", name="PARK Fire",
-            lat=39.85, lon=-121.55, county="Butte", via="wfigs",
+            seeded,
+            ref_col="irwin_id",
+            ref_id="irwin-park",
+            name="PARK Fire",
+            lat=39.85,
+            lon=-121.55,
+            county="Butte",
+            via="wfigs",
         )
         assert not created2 and second == first
         row = seeded.execute(
@@ -153,12 +165,24 @@ class TestCrossSourceAdoption:
         from toast.pipeline.incidents import upsert_incident
 
         a, _ = upsert_incident(
-            seeded, ref_col="calfire_id", ref_id="cf-creek", name="Creek Fire",
-            lat=37.2, lon=-119.3, county="Fresno", via="calfire",
+            seeded,
+            ref_col="calfire_id",
+            ref_id="cf-creek",
+            name="Creek Fire",
+            lat=37.2,
+            lon=-119.3,
+            county="Fresno",
+            via="calfire",
         )
         b, created = upsert_incident(
-            seeded, ref_col="irwin_id", ref_id="irwin-creek", name="Creek Fire",
-            lat=40.9, lon=-122.4, county="Shasta", via="wfigs",
+            seeded,
+            ref_col="irwin_id",
+            ref_id="irwin-creek",
+            name="Creek Fire",
+            lat=40.9,
+            lon=-122.4,
+            county="Shasta",
+            via="wfigs",
         )
         assert created and b != a
 
@@ -168,48 +192,89 @@ class TestWfigsCreationGate:
 
     def _env(self, db, *, name, acreage, typ="WF", personnel=0, ext):
         env = Envelope(
-            source_id="s1", external_id=ext, kind="report",
-            payload={"irwin_id": ext, "name": name, "type": typ,
-                     "acreage": acreage, "personnel": personnel,
-                     "modified_at": NOW, "county": "Kern",
-                     "lat": 35.3, "lon": -118.7},
+            source_id="s1",
+            external_id=ext,
+            kind="report",
+            payload={
+                "irwin_id": ext,
+                "name": name,
+                "type": typ,
+                "acreage": acreage,
+                "personnel": personnel,
+                "modified_at": NOW,
+                "county": "Kern",
+                "lat": 35.3,
+                "lon": -118.7,
+            },
         )
         return insert_envelope(db, env)
 
     def test_tiny_dispatch_ticket_is_ignored(self, seeded):
-        facts = normalize_envelope(seeded, self._env(
-            seeded, name="LAC-254773", acreage=0.1, ext="irwin-lac"))
+        facts = normalize_envelope(
+            seeded, self._env(seeded, name="LAC-254773", acreage=0.1, ext="irwin-lac")
+        )
         assert facts == []
-        assert seeded.execute(
-            "SELECT COUNT(*) FROM incidents WHERE irwin_id='irwin-lac'"
-        ).fetchone()[0] == 0
+        assert (
+            seeded.execute("SELECT COUNT(*) FROM incidents WHERE irwin_id='irwin-lac'").fetchone()[
+                0
+            ]
+            == 0
+        )
 
     def test_rx_burn_is_ignored_whatever_its_size(self, seeded):
-        facts = normalize_envelope(seeded, self._env(
-            seeded, name="KRRD WIDE JACKPOT RX BURN", acreage=900, typ="RX", ext="irwin-rx"))
+        facts = normalize_envelope(
+            seeded,
+            self._env(
+                seeded, name="KRRD WIDE JACKPOT RX BURN", acreage=900, typ="RX", ext="irwin-rx"
+            ),
+        )
         assert facts == []
 
     def test_a_real_fire_clears_the_gate(self, seeded):
-        facts = normalize_envelope(seeded, self._env(
-            seeded, name="BEAR FIRE", acreage=45, ext="irwin-bear"))
+        facts = normalize_envelope(
+            seeded, self._env(seeded, name="BEAR FIRE", acreage=45, ext="irwin-bear")
+        )
         assert facts
-        assert seeded.execute(
-            "SELECT COUNT(*) FROM incidents WHERE irwin_id='irwin-bear'"
-        ).fetchone()[0] == 1
+        assert (
+            seeded.execute("SELECT COUNT(*) FROM incidents WHERE irwin_id='irwin-bear'").fetchone()[
+                0
+            ]
+            == 1
+        )
 
     def test_heavy_response_clears_the_gate_even_when_small(self, seeded):
-        facts = normalize_envelope(seeded, self._env(
-            seeded, name="SUMMIT FIRE", acreage=2, personnel=80, ext="irwin-summit"))
+        facts = normalize_envelope(
+            seeded,
+            self._env(seeded, name="SUMMIT FIRE", acreage=2, personnel=80, ext="irwin-summit"),
+        )
         assert facts
 
     def test_updates_to_a_known_fire_always_land(self, seeded):
-        normalize_envelope(seeded, self._env(
-            seeded, name="BEAR FIRE", acreage=45, ext="irwin-known"))
-        facts = normalize_envelope(seeded, Envelope and insert_envelope(seeded, Envelope(
-            source_id="s1", external_id="irwin-known", kind="report",
-            payload={"irwin_id": "irwin-known", "name": "BEAR FIRE", "type": "WF",
-                     "acreage": 3, "modified_at": LATER, "county": "Kern",
-                     "lat": 35.3, "lon": -118.7})))
+        normalize_envelope(
+            seeded, self._env(seeded, name="BEAR FIRE", acreage=45, ext="irwin-known")
+        )
+        facts = normalize_envelope(
+            seeded,
+            Envelope
+            and insert_envelope(
+                seeded,
+                Envelope(
+                    source_id="s1",
+                    external_id="irwin-known",
+                    kind="report",
+                    payload={
+                        "irwin_id": "irwin-known",
+                        "name": "BEAR FIRE",
+                        "type": "WF",
+                        "acreage": 3,
+                        "modified_at": LATER,
+                        "county": "Kern",
+                        "lat": 35.3,
+                        "lon": -118.7,
+                    },
+                ),
+            ),
+        )
         # acreage REVISED DOWN below the gate — still an update, never dropped
         assert facts
 

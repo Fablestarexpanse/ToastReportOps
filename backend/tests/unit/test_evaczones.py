@@ -46,8 +46,13 @@ def test_statuses_pass_through_verbatim_and_zones_match_fires(seeded, monkeypatc
     _fake(
         monkeypatch,
         [
-            _zone("US-CA-XBU-PDSE-014", "Evacuation Order", 39.75, -121.60,
-                  "Leave now via Skyway southbound."),
+            _zone(
+                "US-CA-XBU-PDSE-014",
+                "Evacuation Order",
+                39.75,
+                -121.60,
+                "Leave now via Skyway southbound.",
+            ),
             _zone("US-CA-XTU-PVL-E044", "Evacuation Warning", 36.06, -118.93),
         ],
     )

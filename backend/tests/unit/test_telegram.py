@@ -17,15 +17,14 @@ from toast.publishers.telegram import TelegramPublisher
 
 NOW = "2026-07-19T00:00:00.000Z"
 SET = Settings(
-    telegram_bot_token="123:abc", telegram_channel_id="@toastfire",
+    telegram_bot_token="123:abc",
+    telegram_channel_id="@toastfire",
     telegram_ops_chat_id="777",
 )
 
 
 def _client(handler):
-    return httpx.Client(
-        transport=httpx.MockTransport(handler), base_url="https://api.telegram.org"
-    )
+    return httpx.Client(transport=httpx.MockTransport(handler), base_url="https://api.telegram.org")
 
 
 class TestPublisher:
@@ -34,8 +33,9 @@ class TestPublisher:
             assert "sendMessage" in str(request.url)
             body = json.loads(request.content)
             assert body["chat_id"] == "@toastfire"
-            return httpx.Response(200, json={
-                "result": {"message_id": 42, "chat": {"username": "toastfire"}}})
+            return httpx.Response(
+                200, json={"result": {"message_id": 42, "chat": {"username": "toastfire"}}}
+            )
 
         p = TelegramPublisher(SET)
         p.http = _client(handler)
@@ -49,8 +49,9 @@ class TestPublisher:
             calls.append(str(request.url))
             if "sendPhoto" in calls[-1]:
                 return httpx.Response(400, text="photo bad")
-            return httpx.Response(200, json={
-                "result": {"message_id": 7, "chat": {"username": "toastfire"}}})
+            return httpx.Response(
+                200, json={"result": {"message_id": 7, "chat": {"username": "toastfire"}}}
+            )
 
         p = TelegramPublisher(SET)
         p.http = _client(handler)
@@ -76,7 +77,8 @@ class TestNotify:
 
         seeded.execute(
             "INSERT INTO incidents (id, canonical_name, status, county, created_at, updated_at)"
-            " VALUES ('i9', 'Sawmill Fire', 'active', 'Butte', ?, ?)", (NOW, NOW),
+            " VALUES ('i9', 'Sawmill Fire', 'active', 'Butte', ?, ?)",
+            (NOW, NOW),
         )
         telegram_ops.notify_sweep(seeded, SET, _client(handler))
         assert len(sent) == 1 and "Sawmill Fire" in sent[0]["text"]
@@ -90,7 +92,8 @@ class TestApprovalFromChat:
         draft_id = ulid()
         seeded.execute(
             "INSERT INTO drafts (id, kind, body_md, status, created_at, updated_at)"
-            " VALUES (?, 'social', 'x', 'draft', ?, ?)", (draft_id, NOW, NOW),
+            " VALUES (?, 'social', 'x', 'draft', ?, ?)",
+            (draft_id, NOW, NOW),
         )
         seeded.execute("UPDATE drafts SET status = 'needs_review' WHERE id = ?", (draft_id,))
         return draft_id
@@ -98,13 +101,21 @@ class TestApprovalFromChat:
     def _updates(self, chat_id, data):
         def handler(request):
             if "getUpdates" in str(request.url):
-                return httpx.Response(200, json={"result": [{
-                    "update_id": 5,
-                    "callback_query": {
-                        "id": "cb1", "data": data,
-                        "message": {"chat": {"id": chat_id}},
+                return httpx.Response(
+                    200,
+                    json={
+                        "result": [
+                            {
+                                "update_id": 5,
+                                "callback_query": {
+                                    "id": "cb1",
+                                    "data": data,
+                                    "message": {"chat": {"id": chat_id}},
+                                },
+                            }
+                        ]
                     },
-                }]})
+                )
             return httpx.Response(200, json={"ok": True})
 
         return _client(handler)

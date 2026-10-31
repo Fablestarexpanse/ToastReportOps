@@ -55,7 +55,7 @@ mypy_path = "src"
 packages = ["toast"]
 
 [[tool.mypy.overrides]]
-module = ["sqlite_vec", "bs4", "feedparser", "markdown"]
+module = ["sqlite_vec", "bs4", "feedparser", "markdown", "meshtastic.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

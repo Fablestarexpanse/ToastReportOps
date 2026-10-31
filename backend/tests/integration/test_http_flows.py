@@ -21,7 +21,9 @@ def http(tmp_path, monkeypatch):
     monkeypatch.setenv("TOAST_DB_PATH", str(tmp_path / "toast.db"))
     from toast.api.app import app
 
-    with TestClient(app) as client:  # enters lifespan: connect + migrations
+    with TestClient(
+        app, base_url="http://127.0.0.1:8400"
+    ) as client:  # enters lifespan: connect + migrations
         yield client, app.state.conn
 
 
@@ -58,9 +60,7 @@ class TestDraftLifecycleOverHTTP:
         assert r.status_code == 200 and r.json()["status"] == "needs_review"
         r = client.post("/drafts/d-http/status", json={"status": "approved"})
         assert r.status_code == 200
-        row = conn.execute(
-            "SELECT status, approved_by FROM drafts WHERE id='d-http'"
-        ).fetchone()
+        row = conn.execute("SELECT status, approved_by FROM drafts WHERE id='d-http'").fetchone()
         assert row["status"] == "approved" and row["approved_by"]
 
     def test_publish_without_approval_is_refused(self, http):
@@ -86,16 +86,15 @@ class TestDraftLifecycleOverHTTP:
 
 
 class TestActivityCheckThroughTheQueue:
-    def test_api_enqueues_and_the_worker_auto_closes_on_official_word(
-        self, http, monkeypatch
-    ):
+    def test_api_enqueues_and_the_worker_auto_closes_on_official_word(self, http, monkeypatch):
         client, conn = http
         _seed_incident(conn, inc_id="i-close", calfire_id="cf-x")
 
         import toast.pipeline.activity as activity
 
         monkeypatch.setattr(
-            activity, "_calfire_live",
+            activity,
+            "_calfire_live",
             lambda c: {"cf-x": {"is_active": False, "containment": 100, "updated": None}},
         )
         monkeypatch.setattr(activity, "_wfigs_live", lambda: {})

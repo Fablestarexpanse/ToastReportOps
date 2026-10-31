@@ -37,8 +37,12 @@ def test_official_inactive_and_quiet_proposes_close():
 
 def test_live_heat_on_an_active_fire_keeps_it_open():
     verdict, _ = activity._rules_verdict(
-        _evidence(hotspots_within_8km=3, official_status="active",
-                  official_containment=40, containment_pct=40)
+        _evidence(
+            hotspots_within_8km=3,
+            official_status="active",
+            official_containment=40,
+            containment_pct=40,
+        )
     )
     assert verdict == "keep"
 
@@ -51,8 +55,12 @@ def test_live_heat_against_official_inactive_needs_eyes():
 
 def test_aircraft_overhead_keeps_it_open():
     verdict, _ = activity._rules_verdict(
-        _evidence(aircraft_overhead_6h=2, official_status="active",
-                  official_containment=40, containment_pct=40)
+        _evidence(
+            aircraft_overhead_6h=2,
+            official_status="active",
+            official_containment=40,
+            containment_pct=40,
+        )
     )
     assert verdict == "keep"
 
@@ -82,8 +90,10 @@ def test_operator_close_clears_the_proposal_and_logs_the_event(seeded, monkeypat
     out = routes.set_incident_status(req, "i1", {"status": "contained"})
     assert out["status"] == "contained"
     assert (
-        seeded.execute("SELECT COUNT(*) FROM activity_proposals WHERE incident_id='i1'")
-        .fetchone()[0] == 0
+        seeded.execute("SELECT COUNT(*) FROM activity_proposals WHERE incident_id='i1'").fetchone()[
+            0
+        ]
+        == 0
     )
     ev = seeded.execute(
         "SELECT * FROM incident_events WHERE incident_id='i1' AND event='status_change'"
@@ -100,7 +110,8 @@ class TestAutoClose:
     def test_official_inactive_auto_closes_with_the_authority_logged(self, seeded, monkeypatch):
         self._prep(seeded)
         monkeypatch.setattr(
-            activity, "_calfire_live",
+            activity,
+            "_calfire_live",
             lambda conn: {"cf-1": {"is_active": False, "containment": 100, "updated": None}},
         )
         monkeypatch.setattr(
@@ -127,7 +138,8 @@ class TestAutoClose:
             ('{"hotspots": [{"lat": 40.9, "lon": -121.3}]}', "2026-07-19T00:00:00.000Z"),
         )
         monkeypatch.setattr(
-            activity, "_calfire_live",
+            activity,
+            "_calfire_live",
             lambda conn: {"cf-1": {"is_active": False, "containment": 100, "updated": None}},
         )
         monkeypatch.setattr(
@@ -136,8 +148,7 @@ class TestAutoClose:
         out = activity.check_active(seeded)
         assert out["auto_closed"] == 0
         assert (
-            seeded.execute("SELECT status FROM incidents WHERE id='i1'").fetchone()[0]
-            == "active"
+            seeded.execute("SELECT status FROM incidents WHERE id='i1'").fetchone()[0] == "active"
         )
 
 
@@ -146,9 +157,15 @@ class TestEvacZoneResync:
         from toast.pipeline.ledger import write_fact
 
         write_fact(
-            seeded, incident_id="i1", envelope_id="e1", source_id="s1", tier=1,
-            content="Evacuation order issued for zone 14.", kind="evac",
-            evac_status="order", confidence=0.95,
+            seeded,
+            incident_id="i1",
+            envelope_id="e1",
+            source_id="s1",
+            tier=1,
+            content="Evacuation order issued for zone 14.",
+            kind="evac",
+            evac_status="order",
+            confidence=0.95,
             observed_at="2026-07-19T00:00:00.000Z",
         )
         jobs = seeded.execute(
@@ -161,14 +178,18 @@ class TestEvacZoneResync:
         from toast.pipeline.ledger import write_fact
 
         write_fact(
-            seeded, incident_id="i1", envelope_id="e1", source_id="s1", tier=1,
-            content="All evacuation orders lifted.", kind="evac",
-            evac_status="lifted", confidence=0.95,
+            seeded,
+            incident_id="i1",
+            envelope_id="e1",
+            source_id="s1",
+            tier=1,
+            content="All evacuation orders lifted.",
+            kind="evac",
+            evac_status="lifted",
+            confidence=0.95,
             observed_at="2026-07-19T00:00:00.000Z",
         )
-        n = seeded.execute(
-            "SELECT COUNT(*) FROM jobs WHERE stage='evac_zone_sync'"
-        ).fetchone()[0]
+        n = seeded.execute("SELECT COUNT(*) FROM jobs WHERE stage='evac_zone_sync'").fetchone()[0]
         assert n == 0
 
 

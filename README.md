@@ -7,7 +7,7 @@ operator reviews AI-drafted reports and publishes them to a static public site a
 social channels. Every incident is permanently archived.
 
 **Status: built and operating** — the full loop runs (ingest → ledger → AI sift →
-newsroom → publish), with a 9-mode operator UI, a Docker stack, and 440 passing tests.
+newsroom → publish), with a 9-mode operator UI, a Docker stack, and 520+ passing tests.
 
 **Quick start:** double-click `ToastReport.cmd` — it starts the Docker stack and the
 operator UI (port 3005) in its own app window. Alternative:
@@ -23,7 +23,7 @@ container, GPU passthrough). Two models, auto-pulled on first boot:
 
 | Role | Model | Size | Notes |
 |---|---|---|---|
-| Extraction / drafting / sift | **`qwen3:14b`** (14B, Q4) | ~9 GB | Default; swappable — see `.env` `LLM_MODEL` |
+| Extraction / drafting / sift | **Qwen3.5-9B Defiant-Fable** (Q6_K, via `hf.co/…` tag) | ~8 GB | Default; swappable — see `.env` `LLM_MODEL` |
 | Embeddings (dedup / corroboration) | **`nomic-embed-text`** (768-dim) | ~0.3 GB | Runs on the same GPU |
 
 The endpoint is OpenAI-compatible, so `LLM_BASE_URL` can point at a **cloud API**
@@ -41,7 +41,7 @@ instead — then no GPU is needed at all.
 | Component | Minimum | Notes |
 |---|---|---|
 | OS | Windows 10/11 (WSL2) or Linux | macOS only if you skip the NVIDIA GPU / run a smaller model on Metal |
-| GPU | NVIDIA, **≥ 12 GB VRAM** (e.g. RTX 3060 12 GB / 4070) | To hold `qwen3:14b`. Use `qwen3:8b` (~5 GB) on an 8 GB card, or go cloud for none |
+| GPU | NVIDIA, **≥ 12 GB VRAM** (e.g. RTX 3060 12 GB / 4070) | To hold the default model. Use `qwen3:8b` (~5 GB) on an 8 GB card, or go cloud for none |
 | CPU | Modern 6-core / 12-thread | Runs the 8 services + WSL2 |
 | RAM | **16 GB** | 32 GB comfortable alongside a browser + the UI |
 | Disk | **~50 GB free, SSD** | ~15–20 GB images + ~10 GB models + a growing data archive |
@@ -67,7 +67,7 @@ cd ToastReportOps
 #    and social publishing — see docs/API-KEYS.md). Never commit .env.
 cp .env.example .env
 
-# 3. Start the stack. FIRST BOOT downloads ~10 GB of models (qwen3:14b +
+# 3. Start the stack. FIRST BOOT downloads ~10 GB of models (the LLM +
 #    nomic-embed-text) into the ollama_models volume — later boots are instant.
 docker compose --profile desktop up -d
 
@@ -86,7 +86,7 @@ standalone app window (`scripts/launch.ps1`).
 ```bash
 docker compose ps                       # every service "healthy"
 curl http://127.0.0.1:8400/healthz      # {"service":"api","ok":true,...}
-docker compose exec llm ollama list     # qwen3:14b + nomic-embed-text present
+docker compose exec llm ollama list     # default LLM + nomic-embed-text present
 ```
 
 **Stop:** `docker compose --profile desktop down` (add `-v` to also drop the DB and
@@ -110,7 +110,7 @@ Facts:
 - Repo (private): https://github.com/Fablestarexpanse/ToastReportOps
 - Runs as a Docker Compose stack (profile "desktop", 8 services) plus a Next.js
   operator UI on port 3005. API on 8400. Localhost-only, single operator, no auth.
-- Local LLM via in-stack Ollama: qwen3:14b + nomic-embed-text, auto-pulled on first
+- Local LLM via in-stack Ollama: the default model + nomic-embed-text, auto-pulled on first
   boot (~10 GB). NVIDIA GPU with >=12 GB VRAM strongly recommended.
 
 Do this:
@@ -127,7 +127,7 @@ Do this:
    cloud OpenAI-compatible endpoint and remove the deploy.resources GPU reservation
    from the `llm` service in docker-compose.yml. Confirm the choice with me first.
 5. `docker compose --profile desktop up -d`. First boot pulls ~10 GB of models —
-   poll `docker compose exec llm ollama list` until BOTH qwen3:14b and
+   poll `docker compose exec llm ollama list` until BOTH the default LLM (see `LLM_MODEL` in `.env.example`) and
    nomic-embed-text appear.
 6. Seed sources: `docker compose exec api python -m toast.seed`.
 7. Verify: `docker compose ps` all healthy; `curl http://127.0.0.1:8400/healthz`

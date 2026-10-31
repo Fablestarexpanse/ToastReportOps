@@ -1,6 +1,5 @@
 """County boundaries overlay: cached, generalized, degrades to stale."""
 
-
 from toast.pipeline import countylines
 
 
@@ -25,6 +24,7 @@ def test_fetch_caches_and_serves(db, monkeypatch):
     monkeypatch.setattr(countylines, "fetch_county_lines", lambda: _fc(58))
     out = countylines.get_county_lines(db)
     assert out["count"] == 58 and not out.get("cached")
+
     # second call comes from the 30-day cache, no network
     def _boom():
         raise RuntimeError("no network expected")

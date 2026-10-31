@@ -17,9 +17,7 @@ def test_evac_zone_sync_runs_at_ingest_priority():
 def test_scan_enqueues_evac_sync_ahead_of_maintenance(db):
     # a fresh DB has never run any stage, so every one is due
     scheduler.scan_once(db)
-    row = db.execute(
-        "SELECT priority FROM jobs WHERE stage = 'evac_zone_sync'"
-    ).fetchone()
+    row = db.execute("SELECT priority FROM jobs WHERE stage = 'evac_zone_sync'").fetchone()
     assert row is not None, "evac_zone_sync was not enqueued"
     assert row["priority"] == 2
     # a plain maintenance stage stays at the low priority, proving evac jumped it

@@ -51,18 +51,56 @@ SHARED_LEAD_TYPES = frozenset({"BE20", "BE30", "BE9L", "C90", "PC12", "TBM9"})  
 
 HELICOPTER_TYPES = frozenset(
     {
-        "H60", "S64", "CH47", "H47", "B407", "B412", "B212", "B205",
-        "AS50", "AS32", "EC30", "EC35", "B06", "R44", "R22", "UH1", "A139", "S76",
+        "H60",
+        "S64",
+        "CH47",
+        "H47",
+        "B407",
+        "B412",
+        "B212",
+        "B205",
+        "AS50",
+        "AS32",
+        "EC30",
+        "EC35",
+        "B06",
+        "R44",
+        "R22",
+        "UH1",
+        "A139",
+        "S76",
     }
 )
 
 # Operator names (airplanes.live `ownOp`) that confirm a shared airframe is fire.
 FIRE_OPERATORS = (
-    "CAL FIRE", "CALFIRE", "CDF", "NEPTUNE", "10 TANKER", "TEN TANKER", "COULSON",
-    "AERO AIR", "AERO-FLITE", "AEROFLITE", "AERO FLITE", "ERICKSON", "BRIDGER",
-    "DAUNTLESS", "US FOREST", "FOREST SERVICE", "USFS", "BLM", "NATIONAL GUARD",
-    "AIR NATIONAL GUARD", "CAL GUARD", "GRANDVIEW", "BC AIRCRAFT LEASING", "SIS-Q",
-    "FIREWATCH", "SPRING AIR", "AERO-SPRAY",
+    "CAL FIRE",
+    "CALFIRE",
+    "CDF",
+    "NEPTUNE",
+    "10 TANKER",
+    "TEN TANKER",
+    "COULSON",
+    "AERO AIR",
+    "AERO-FLITE",
+    "AEROFLITE",
+    "AERO FLITE",
+    "ERICKSON",
+    "BRIDGER",
+    "DAUNTLESS",
+    "US FOREST",
+    "FOREST SERVICE",
+    "USFS",
+    "BLM",
+    "NATIONAL GUARD",
+    "AIR NATIONAL GUARD",
+    "CAL GUARD",
+    "GRANDVIEW",
+    "BC AIRCRAFT LEASING",
+    "SIS-Q",
+    "FIREWATCH",
+    "SPRING AIR",
+    "AERO-SPRAY",
 )
 
 Role = str  # 'tanker' | 'air_attack' | 'helicopter' | 'other'

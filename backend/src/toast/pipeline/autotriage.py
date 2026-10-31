@@ -101,9 +101,7 @@ def propose_batch(
             action, incident_id = "unsure", None
         if action != "attach":
             incident_id = None
-        name = next(
-            (c["name"] for c in cand_lines if c["incident_id"] == incident_id), None
-        )
+        name = next((c["name"] for c in cand_lines if c["incident_id"] == incident_id), None)
         try:
             conf = max(0.0, min(1.0, float(out.get("confidence") or 0)))
         except (TypeError, ValueError):
@@ -114,8 +112,14 @@ def propose_batch(
                 prompt_version, proposed_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                row["id"], action, incident_id, name, conf,
-                str(out.get("reasoning") or "")[:400], prompt.version, utcnow(),
+                row["id"],
+                action,
+                incident_id,
+                name,
+                conf,
+                str(out.get("reasoning") or "")[:400],
+                prompt.version,
+                utcnow(),
             ),
         )
         proposed += 1
