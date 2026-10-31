@@ -63,8 +63,11 @@ class ApiClient:
     def get(self, path: str, **params: Any) -> Any:
         return self.request("GET", path, params={k: v for k, v in params.items() if v is not None})
 
-    def post(self, path: str, body: dict[str, Any]) -> Any:
-        return self.request("POST", path, json=body)
+    def post(self, path: str, body: dict[str, Any], *, timeout: float | None = None) -> Any:
+        kw: dict[str, Any] = {"json": body}
+        if timeout is not None:
+            kw["timeout"] = timeout
+        return self.request("POST", path, **kw)
 
 
 @dataclass(frozen=True)
@@ -162,7 +165,9 @@ def _add_note(api: ApiClient, a: dict[str, Any]) -> Any:
 
 def _create_draft(api: ApiClient, a: dict[str, Any]) -> Any:
     body = {k: a[k] for k in ("window_start", "window_end") if a.get(k)}
-    return api.post(f"/incidents/{a['incident_id']}/draft", body)
+    # drafting re-polls official sources and runs the local LLM (LLM_TIMEOUT_S can be
+    # 300 s), so it must not be cut off at the read-tool timeout
+    return api.post(f"/incidents/{a['incident_id']}/draft", body, timeout=360)
 
 
 _INCIDENT_ID = _str("Incident id, as returned by list_incidents.")

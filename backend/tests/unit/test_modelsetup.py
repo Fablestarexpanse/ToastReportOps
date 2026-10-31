@@ -255,3 +255,9 @@ def test_status_flags_unpinned_configured_model_and_differing_copies():
     )
     text = "\n".join(lines)
     assert code == 3 and "DIFFERENT FROM PIN" in text and "unverified source" in text
+
+
+def test_chat_model_command_names_each_profiles_chat_model(capsys):
+    for profile, want in (("starter", "qwen3.5:9b"), ("small-8gb", "qwen3.5:4b")):
+        assert ms.main(["chat-model", "--profile", profile]) == 0
+        assert capsys.readouterr().out.strip() == want

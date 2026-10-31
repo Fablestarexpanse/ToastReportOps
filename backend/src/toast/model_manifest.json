@@ -59,6 +59,13 @@
       "manifest_sha256": "aaee06c39dcf2437cde036998d960e1fc1494b8191be7cc9657d01e509097813",
       "size_bytes": 17741871939,
       "pinned_at": "2026-10-31"
+    },
+    "qwen3.5:4b": {
+      "role": "chat",
+      "note": "Smaller official Qwen3.5 for 8 GB cards. Expect lower quality than the 9B; run the bake-off before relying on it.",
+      "manifest_sha256": "d8b0f5e9760cd1682034f292d7ef72ec46f432149be0df7574bf2d6e92e38c04",
+      "size_bytes": 3324173757,
+      "pinned_at": "2026-10-31"
     }
   },
   "profiles": {
@@ -66,6 +73,13 @@
       "description": "What the tool needs to run: one chat model and the embedding model (about 7 GB download, fits a 12 GB card).",
       "models": [
         "qwen3.5:9b",
+        "nomic-embed-text:latest"
+      ]
+    },
+    "small-8gb": {
+      "description": "For 8 GB cards: the 4B chat model and the embedding model (about 3.6 GB download).",
+      "models": [
+        "qwen3.5:4b",
         "nomic-embed-text:latest"
       ]
     },

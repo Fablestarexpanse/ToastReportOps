@@ -381,8 +381,10 @@ def _ollama_url() -> str:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="toast.modelsetup", description=__doc__.split("\n\n")[0])
-    p.add_argument("command", choices=["status", "plan", "install", "verify", "pin"])
-    p.add_argument("--profile", default="starter", help="starter | bakeoff-12gb | bakeoff-24gb")
+    p.add_argument("command", choices=["status", "plan", "install", "verify", "pin", "chat-model"])
+    p.add_argument(
+        "--profile", default="starter", help="starter | small-8gb | bakeoff-12gb | bakeoff-24gb"
+    )
     p.add_argument("--model", action="append", help="install this manifest model (repeatable)")
     p.add_argument(
         "--vram-gb", type=float, help="your GPU's memory; models that won't fit are skipped"
@@ -411,6 +413,9 @@ def main(argv: list[str] | None = None) -> int:
                 f"unknown profile '{args.profile}': {sorted(manifest['profiles'])}"
             )
         names = args.model or profile["models"]
+        if args.command == "chat-model":  # the chat model a profile installs (for scripts)
+            print(next(n for n in profile["models"] if manifest["models"][n]["role"] == "chat"))
+            return 0
         if args.command == "plan":
             print(format_plan(plan(manifest, names, ollama.installed(), vram_gb=args.vram_gb)))
             return 0

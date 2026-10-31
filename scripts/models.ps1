@@ -8,7 +8,7 @@
 #   * each model is test-run afterwards.
 # Interrupted downloads resume - just run it again.
 #
-# Options:  -Profile starter | bakeoff-12gb | bakeoff-24gb   (default: starter)
+# Options:  -Profile starter | small-8gb | bakeoff-12gb | bakeoff-24gb   (default: starter)
 #           -Yes          don't ask before downloading
 #           -VramGb N     your graphics card memory, if it can't be detected
 
@@ -95,19 +95,23 @@ if ($code -ne 0) {
 }
 
 # the configured model should be one we just verified; offer to fix .env if not
+$chat = "qwen3.5:9b"
+if ((Invoke-Native docker ($setup + @("chat-model", "--profile", $Profile)) -Quiet) -eq 0) {
+    $chat = $script:LastOutput.Trim().Split("`n")[-1].Trim()
+}
 $envFile = Join-Path $root ".env"
 if (Test-Path $envFile) {
     $line = (Get-Content $envFile | Where-Object { $_ -match "^LLM_MODEL=" } | Select-Object -First 1)
-    if ($line -and $line -notmatch "^LLM_MODEL=qwen3\.5:9b\s*$") {
+    if ($line -and $line.Trim() -ne "LLM_MODEL=$chat") {
         Write-Host ""
         Write-Host "Your .env uses:  $line" -ForegroundColor Yellow
-        Write-Host "The verified default is:  LLM_MODEL=qwen3.5:9b" -ForegroundColor Yellow
+        Write-Host "This profile's verified model is:  LLM_MODEL=$chat" -ForegroundColor Yellow
         Write-Host "(Models from community uploaders are not verified by this installer.)" -ForegroundColor Yellow
-        $fix = Read-Host "Switch .env to the verified default? A backup is saved as .env.bak [y/N]"
+        $fix = Read-Host "Switch .env to $chat? A backup is saved as .env.bak [y/N]"
         if ($fix -match "^[Yy]") {
             Copy-Item $envFile "$envFile.bak" -Force
             $updated = Get-Content $envFile | ForEach-Object {
-                if ($_ -match "^LLM_MODEL=") { "LLM_MODEL=qwen3.5:9b" } else { $_ }
+                if ($_ -match "^LLM_MODEL=") { "LLM_MODEL=$chat" } else { $_ }
             }
             [IO.File]::WriteAllLines($envFile, $updated)
             Write-Host "Updated .env (backup: .env.bak). Restart the app for it to take effect." -ForegroundColor Green
