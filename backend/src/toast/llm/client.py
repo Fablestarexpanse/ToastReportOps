@@ -23,6 +23,17 @@ class LLMError(Exception):
     pass
 
 
+class LLMModelMissing(LLMError):
+    """The endpoint answered, but does not have the model. Nothing is wrong with
+    the work asking for it, so the worker waits rather than spending a retry."""
+
+
+def _call_failed(op: str, resp: httpx.Response, model: str) -> LLMError:
+    if resp.status_code == 404 and "model" in resp.text.lower():
+        return LLMModelMissing(f"{model!r} is not on the LLM endpoint (run Install Models)")
+    return LLMError(f"{op} failed: {resp.status_code} {resp.text[:300]}")
+
+
 def _parse_json_lenient(content: str) -> Any:
     """Parse model JSON, tolerating reasoning-tag preambles and code fences."""
     cleaned = _THINK_RE.sub("", content).strip()
@@ -101,7 +112,7 @@ class LLMClient:
             timeout=timeout_s or self.default_timeout_s,
         )
         if resp.status_code != 200:
-            raise LLMError(f"chat failed: {resp.status_code} {resp.text[:300]}")
+            raise _call_failed("chat", resp, self.model)
         content = resp.json()["choices"][0]["message"]["content"]
         return _parse_json_lenient(content)
 
@@ -132,7 +143,7 @@ class LLMClient:
             timeout=timeout_s or self.default_timeout_s,
         )
         if resp.status_code != 200:
-            raise LLMError(f"chat failed: {resp.status_code} {resp.text[:300]}")
+            raise _call_failed("chat", resp, self.model)
         return _parse_json_lenient(resp.json().get("message", {}).get("content", ""))
 
     @property
@@ -173,7 +184,7 @@ class LLMClient:
             timeout=timeout_s,
         )
         if resp.status_code != 200:
-            raise LLMError(f"embed failed: {resp.status_code} {resp.text[:300]}")
+            raise _call_failed("embed", resp, self.embed_model)
         data = resp.json()["data"]
         return [d["embedding"] for d in sorted(data, key=lambda d: d["index"])]
 
@@ -185,9 +196,24 @@ class LLMClient:
             resp = httpx.get(f"{self.base_url}/models", headers=self._headers(), timeout=timeout_s)
             if resp.status_code != 200:
                 return []
-            return sorted(str(m["id"]) for m in resp.json().get("data", []))
+            # Ollama answers `"data": null`, not [], when nothing is pulled
+            return sorted(str(m["id"]) for m in resp.json().get("data") or [])
         except httpx.HTTPError:
             return []
+
+    def ensure_chat_model(self, *, timeout_s: float = 5.0) -> None:
+        """Raise LLMModelMissing when the endpoint answers without our chat model,
+        so a stage can stop before doing costly work the model would need. An
+        unreachable endpoint proves nothing here: the real call reports that."""
+        try:
+            resp = httpx.get(f"{self.base_url}/models", headers=self._headers(), timeout=timeout_s)
+        except httpx.HTTPError:
+            return
+        if resp.status_code != 200:
+            return
+        ids = {str(m["id"]).removesuffix(":latest") for m in resp.json().get("data") or []}
+        if self.model.removesuffix(":latest") not in ids:
+            raise LLMModelMissing(f"{self.model!r} is not on the LLM endpoint (run Install Models)")
 
 
 def client_for(conn: Any, settings: Settings | None = None) -> LLMClient:

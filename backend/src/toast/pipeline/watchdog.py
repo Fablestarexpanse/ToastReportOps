@@ -23,6 +23,7 @@ from toast.core.config import Settings
 from toast.core.db import utcnow
 from toast.core.logging import get_logger
 from toast.pipeline import telegram_ops
+from toast.queue.jobs import WAITING_FOR_MODEL
 
 STATE_KEY = "watchdog:state"
 REMIND_S = 6 * 3600
@@ -60,13 +61,23 @@ def find_problems(
     # nothing has drained the queue: worker down or wedged
     stalled = conn.execute(
         """SELECT MIN(unixepoch(created_at)) AS oldest FROM jobs
-           WHERE state = 'queued' AND (run_after IS NULL OR unixepoch(run_after) <= ?)""",
-        (now,),
+           WHERE state = 'queued' AND (run_after IS NULL OR unixepoch(run_after) <= ?)
+             AND COALESCE(last_error, '') NOT LIKE ?""",
+        (now, f"{WAITING_FOR_MODEL}%"),
     ).fetchone()["oldest"]
     if stalled is not None and now - stalled > STALL_S:
         problems["queue_stalled"] = (
             f"oldest runnable job has waited {(now - stalled) // 60} min — is the worker running?"
         )
+
+    # jobs parked for a model are waiting on the operator, not on the worker
+    waiting = conn.execute(
+        """SELECT COUNT(*) AS n, MAX(last_error) AS err FROM jobs
+           WHERE state = 'queued' AND last_error LIKE ?""",
+        (f"{WAITING_FOR_MODEL}%",),
+    ).fetchone()
+    if waiting["n"]:
+        problems["llm_model_missing"] = f"{waiting['n']} jobs waiting — {waiting['err'][:120]}"
 
     # an enabled, scheduled source that stopped completing polls
     for s in conn.execute(

@@ -15,6 +15,7 @@ from toast.core.config import Settings
 from toast.core.db import connect, utcnow
 from toast.core.health import HealthState, serve_health
 from toast.core.logging import configure_logging, get_logger
+from toast.llm.client import LLMModelMissing
 from toast.queue import handlers, jobs
 
 STALE_RUNNING_AFTER_S = 300
@@ -54,6 +55,9 @@ def run_once(conn, wid: str, settings: Settings) -> bool:
         return True
     try:
         handler(conn, handlers.payload_of(job))
+    except LLMModelMissing as exc:
+        jobs.wait_for_model(conn, job, str(exc))
+        log.info("job_waiting_for_model", job_id=job["id"], stage=job["stage"], error=str(exc))
     except Exception as exc:
         state = jobs.fail(conn, job, repr(exc), backoff_base_s=settings.job_backoff_base_s)
         log.warning(
