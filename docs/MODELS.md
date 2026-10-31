@@ -84,7 +84,7 @@ extraction and running slower than it needs to.
 **Limits you should know about.** The shipped cases are synthetic, written for this
 repo, each with one deliberate trap. They catch bad models; they can't rank good ones
 or predict how a model copes with your real feeds. Add real articles and labelled pairs
-with `--fixture your.json` (same shape as `backend/src/toast/eval/data/*.json`) and keep
+with `--fixture your.json` (same shape as `backend/src/toast/eval/cases/*.json`) and keep
 the ones that ever fooled a model. Don't switch models on a difference of one case.
 
 **Embeddings:** switching the embedding model means re-embedding the whole ledger and

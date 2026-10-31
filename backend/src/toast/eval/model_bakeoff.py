@@ -44,7 +44,7 @@ from toast.llm.client import LLMClient, LLMError
 from toast.llm.extract import ExtractedClaim, extract_claims
 from toast.llm.verify_extraction import _name_core, verify_claim
 
-DATA = Path(__file__).with_name("data")
+DATA = Path(__file__).with_name("cases")
 
 
 # ---------------------------------------------------------------- extraction
