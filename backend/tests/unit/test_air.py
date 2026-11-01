@@ -8,7 +8,8 @@ of the ledger: the activity log is a view over the position store.
 
 import json
 
-from toast.pipeline import air, aircraft
+from toast.core.fetch import FetchError
+from toast.pipeline import air, aircraft, watchdog
 
 NOW = "2026-07-19T00:00:00.000Z"
 
@@ -135,6 +136,69 @@ class TestMil:
         again = air.mil_snapshot(seeded)  # inside the 30 s window
         assert len(calls) == 1, "cached window hit upstream again"
         assert again["count"] == 1
+
+
+class TestFeedFailure:
+    """A refused feed must never read as an empty sky."""
+
+    REFUSED = "HTTP 403 from https://api.airplanes.live/v2/mil"
+
+    def _refuse(self, monkeypatch, calls=None):
+        def fake_fetch(url, **kw):
+            if calls is not None:
+                calls.append(url)
+            raise FetchError(self.REFUSED)
+
+        monkeypatch.setattr(air, "fetch", fake_fetch)
+
+    def test_mil_reports_the_failure_instead_of_raising(self, seeded, monkeypatch):
+        self._refuse(monkeypatch)
+        out = air.mil_snapshot(seeded)
+        assert out["count"] == 0
+        assert out["feed_error"] == self.REFUSED
+
+    def test_mil_keeps_to_its_window_while_refused(self, seeded, monkeypatch):
+        calls: list[str] = []
+        self._refuse(monkeypatch, calls)
+        air.mil_snapshot(seeded)
+        again = air.mil_snapshot(seeded)
+        assert len(calls) == 1, "a refused feed was hit again inside its window"
+        assert again["feed_error"] == self.REFUSED
+
+    def test_focus_reports_the_failure_on_every_poll(self, seeded, monkeypatch):
+        _incident(seeded)
+
+        def refused(lat, lon):
+            raise FetchError(self.REFUSED)
+
+        monkeypatch.setattr(aircraft, "_fetch_near", refused)
+        first = air.focus_poll(seeded, "i1")
+        assert first["count"] == 0
+        assert first["feed_error"] == self.REFUSED
+        # inside the throttle window: no upstream call, and still not an all-clear
+        assert air.focus_poll(seeded, "i1")["feed_error"] == self.REFUSED
+
+    def test_a_recovered_feed_clears_the_failure(self, seeded, monkeypatch):
+        _incident(seeded)
+        aircraft.record_feed(seeded, self.REFUSED)
+        _fake_upstream(monkeypatch, [], [])
+        assert air.focus_poll(seeded, "i1")["feed_error"] is None
+
+    def test_base_watch_reports_the_failure(self, seeded, monkeypatch):
+        self._refuse(monkeypatch)
+        assert air.base_watch(seeded)["feed_error"] == self.REFUSED
+
+    def test_watchdog_raises_it(self, seeded):
+        aircraft.record_feed(seeded, self.REFUSED)
+        assert self.REFUSED in watchdog.find_problems(seeded, llm_models=["m"])["aircraft_feed"]
+
+    def test_an_old_failure_is_not_reported_as_current(self, seeded):
+        aircraft.record_feed(seeded, self.REFUSED)
+        seeded.execute(
+            "UPDATE map_cache SET fetched_at = '2020-01-01T00:00:00.000Z' WHERE key = ?",
+            (aircraft.FEED_STATUS_KEY,),
+        )
+        assert aircraft.feed_error(seeded) is None
 
 
 class TestBaseWatch:

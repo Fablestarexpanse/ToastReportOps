@@ -160,6 +160,39 @@ def test_gauge_reaching_moderate_alerts_once(db):
     assert "Big Creek" in sent[0]
 
 
+def test_noaa_zero_time_means_no_reading_time():
+    """Go's zero time, sent on 138 observed and 702 forecast readings at once."""
+    g = gauge("A", obs="action", valid="0001-01-01T00:00:00Z")
+    (shown,) = water.build_gauges([g], set())
+    assert shown["observed"]["valid_time"] is None
+    assert shown["stale"] is True
+
+
+def test_flow_primary_gauge_keeps_stage_and_flow_the_right_way_round():
+    """Some gauges report flow first and stage second. Flow was dropped and the
+    stage, in feet, was shown as the flow."""
+    g = gauge("A", obs="action")
+    g["status"]["observed"].update(
+        {"primary": 0.282, "primaryUnit": "kcfs", "secondary": 2.8, "secondaryUnit": "ft"}
+    )
+    (shown,) = water.build_gauges([g], set())
+    assert shown["observed"]["stage"] == 2.8
+    assert shown["observed"]["flow"] == 0.282
+    assert shown["observed"]["flow_unit"] == "kcfs"
+
+
+def test_negative_nine_point_nine_nine_is_no_reading_but_a_real_negative_stage_is_kept():
+    g = gauge("A", obs="action")
+    g["status"]["observed"]["primary"] = -9.99
+    (shown,) = water.build_gauges([g], set())
+    assert shown["observed"]["stage"] is None
+
+    tidal = gauge("B", obs="action")
+    tidal["status"]["observed"]["primary"] = -1.54
+    (kept,) = water.build_gauges([tidal], set())
+    assert kept["observed"]["stage"] == -1.54
+
+
 def test_noaa_no_reading_sentinels_become_unknown_not_numbers():
     g = gauge("A", obs="action")
     g["status"]["observed"]["secondary"] = -999

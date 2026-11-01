@@ -118,6 +118,20 @@ export type WatchCandidate = {
   verdict: WatchVerdict | null;
   geo_source: "reported" | "named_feature" | null;
   geo_place: string | null;
+  official: OfficialCheck;
+  group: WatchGroup;
+};
+
+export type WatchGroup = "new" | "official" | "over" | "prescribed" | "mentions";
+
+export type OfficialCheck = {
+  status: "closed" | "active" | "reported" | "none" | "unknown";
+  source: string | null;
+  acres: number | null;
+  containment: number | null;
+  started: string | null;
+  final: boolean | null;
+  category: string | null;
 };
 
 export type WatchVerdict = {
@@ -547,10 +561,12 @@ export const fetchIntake = () =>
 export const fetchSources = () => get<{ sources: Source[] }>("/sources").then((r) => r.sources);
 
 export const fetchAdjudication = () =>
-  get<{ queue: AdjudicationItem[] }>("/adjudication").then((r) =>
+  get<{ queue: AdjudicationItem[]; total: number; older_hidden: number }>("/adjudication").then((r) => ({
+    total: r.total,
+    olderHidden: r.older_hidden,
     // one row per fact, and one chip per candidate incident — a repeat in
     // either is a bug worth naming rather than a silent React key collision
-    uniqueBy(
+    items: uniqueBy(
       r.queue.map((it) => ({
         ...it,
         candidates: uniqueBy(it.candidates, (c) => c.incident_id, "adjudication candidate"),
@@ -558,7 +574,7 @@ export const fetchAdjudication = () =>
       (it) => it.fact.id,
       "adjudication row",
     ),
-  );
+  }));
 
 export async function resolveAdjudication(factId: string, incidentId: string): Promise<void> {
   const res = await fetch(`/api/adjudication/${factId}`, {
@@ -607,6 +623,29 @@ export async function importFire(refId: string): Promise<{ name: string; status:
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ref_id: refId }),
+  });
+  if (!res.ok) {
+    const detail = await res.json().then((d) => d.detail).catch(() => res.status);
+    throw new Error(String(detail));
+  }
+  return res.json();
+}
+
+export type BackfillPreview = {
+  year: number;
+  listed: number;
+  new: number;
+  already: number;
+  acres: number;
+};
+
+export const previewBackfill = (year: number) => get<BackfillPreview>(`/fires/backfill?year=${year}`);
+
+export async function runBackfill(year: number): Promise<{ imported: number; seen: number }> {
+  const res = await fetch("/api/fires/backfill", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ year, confirm_year: year }),
   });
   if (!res.ok) {
     const detail = await res.json().then((d) => d.detail).catch(() => res.status);
@@ -1616,6 +1655,7 @@ export type AirFocus = {
   fire_ops: number;
   polled_upstream: boolean;
   fetched_at: string;
+  feed_error?: string | null;
   note: string;
 };
 
@@ -1639,6 +1679,7 @@ export type AirBases = {
   bases: AirBase[];
   sightings: BaseSighting[];
   last_scan: { base: string; at: string } | null;
+  feed_error?: string | null;
   note: string;
 };
 
@@ -1646,6 +1687,7 @@ export type AirMil = {
   aircraft: (Omit<AirAircraft, "trail" | "first_seen" | "seen_at" | "military" | "fire_ops">)[];
   count: number;
   fetched_at: string;
+  feed_error?: string | null;
   note: string;
 };
 

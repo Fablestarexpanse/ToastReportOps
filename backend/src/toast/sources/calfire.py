@@ -16,8 +16,6 @@ from toast.sources import register
 from toast.sources.capture import RawCapture
 
 LIST_URL = "https://incidents.fire.ca.gov/umbraco/api/IncidentApi/List"
-# CAL FIRE blocks the default httpx UA; a browser UA is required.
-BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ToastReport/0.1"
 
 
 def _f(value: Any) -> float | None:
@@ -71,7 +69,7 @@ def fetch_incidents(
     else:
         params.append(f"inactive={'true' if inactive else 'false'}")
     url = LIST_URL + "?" + "&".join(params)
-    body, _ctype = capture.fetch_captured(url, headers={"User-Agent": BROWSER_UA})
+    body, _ctype = capture.fetch_captured(url)
     data = json.loads(body)
     return data if isinstance(data, list) else data.get("Incidents", [])
 

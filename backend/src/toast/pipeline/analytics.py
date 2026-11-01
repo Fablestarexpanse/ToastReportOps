@@ -197,11 +197,14 @@ def records(conn: sqlite3.Connection) -> dict[str, Any]:
              AND unixepoch(new.observed_at) - unixepoch(old.observed_at) >= 1800"""
     ).fetchone()
     longest = conn.execute(
-        """SELECT canonical_name AS name,
-                  CAST((unixepoch('now') - unixepoch(created_at)) / 86400 AS INT) AS days
-           FROM incidents WHERE status = 'active'
-             AND COALESCE(incident_type, 'WF') != 'RX'
-           ORDER BY created_at ASC LIMIT 1"""
+        # from its earliest fact, as the incident list does: created_at is only
+        # when this install first saw the fire
+        """SELECT i.canonical_name AS name,
+                  CAST((unixepoch('now') - unixepoch(COALESCE(MIN(f.observed_at), i.created_at)))
+                       / 86400 AS INT) AS days
+           FROM incidents i LEFT JOIN facts f ON f.incident_id = i.id
+           WHERE i.status = 'active' AND COALESCE(i.incident_type, 'WF') != 'RX'
+           GROUP BY i.id ORDER BY days DESC LIMIT 1"""
     ).fetchone()
     busiest = conn.execute(
         """SELECT substr(ingested_at, 1, 10) AS day, COUNT(*) AS facts

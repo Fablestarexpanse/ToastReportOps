@@ -19,7 +19,9 @@ router = APIRouter()
 
 
 def _conn(request: Request) -> sqlite3.Connection:
-    return request.app.state.conn
+    state = request.app.state
+    connections = getattr(state, "connections", None)
+    return connections.get() if connections else state.conn
 
 
 def _fact_dict(row: sqlite3.Row) -> dict[str, Any]:
@@ -1395,10 +1397,11 @@ def adjudication_queue(request: Request, limit: int = Query(50, le=200)) -> dict
     """Unattributed non-official facts awaiting operator attribution, with
     scored incident candidates for one-click resolve."""
     from toast.pipeline.attribution import REVIEW_THRESHOLD, score_candidates
+    from toast.pipeline.handlers import MAX_ARTICLE_AGE_DAYS
 
     conn = _conn(request)
-    rows = conn.execute(
-        f"""SELECT {FACT_COLS} FROM facts f JOIN sources s ON s.id = f.source_id
+    awaiting = """FROM facts f JOIN sources s ON s.id = f.source_id
+            LEFT JOIN envelopes e ON e.id = f.envelope_id
             WHERE f.incident_id IS NULL AND f.kind NOT IN ('weather')
               -- Satellite pixels are not adjudication work. A VIIRS hotspot that
               -- did not geo-attach carries no name, no text and no context: there
@@ -1417,10 +1420,23 @@ def adjudication_queue(request: Request, limit: int = Query(50, le=200)) -> dict
                 SELECT 1 FROM facts f2 JOIN fact_triage t ON t.fact_id = f2.id
                 WHERE f2.source_id = f.source_id AND f2.kind = f.kind
                   AND f2.content = f.content
-              )
+              )"""
+    # Facts from articles too old to extract today, kept from before that rule. They
+    # can't be deleted from the ledger, so they leave the queue and are counted.
+    too_old = """COALESCE(unixepoch('now')
+        - unixepoch(json_extract(e.payload, '$.published_at')), 0) > ?"""
+    max_age_s = MAX_ARTICLE_AGE_DAYS * 86400
+    rows = conn.execute(
+        f"""SELECT {FACT_COLS} {awaiting} AND NOT {too_old}
             ORDER BY f.ingested_at DESC LIMIT ?""",
-        (limit,),
+        (max_age_s, limit),
     ).fetchall()
+    total = conn.execute(
+        f"SELECT COUNT(*) AS n {awaiting} AND NOT {too_old}", (max_age_s,)
+    ).fetchone()["n"]
+    older_hidden = conn.execute(
+        f"SELECT COUNT(*) AS n {awaiting} AND {too_old}", (max_age_s,)
+    ).fetchone()["n"]
     items = []
     for row in rows:
         fact = _fact_dict(row)
@@ -1463,7 +1479,7 @@ def adjudication_queue(request: Request, limit: int = Query(50, le=200)) -> dict
                 and not any(float(c["name_score"]) >= 0.6 for c in scored),
             }
         )
-    return {"queue": items}
+    return {"queue": items, "total": total, "older_hidden": older_hidden}
 
 
 @router.post("/adjudication/autotriage")
@@ -2324,6 +2340,39 @@ def import_fire_route(request: Request, body: dict) -> dict:
         raise HTTPException(502, f"CAL FIRE catalog unavailable: {exc}") from exc
     if not result.get("imported") and result.get("reason") == "not found in CAL FIRE catalog":
         raise HTTPException(404, "fire not found in CAL FIRE catalog")
+    return result
+
+
+@router.get("/fires/backfill")
+def backfill_preview(request: Request, year: int) -> dict:
+    """What importing a year's CAL FIRE list would add. Writes nothing."""
+    from toast.core.fetch import FetchError
+    from toast.pipeline.fire_search import preview_year
+
+    try:
+        return preview_year(_conn(request), year)
+    except FetchError as exc:
+        raise HTTPException(502, f"CAL FIRE catalog unavailable: {exc}") from exc
+
+
+@router.post("/fires/backfill")
+def backfill_year(request: Request, body: dict) -> dict:
+    """Import a year's CAL FIRE list. Ledger writes can't be undone, so the caller must
+    repeat the year as confirmation. Not on the agent tool allowlist: operator only."""
+    from toast.core.fetch import FetchError
+    from toast.pipeline.fire_search import import_year
+    from toast.queue import jobs
+
+    year = body.get("year")
+    if not isinstance(year, int) or body.get("confirm_year") != year:
+        raise HTTPException(400, "confirm_year must repeat year")
+    conn = _conn(request)
+    try:
+        result = import_year(conn, year)
+    except FetchError as exc:
+        raise HTTPException(502, f"CAL FIRE catalog unavailable: {exc}") from exc
+    # reports waiting on these fires can attach now rather than on the next sweep
+    jobs.enqueue(conn, "reattribute", {}, priority=8)
     return result
 
 

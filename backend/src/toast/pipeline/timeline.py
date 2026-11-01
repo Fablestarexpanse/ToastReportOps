@@ -15,6 +15,7 @@ it — a 6 a.m. evacuation order sits at 6 a.m., however late we heard.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from typing import Any
 
@@ -30,6 +31,17 @@ _KIND_CATEGORY = {
     "weather": "weather",
     "resource": "resource",
 }
+
+
+def _event_detail(raw: str | None) -> str | None:
+    """Lifecycle details are stored as JSON; the timeline shows them as words."""
+    try:
+        parsed = json.loads(raw or "")
+    except ValueError:
+        return raw or None
+    if isinstance(parsed, dict):
+        return ", ".join(f"{k}: {v}" for k, v in parsed.items()) or None
+    return raw
 
 
 def _fact_title(row: sqlite3.Row) -> str:
@@ -187,7 +199,7 @@ def fire_timeline(conn: sqlite3.Connection, incident_id: str) -> dict[str, Any]:
                 "at": ev["at"],
                 "category": "status",
                 "title": (ev["event"] or "event").replace("_", " ").title(),
-                "detail": ev["detail"],
+                "detail": _event_detail(ev["detail"]),
                 "source": ev["actor"],
                 "tier": None,
                 "url": None,

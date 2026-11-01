@@ -75,11 +75,13 @@ def extract_article(
     raw_ref: str | None,
     text: str,
     client: LLMClient | None = None,
+    published_at: str | None = None,
 ) -> dict[str, Any]:
     """Run the LLM extractor over already-fetched article text and write facts.
 
     Shared by the operator point-at-URL flow and the RSS article-extract stage.
     Facts are written under the given envelope/source/tier and attributed.
+    `published_at` dates a claim the extractor could not date itself.
     """
     now = utcnow()
     client = client or client_for(conn)  # operator's model choice
@@ -123,7 +125,7 @@ def extract_article(
             tier=tier,
             content=claim.content,
             kind=claim.kind,
-            observed_at=claim.observed_at or now,  # see observed_at_estimated below
+            observed_at=claim.observed_at or published_at or now,  # observed_at_estimated below
             confidence=confidence,
             acreage=claim.acreage,
             containment_pct=claim.containment_pct,
@@ -134,8 +136,8 @@ def extract_article(
                 "extractor_confidence": claim.confidence,
                 # what the source check flagged (cleared name/place, paraphrased evac)
                 **({"verification_issues": claim.issues} if claim.issues else {}),
-                # the extractor gave no usable date, so this is ingest time
-                # standing in — the panel must never read it as an observation
+                # the extractor gave no usable date, so the article's date (or failing
+                # that, ingest time) stands in — never read it as an observation
                 **({"observed_at_estimated": True} if not claim.observed_at else {}),
                 **(
                     {

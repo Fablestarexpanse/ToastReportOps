@@ -52,6 +52,17 @@ def _write(conn, fid, source_id, envelope_id, observed):
     return fid
 
 
+def test_storing_a_fact_again_replaces_its_vector(vecdb):
+    """vec0 does not honor INSERT OR REPLACE, so a retried embed job died with a
+    UNIQUE error and could never succeed."""
+    _write(vecdb, "f1", "s1", "e1", NOW)
+    store_fact_embedding(vecdb, "f1", _unit(1.0, 0.0))
+    store_fact_embedding(vecdb, "f1", _unit(0.0, 1.0))
+    near = nearest_facts(vecdb, _unit(0.0, 1.0), k=5)
+    assert [fid for fid, _ in near] == ["f1"]
+    assert near[0][1] == pytest.approx(0.0, abs=1e-6)
+
+
 def test_nearest_orders_by_distance(vecdb):
     _write(vecdb, "f1", "s1", "e1", NOW)
     _write(vecdb, "f2", "s1", "e1", NOW)

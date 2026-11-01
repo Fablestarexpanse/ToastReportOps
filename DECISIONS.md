@@ -2,6 +2,52 @@
 
 Architectural decision log. Newest first. Each entry: context → decision → why.
 
+## 2026-10-31 — Official lists verify New Starts; they don't create incidents
+
+- An audit found 122 facts, 3 tied to a fire and 0 corroborated, with a prescribed burn,
+  an arson-arrest story and a contained fire heading the New Starts board. The direction
+  is verified awareness first; the inbox and newsroom work build on this.
+- **Verify, don't ingest.** Turning WFIGS on as a creator would not have helped: 26
+  California wildfires in 14 days, none past the 10-acre gate. As a lookup, at any size,
+  it confirms what news reports name. CAL FIRE's full list does the same for fires that
+  closed weeks ago.
+- **Absence is only claimed when every list was read.** A list that failed or went stale
+  gives `unknown`, never "no official record".
+- **The board sorts by what a candidate is.** New, officially listed, already over,
+  prescribed, mentions. It used to count facts, so long stories beat real starts. The
+  percentage is gone from the card because it read as confidence and measured volume.
+- **Undated claims take their article's date.** Using ingest time made old stories look
+  new. Articles over 14 days old cost no fetch and no model call, and their envelopes
+  stay archived.
+- **The year backfill is the operator's choice, never scheduled or automatic.** ARCHIVE
+  shows what it would add and asks for confirmation, because the writes can't be undone.
+  It isn't an agent tool. The default poller stays active-only, following the
+  76-junk-incident lesson.
+- **The CAL FIRE adapter stopped posing as a browser.** Its requests succeed under our
+  own identity, and we don't disguise the client.
+- **Auto-attachment needs more than a score.** Attachment can't be undone, and a dry run
+  of the backfill got 2 of 31 wrong. A claimed name must really match (0.85), the fact
+  must overlap the fire in time or place, and a county it states outright must agree.
+  Anything else goes to the operator.
+- **A repeated name doesn't hide a new start.** The board hid any candidate named like a
+  tracked fire, so loading the year's closed fires would have made a new fire vanish
+  when another county had one by that name. A stated county now keeps it on the board.
+
+## 2026-10-31 — Live-stack audit: threads, missing models, refused feeds
+
+- **One SQLite connection per API thread.** Sharing one across the threadpool caused
+  random 500s, false 404s and wrong values. A connection that strays across threads
+  now fails loudly instead of corrupting a read.
+- **A missing model is a wait, not a failure.** Jobs park without spending attempts
+  and drain once a model is installed. Other LLM errors still retry and dead-letter.
+- **A refused aircraft feed is reported, never shown as an empty sky.** airplanes.live
+  returns 403 and asks projects to contact them. We do not disguise our client to get
+  past that: access comes from asking them, or from another licensed feed.
+- **The launcher runs the production UI build.** The dev server doubled every request
+  and showed its overlay. Developers still use `npm run dev`.
+- **Old evacuation orders stay verbatim and visible.** Over 30 days old they get a
+  warning to confirm locally, because hiding an official order is the worse mistake.
+
 ## 2026-10-31 — Archive search, capped agent reads, no automatic model downloads
 
 - Toast needed to search its own text (facts, drafts, radio transcripts, archived

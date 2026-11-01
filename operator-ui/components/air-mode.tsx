@@ -221,6 +221,9 @@ export default function AirMode({ toast }: { toast: (msg: string) => void }) {
   }, [bases, ready]);
 
   /* ---------- aircraft + trails (the main event) */
+  // a refused feed and an empty sky look identical on the map, so say which it is
+  const feedError = focus?.feed_error ?? bases?.feed_error ?? mil?.feed_error ?? null;
+
   const visible = useMemo(() => {
     if (!focus) return [];
     return focus.aircraft.filter((a) => {
@@ -399,7 +402,7 @@ export default function AirMode({ toast }: { toast: (msg: string) => void }) {
             {chip(`MIL CA (${mil?.count ?? 0})`, showMil, () => setShowMil((v) => !v), C.violet)}
           </div>
           <div style={{ fontFamily: font.mono, fontSize: 8, color: C.faint, marginTop: 6 }}>
-            {lastPollAt ? `airspace sampled ${age(lastPollAt)} ago` : "sampling…"} · ~5s refresh ·
+            {feedError ? "feed unavailable" : lastPollAt ? `airspace sampled ${age(lastPollAt)} ago` : "sampling…"} · ~5s refresh ·
             trails 15 min · airplanes.live (borrowed, never in the ledger)
           </div>
         </div>
@@ -409,7 +412,16 @@ export default function AirMode({ toast }: { toast: (msg: string) => void }) {
           <div style={{ fontFamily: font.disp, fontSize: 11, letterSpacing: 2, color: C.faint, marginBottom: 4 }}>
             FLEET {focus ? `(${visible.length}${focus.fire_ops ? ` · ${focus.fire_ops} fire ops` : ""})` : ""}
           </div>
-          {!visible.length && (
+          {feedError && (
+            <div
+              role="alert"
+              style={{ fontFamily: font.mono, fontSize: 9.5, color: C.evac, padding: "8px 0", lineHeight: 1.5 }}
+            >
+              AIRCRAFT FEED UNAVAILABLE. Nothing shown here does not mean nothing is flying.
+              <div style={{ color: C.dim, fontSize: 8.5 }}>{feedError}</div>
+            </div>
+          )}
+          {!visible.length && !feedError && (
             <div style={{ fontFamily: font.mono, fontSize: 9.5, color: C.dim, padding: "8px 0" }}>
               no aircraft in this airspace right now
             </div>

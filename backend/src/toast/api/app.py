@@ -13,7 +13,7 @@ from fastapi import FastAPI
 
 from toast import __version__
 from toast.core.config import Settings
-from toast.core.db import apply_migrations, connect
+from toast.core.db import ThreadConnections, apply_migrations, connect
 from toast.core.logging import configure_logging, get_logger
 from toast.queue.jobs import counts_by_state
 
@@ -29,6 +29,7 @@ async def lifespan(app: FastAPI):
 
     load_builtin_adapters()
     app.state.conn = conn
+    app.state.connections = ThreadConnections(settings.toast_db_path)
     app.state.settings = settings
     get_logger("api").info("api_started", db=str(settings.toast_db_path))
     yield
@@ -62,7 +63,7 @@ def healthz() -> dict:
 
 @app.get("/queue")
 def queue() -> dict:
-    return {"jobs": counts_by_state(app.state.conn)}
+    return {"jobs": counts_by_state(app.state.connections.get())}
 
 
 def main() -> None:

@@ -27,8 +27,10 @@ from toast.core.fetch import fetch
 from toast.pipeline.aircraft import (
     SERVICE,
     classify_role,
+    feed_error,
     is_military,
     poll_incident,
+    record_feed,
 )
 
 FOCUS_MIN_INTERVAL_S = 4  # keeps two open windows inside the shared 1 req/s
@@ -123,8 +125,11 @@ def focus_poll(conn: sqlite3.Connection, incident_id: str) -> dict[str, Any]:
 
     polled = False
     if Throttle(f"focus:{incident_id}", FOCUS_MIN_INTERVAL_S).allow(conn):
-        poll_incident(conn, inc)
         polled = True
+        try:
+            poll_incident(conn, inc)
+        except Exception:  # recorded as the feed status, which this response reports
+            polled = False
 
     aircraft = _over_incident(conn, incident_id)
     return {
@@ -132,6 +137,7 @@ def focus_poll(conn: sqlite3.Connection, incident_id: str) -> dict[str, Any]:
         "count": len(aircraft),
         "fire_ops": sum(1 for a in aircraft if a["fire_ops"]),
         "polled_upstream": polled,
+        "feed_error": feed_error(conn),
         "fetched_at": utcnow(),
         "note": "airplanes.live (borrowed live data — never enters the ledger)",
     }
@@ -198,7 +204,9 @@ def base_watch(conn: sqlite3.Connection) -> dict[str, Any]:
                 max_bytes=2 * 1024 * 1024,
             )
             ac = json.loads(body).get("ac") or []
-        except Exception:
+            record_feed(conn, None)
+        except Exception as exc:
+            record_feed(conn, str(exc)[:200])
             ac = []  # a failed base scan skips its turn; the rotation continues
         now = utcnow()
         seen_now = set()
@@ -248,6 +256,7 @@ def base_watch(conn: sqlite3.Connection) -> dict[str, Any]:
         "bases": BASES,
         "sightings": sightings,
         "last_scan": state.get("scanned"),
+        "feed_error": feed_error(conn),
         "note": "one base scanned per window — a full sweep takes ~"
         f"{len(BASES) * BASE_MIN_INTERVAL_S // 60} min",
     }
@@ -264,7 +273,10 @@ def mil_snapshot(conn: sqlite3.Connection) -> dict[str, Any]:
     allowed = Throttle("mil", MIL_MIN_INTERVAL_S).allow(conn)
     if cached is not None and not allowed:
         cached["fetched_at"] = at
+        cached["feed_error"] = feed_error(conn)
         return cached
+    if not allowed:  # refused so far and nothing cached: wait out the window
+        return _mil_unavailable(feed_error(conn))
     try:
         body, _ct = fetch(
             f"{SERVICE.rsplit('/point', 1)[0]}/mil",
@@ -272,12 +284,16 @@ def mil_snapshot(conn: sqlite3.Connection) -> dict[str, Any]:
             max_bytes=8 * 1024 * 1024,
         )
         ac = json.loads(body).get("ac") or []
-    except Exception:
+    except Exception as exc:
+        error = str(exc)[:200]
+        record_feed(conn, error)
         if cached is not None:
             cached["fetched_at"] = at
             cached["stale"] = True
+            cached["feed_error"] = error
             return cached
-        raise
+        return _mil_unavailable(error)
+    record_feed(conn, None)
     lat0, lat1, lon0, lon1 = CA_BBOX
     out = []
     for a in ac:
@@ -309,7 +325,18 @@ def mil_snapshot(conn: sqlite3.Connection) -> dict[str, Any]:
     payload = {"aircraft": out, "count": len(out), "note": "airplanes.live /mil, CA only"}
     _cache_put(conn, "air:mil", payload)
     payload["fetched_at"] = utcnow()
+    payload["feed_error"] = None
     return payload
+
+
+def _mil_unavailable(error: str | None) -> dict[str, Any]:
+    return {
+        "aircraft": [],
+        "count": 0,
+        "note": "airplanes.live /mil, CA only",
+        "fetched_at": utcnow(),
+        "feed_error": error,
+    }
 
 
 # ---------------------------------------------------------------- activity log

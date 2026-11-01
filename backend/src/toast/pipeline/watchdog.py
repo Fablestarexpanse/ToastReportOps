@@ -23,6 +23,7 @@ from toast.core.config import Settings
 from toast.core.db import utcnow
 from toast.core.logging import get_logger
 from toast.pipeline import telegram_ops
+from toast.queue.jobs import WAITING_FOR_MODEL
 
 STATE_KEY = "watchdog:state"
 REMIND_S = 6 * 3600
@@ -60,13 +61,27 @@ def find_problems(
     # nothing has drained the queue: worker down or wedged
     stalled = conn.execute(
         """SELECT MIN(unixepoch(created_at)) AS oldest FROM jobs
-           WHERE state = 'queued' AND (run_after IS NULL OR unixepoch(run_after) <= ?)""",
-        (now,),
+           WHERE state = 'queued' AND (run_after IS NULL OR unixepoch(run_after) <= ?)
+             AND COALESCE(last_error, '') NOT LIKE ?""",
+        (now, f"{WAITING_FOR_MODEL}%"),
     ).fetchone()["oldest"]
-    if stalled is not None and now - stalled > STALL_S:
+    # old is not enough: a requeued job keeps its created_at, so also ask whether
+    # anything has been claimed lately
+    claimed = conn.execute("SELECT MAX(unixepoch(claimed_at)) AS t FROM jobs").fetchone()["t"]
+    draining = claimed is not None and now - claimed <= STALL_S
+    if stalled is not None and now - stalled > STALL_S and not draining:
         problems["queue_stalled"] = (
             f"oldest runnable job has waited {(now - stalled) // 60} min — is the worker running?"
         )
+
+    # jobs parked for a model are waiting on the operator, not on the worker
+    waiting = conn.execute(
+        """SELECT COUNT(*) AS n, MAX(last_error) AS err FROM jobs
+           WHERE state = 'queued' AND last_error LIKE ?""",
+        (f"{WAITING_FOR_MODEL}%",),
+    ).fetchone()
+    if waiting["n"]:
+        problems["llm_model_missing"] = f"{waiting['n']} jobs waiting — {waiting['err'][:120]}"
 
     # an enabled, scheduled source that stopped completing polls
     for s in conn.execute(
@@ -99,6 +114,13 @@ def find_problems(
     res = conn.execute("SELECT unixepoch(MAX(captured_at)) AS t FROM reservoir_readings").fetchone()
     if res["t"] is not None and now - res["t"] > RESERVOIR_STALE_S:
         problems["reservoirs_stale"] = "reservoir levels have not refreshed in over 12 h"
+
+    # an empty sky and a refused feed look the same on the map
+    from toast.pipeline.aircraft import feed_error
+
+    air_error = feed_error(conn)
+    if air_error:
+        problems["aircraft_feed"] = f"aircraft feed is failing — {air_error}"
 
     if llm_models is not None and not llm_models:
         problems["llm"] = "the language model endpoint is unreachable or has no models"

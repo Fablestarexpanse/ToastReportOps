@@ -14,13 +14,19 @@ scanner signals slot in here as those sources come online.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from dataclasses import dataclass, field
 from typing import Any
 
 from toast.core.db import utcnow
 from toast.core.ids import ulid
-from toast.pipeline.attribution import _norm_name, name_similarity
+from toast.pipeline.attribution import (
+    _norm_name,
+    county_conflicts,
+    name_similarity,
+    stated_counties,
+)
 
 CORROBORATING_SOURCES = 2  # distinct sources at/above which a candidate corroborates
 RECENT_WINDOW_S = 48 * 3600  # signals older than this don't sustain a new-start
@@ -39,6 +45,15 @@ GENERIC_NAMES = {
     "new",
     "major",
 }
+# Board sections, in display order. 'new' is the only one that means "go look": the
+# others are explained rather than hidden, because a wrong sort must stay visible.
+GROUP_ORDER = ("new", "official", "over", "prescribed", "mentions")
+PRESCRIBED_RE = re.compile(r"prescribed|underburn|fuels? treatment", re.IGNORECASE)
+# An undated fact is only as new as its article: observed_at is a stand-in for those.
+EFFECTIVE_AT = """COALESCE(
+    CASE WHEN json_extract(f.structured, '$.observed_at_estimated')
+         THEN json_extract(e.payload, '$.published_at') END,
+    f.observed_at)"""
 
 
 @dataclass
@@ -62,12 +77,25 @@ class WatchCandidate:
     # an inferred pin is an approximation, not an observation.
     geo_source: str | None = None
     geo_place: str | None = None
+    official: dict[str, Any] = field(default_factory=dict)  # official_lookup.check()
+    group: str = "new"  # one of GROUP_ORDER
 
 
-def _active_incident_names(conn: sqlite3.Connection) -> list[tuple[str, list[str]]]:
+def _group(official: dict[str, Any], facts: list[sqlite3.Row], name: str) -> str:
+    if official["status"] == "closed":
+        return "over"
+    text = " ".join([name, *(f["content"] or "" for f in facts)])
+    if official["category"] == "RX" or PRESCRIBED_RE.search(text):
+        return "prescribed"
+    if official["status"] in ("active", "reported"):
+        return "official"
+    return "new" if any(f["kind"] == "start" for f in facts) else "mentions"
+
+
+def _active_incident_names(conn: sqlite3.Connection) -> list[tuple[str, list[str], str | None]]:
     names = []
     for inc in conn.execute(
-        "SELECT id, canonical_name FROM incidents "
+        "SELECT id, canonical_name, county FROM incidents "
         "WHERE status IN ('candidate','active','contained')"
     ):
         aliases = [
@@ -76,12 +104,19 @@ def _active_incident_names(conn: sqlite3.Connection) -> list[tuple[str, list[str
                 "SELECT alias FROM incident_aliases WHERE incident_id = ?", (inc["id"],)
             )
         ]
-        names.append((inc["canonical_name"], aliases))
+        names.append((inc["canonical_name"], aliases, inc["county"]))
     return names
 
 
-def _matches_active_incident(name: str, active: list[tuple[str, list[str]]]) -> bool:
-    return any(name_similarity(name, canon, aliases) >= 0.85 for canon, aliases in active)
+def _matches_active_incident(
+    name: str, active: list[tuple[str, list[str], str | None]], stated: set[str]
+) -> bool:
+    """The name is already tracked. Names repeat, so a tracked fire in a county other
+    than the one the reports state is a different fire, and must not hide this one."""
+    return any(
+        name_similarity(name, canon, aliases) >= 0.85 and not county_conflicts(stated, county)
+        for canon, aliases, county in active
+    )
 
 
 def build_watchlist(
@@ -92,20 +127,22 @@ def build_watchlist(
     Candidates the operator has ignored or archived stay off the board;
     include_triaged=True is for lookups that need them anyway (e.g. re-running
     an age check on something already filed)."""
+    from toast.pipeline import official_lookup
     from toast.pipeline.watch_triage import triage_map
 
     triaged = triage_map(conn)
     hidden = {k for k, v in triaged.items() if v["state"] in ("ignored", "archived")}
     active = _active_incident_names(conn)
     rows = conn.execute(
-        """SELECT f.id, f.source_id, f.tier, f.content, f.observed_at, f.lat, f.lon,
-                  json_extract(f.structured, '$.incident_name') AS inc_name,
-                  json_extract(f.structured, '$.location_text') AS loc
-           FROM facts f
-           WHERE f.incident_id IS NULL
-             AND json_extract(f.structured, '$.incident_name') IS NOT NULL
-             AND unixepoch('now') - unixepoch(f.observed_at) < ?
-           ORDER BY f.observed_at DESC""",
+        f"""SELECT f.id, f.source_id, f.tier, f.content, f.kind, f.lat, f.lon,
+                   {EFFECTIVE_AT} AS observed_at,
+                   json_extract(f.structured, '$.incident_name') AS inc_name,
+                   json_extract(f.structured, '$.location_text') AS loc
+            FROM facts f LEFT JOIN envelopes e ON e.id = f.envelope_id
+            WHERE f.incident_id IS NULL
+              AND json_extract(f.structured, '$.incident_name') IS NOT NULL
+              AND unixepoch('now') - unixepoch({EFFECTIVE_AT}) < ?
+            ORDER BY observed_at DESC""",
         (RECENT_WINDOW_S,),
     ).fetchall()
 
@@ -123,7 +160,8 @@ def build_watchlist(
         display = facts[0]["inc_name"]
         # skip clusters that actually name an existing incident (those are
         # attribution/adjudication cases, not new starts)
-        if _matches_active_incident(display, active):
+        stated = stated_counties(*(f["content"] for f in facts), *(f["loc"] for f in facts))
+        if _matches_active_incident(display, active, stated):
             continue
         sources = {f["source_id"] for f in facts}
         geo = next((f for f in facts if f["lat"] is not None and f["lon"] is not None), None)
@@ -145,6 +183,8 @@ def build_watchlist(
         volume_bonus = 0.04 * min(len(facts), 5)
         score = min(1.0, 0.2 + 0.28 * len(sources) + volume_bonus + best_tier_bonus)
         state = "corroborating" if len(sources) >= CORROBORATING_SOURCES else "watching"
+        county = county_hint or (named_place.county if named_place else None)
+        official = official_lookup.check(conn, display, county)
         candidates.append(
             WatchCandidate(
                 key=key,
@@ -155,7 +195,7 @@ def build_watchlist(
                 tiers=tiers,
                 lat=geo["lat"] if geo else (named_place.lat if named_place else None),
                 lon=geo["lon"] if geo else (named_place.lon if named_place else None),
-                county=county_hint or (named_place.county if named_place else None),
+                county=county,
                 score=round(score, 2),
                 state=state,
                 fact_ids=[f["id"] for f in facts],
@@ -166,11 +206,14 @@ def build_watchlist(
                 verdict=(triaged.get(key) or {}).get("verdict"),
                 geo_source=("reported" if geo else ("named_feature" if named_place else None)),
                 geo_place=(named_place.name if named_place and not geo else None),
+                official=official,
+                group=_group(official, facts, display),
             )
         )
-    candidates.sort(
-        key=lambda c: (c.source_count, c.fact_count, c.score, c.latest_observed), reverse=True
-    )
+    # Section first, then independent sources, then newest. Counting facts or score
+    # here let a long story about an old fire outrank a fire reported an hour ago.
+    candidates.sort(key=lambda c: c.latest_observed, reverse=True)
+    candidates.sort(key=lambda c: (GROUP_ORDER.index(c.group), -c.source_count))
     return candidates
 
 

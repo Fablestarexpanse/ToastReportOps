@@ -8,6 +8,8 @@ migrated database in tmp_path.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -25,6 +27,110 @@ def http(tmp_path, monkeypatch):
         app, base_url="http://127.0.0.1:8400"
     ) as client:  # enters lifespan: connect + migrations
         yield client, app.state.conn
+
+
+def _article_fact(conn, fact_id, published_at):
+    conn.execute(
+        "INSERT OR IGNORE INTO sources (id, name, type, adapter, tier, created_at, updated_at)"
+        " VALUES ('s-adj', 'Feed', 'scrape', 'rss', 4, ?, ?)",
+        (utcnow(), utcnow()),
+    )
+    conn.execute(
+        "INSERT INTO envelopes (id, source_id, external_id, kind, payload, content_hash,"
+        " fetched_at) VALUES (?, 's-adj', ?, 'article', ?, ?, ?)",
+        (
+            f"e-{fact_id}",
+            fact_id,
+            json.dumps({"published_at": published_at}),
+            fact_id,
+            utcnow(),
+        ),
+    )
+    conn.execute(
+        "INSERT INTO facts (id, incident_id, envelope_id, source_id, tier, content, kind,"
+        " confidence, observed_at, ingested_at)"
+        " VALUES (?, NULL, ?, 's-adj', 4, ?, 'other', 0.5, ?, ?)",
+        (fact_id, f"e-{fact_id}", f"claim {fact_id}", utcnow(), utcnow()),
+    )
+
+
+def test_adjudication_reports_real_total_and_hides_only_old_articles_with_a_count(http):
+    client, conn = http
+    _article_fact(conn, "f-new", utcnow())
+    _article_fact(conn, "f-undated", None)
+    _article_fact(conn, "f-old", "2020-01-01T00:00:00.000Z")
+
+    body = client.get("/adjudication", params={"limit": 1}).json()
+
+    assert len(body["queue"]) == 1  # the page respects its limit...
+    assert body["total"] == 2  # ...but the count does not, and undated facts stay
+    assert body["older_hidden"] == 1
+
+
+CATALOG = [
+    {
+        "UniqueId": "aaaa-norte",
+        "Name": "Norte Fire",
+        "County": "Orange",
+        "Type": "Wildfire",
+        "AcresBurned": 570.0,
+        "PercentContained": 100.0,
+        "Latitude": 33.8,
+        "Longitude": -117.8,
+        "IsActive": False,
+        "Started": "2026-10-16T12:00:00Z",
+        "Updated": "2026-10-20T12:00:00Z",
+    }
+]
+
+
+def _stub_catalog(monkeypatch):
+    monkeypatch.setattr(
+        "toast.pipeline.fire_search.fetch_incidents",
+        lambda adapter, *, inactive=False, year=None: CATALOG,
+    )
+
+
+def test_backfill_preview_writes_nothing(http, monkeypatch):
+    client, conn = http
+    _stub_catalog(monkeypatch)
+    body = client.get("/fires/backfill", params={"year": 2026}).json()
+    assert body == {"year": 2026, "listed": 1, "new": 1, "already": 0, "acres": 570}
+    assert conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0] == 0
+
+
+def test_backfill_refuses_without_explicit_confirmation(http, monkeypatch):
+    client, conn = http
+    _stub_catalog(monkeypatch)
+    assert client.post("/fires/backfill", json={"year": 2026}).status_code == 400
+    assert (
+        client.post("/fires/backfill", json={"year": 2026, "confirm_year": 2025}).status_code == 400
+    )
+    assert conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0] == 0
+
+
+def test_backfill_refuses_a_cross_site_request(http, monkeypatch):
+    client, conn = http
+    _stub_catalog(monkeypatch)
+    resp = client.post(
+        "/fires/backfill",
+        json={"year": 2026, "confirm_year": 2026},
+        headers={"Origin": "https://evil.example"},
+    )
+    assert resp.status_code == 403
+    assert conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0] == 0
+
+
+def test_backfill_imports_and_queues_a_reattribution_pass(http, monkeypatch):
+    client, conn = http
+    _stub_catalog(monkeypatch)
+    body = client.post("/fires/backfill", json={"year": 2026, "confirm_year": 2026}).json()
+    assert body == {"year": 2026, "seen": 1, "imported": 1, "already": 0}
+    assert conn.execute("SELECT status FROM incidents").fetchone()[0] == "contained"
+    queued = conn.execute(
+        "SELECT COUNT(*) FROM jobs WHERE stage = 'reattribute' AND state = 'queued'"
+    ).fetchone()[0]
+    assert queued == 1
 
 
 def _seed_incident(conn, inc_id="i-http", **cols):

@@ -44,6 +44,14 @@ def _recorder():
     return sent, httpx.Client(transport=httpx.MockTransport(handler))
 
 
+def test_a_backlog_the_worker_is_draining_is_not_a_stall(seeded):
+    """A requeued job keeps its old created_at. While the worker keeps claiming
+    jobs, asking "is the worker running?" is a false alarm."""
+    _job(seeded, "extract", "queued", ago(3600))
+    _job(seeded, "extract", "done", ago(30))
+    assert "queue_stalled" not in watchdog.find_problems(seeded, llm_models=MODELS)
+
+
 def test_healthy_system_reports_nothing(seeded):
     _polling_source(seeded)
     _job(seeded, "poll", "done", ago(30), {"source_id": "s1"})

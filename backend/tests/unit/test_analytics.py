@@ -1,7 +1,7 @@
 """ANALYTICS — every number must come from stored rows, with honest denominators."""
 
 from toast.core.ids import ulid
-from toast.pipeline.analytics import overview
+from toast.pipeline.analytics import overview, records
 
 NOW = "2026-07-19T12:00:00.000Z"
 
@@ -23,6 +23,18 @@ def test_empty_ledger_reports_no_rates_rather_than_zero(db):
     assert data["totals"]["facts"] == 0
     assert data["quality"]["attribution_rate"] is None
     assert data["quality"]["corroboration_rate"] is None
+
+
+def test_longest_burning_counts_from_the_fire_not_from_when_we_first_saw_it(seeded):
+    """A fresh install tracking a two-week-old fire called it day 1."""
+    _fact(seeded, kind="start")
+    seeded.execute(
+        "UPDATE incidents SET status = 'active', created_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')"
+        " WHERE id = 'i1'"
+    )
+    longest = records(seeded)["longest_burning"]
+    assert longest["name"]
+    assert longest["days"] >= 30  # NOW is in 2026-07, long before today
 
 
 def test_totals_and_breakdowns_come_from_rows(seeded):

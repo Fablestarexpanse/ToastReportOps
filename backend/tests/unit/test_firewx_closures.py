@@ -5,6 +5,10 @@ drops routine lane work; a dead NWS zone degrades the layer instead of failing
 it; and both payloads carry the labels the UI is required to show.
 """
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
+from toast.core.db import apply_migrations, connect
 from toast.pipeline import closures, firewx
 
 
@@ -55,6 +59,29 @@ class TestClosures:
         out = closures.get_closures(seeded, refresh=True)
         assert out["count"] == 0
         assert len(out["failed_districts"]) == 12  # reported, not hidden
+
+    def test_simultaneous_cold_requests_download_the_feeds_once(self, tmp_path, monkeypatch):
+        """A page load asks several times at once; each used to fetch all 12 files."""
+        path = tmp_path / "toast.db"
+        apply_migrations(connect(path))
+        calls: list[int] = []
+        barrier = threading.Barrier(4)
+
+        def counted(district):
+            calls.append(district)
+            return []
+
+        monkeypatch.setattr(closures, "_records", counted)
+
+        def ask():
+            conn = connect(path)
+            barrier.wait()
+            return closures.get_closures(conn)["count"]
+
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            results = [f.result() for f in [ex.submit(ask) for _ in range(4)]]
+        assert results == [0, 0, 0, 0]
+        assert len(calls) == len(closures.DISTRICTS)
 
 
 class TestFireWeather:

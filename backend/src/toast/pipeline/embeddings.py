@@ -53,8 +53,10 @@ def ensure_vec_tables(conn: sqlite3.Connection, dim: int | None = None) -> bool:
 
 
 def store_fact_embedding(conn: sqlite3.Connection, fact_id: str, vec: list[float]) -> None:
+    # delete first: vec0 ignores OR REPLACE, so a retried embed job would die on UNIQUE
+    conn.execute("DELETE FROM fact_embeddings WHERE fact_id = ?", (fact_id,))
     conn.execute(
-        "INSERT OR REPLACE INTO fact_embeddings (fact_id, embedding) VALUES (?, ?)",
+        "INSERT INTO fact_embeddings (fact_id, embedding) VALUES (?, ?)",
         (fact_id, serialize_f32(vec)),
     )
 
